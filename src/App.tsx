@@ -774,7 +774,7 @@ function LandingPage({ onEnter }: { onEnter: () => void }) {
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function DashboardPage({ go, setActivePatient }: { go: (s: string) => void; setActivePatient: (p: Patient) => void }) {
+function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; user: any }) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [todayAppts, setTodayAppts] = useState<any[]>([]);
   const [overdueAppts, setOverdueAppts] = useState<{ patient_id: string; patient_name: string; scheduled_at: string }[]>([]);
@@ -785,7 +785,7 @@ function DashboardPage({ go, setActivePatient }: { go: (s: string) => void; setA
   const [evolutionData, setEvolutionData] = useState<{ date: string; 'Primeira vez': number; 'Retorno': number }[]>([]);
   const [evolutionPeriod, setEvolutionPeriod] = useState<7 | 30 | 90>(30);
   const isMobile = useIsMobile();
-  const doctorName = 'Dr. Lucas Mendes';
+  const doctorName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Médico';
 
   useEffect(() => {
     Promise.all([
@@ -3385,7 +3385,7 @@ export default function App() {
     <MobileCtx.Provider value={isMobile}>
       <ProntuarioFormatCtx.Provider value={{ format: prontuarioFormat, setFormat: setProntuarioFormat }}>
         <Layout screen={screen} go={go} breadcrumb={breadcrumbs[screen]} onBack={screen === 'patient-detail' ? () => go('patients') : undefined} doctorName={doctorName} notifications={notifications} onNotificationClick={(patientId) => { const p = (activePatient?.id === patientId ? activePatient : null); if (patientId) { db.fetchPatients().then(ps => { const found = ps.find(x => x.id === patientId); if (found) { setActivePatient(found); go('patient-detail'); } }); } }}>
-          {screen === 'dashboard' && <DashboardPage go={go} setActivePatient={setActivePatient} />}
+          {screen === 'dashboard' && <DashboardPage go={go} setActivePatient={setActivePatient} user={user} />}
           {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
           {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={() => setFlow('consent')} refetchTrigger={refetchTrigger} />}
           {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} />}
