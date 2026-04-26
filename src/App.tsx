@@ -774,7 +774,7 @@ function LandingPage({ onEnter }: { onEnter: () => void }) {
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; user: any }) {
+function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; user: any; doctorName: string }) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [todayAppts, setTodayAppts] = useState<any[]>([]);
   const [overdueAppts, setOverdueAppts] = useState<{ patient_id: string; patient_name: string; scheduled_at: string }[]>([]);
@@ -783,7 +783,7 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
   const [consultSummaries, setConsultSummaries] = useState<Record<string, { count: number; lastDate: string | null }>>({});
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
   const isMobile = useIsMobile();
-  const doctorName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Médico';
+  const doctorName = doctorNameProp || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Médico';
 
   useEffect(() => {
     Promise.all([
@@ -894,7 +894,7 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
       {/* ── Header ── */}
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 32, fontWeight: 500, color: INK, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-          {greeting}, {doctorName.split(' ')[0]}
+          {greeting}, {doctorName.toLowerCase().includes('dr.') || doctorName.toLowerCase().startsWith('dr ') ? doctorName.split(' ').slice(1).join(' ').split(' ')[0] : doctorName.split(' ')[0]}
         </h1>
         <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const }}>
           <p style={{ margin: 0, color: MU, fontSize: 14 }}>
@@ -2169,6 +2169,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [loadingC, setLoadingC] = useState(true);
   const [pendingVaccinesCount, setPendingVaccinesCount] = useState(0);
+  const [growthRecords, setGrowthRecords] = useState<any[]>([]);
   const guardian = primaryGuardian(patient);
   const isMobile = useIsMobile();
 
@@ -2178,6 +2179,12 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
       .then(setConsultations)
       .catch(() => {})
       .finally(() => setLoadingC(false));
+  }, [patient.id, refetchTrigger]);
+
+  useEffect(() => {
+    db.fetchGrowthRecords(patient.id)
+      .then(setGrowthRecords)
+      .catch(() => setGrowthRecords([]));
   }, [patient.id, refetchTrigger]);
 
   useEffect(() => {
@@ -2196,6 +2203,9 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
   }, [patient.id, refetchTrigger]);
 
   const lastConsult = consultations[0];
+
+  // Obter última medida (peso, altura, perímetro cefálico) de growth_records ou consultas
+  const lastMeasurement = growthRecords.length > 0 ? growthRecords[growthRecords.length - 1] : null;
   const pend = pendingVaccinesCount;
 
   return (
@@ -2270,14 +2280,13 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
             {/* Health Metrics */}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 12 }}>
               {[
-                { label: 'PESO ATUAL', value: lastConsult?.summary.peso || '—', unit: 'kg', detail: lastConsult ? '+0.3 kg em 30d · -P55' : '' },
-                { label: 'ALTURA', value: lastConsult?.summary.altura || '—', unit: 'cm', detail: lastConsult ? '+1.2 cm em 30d · -P50' : '' },
-                { label: 'IMC', value: lastConsult ? (Math.random() * 5 + 13).toFixed(1) : '—', unit: 'eutrófica', detail: lastConsult ? '· P60' : '' },
-              ].map(({ label, value, unit, detail }) => (
+                { label: 'PESO ATUAL', value: lastMeasurement?.weight ? `${lastMeasurement.weight}` : '—', unit: 'kg' },
+                { label: 'ALTURA', value: lastMeasurement?.height ? `${lastMeasurement.height}` : '—', unit: 'cm' },
+                { label: 'P. CEFÁLICO', value: lastMeasurement?.hc ? `${lastMeasurement.hc}` : '—', unit: 'cm' },
+              ].map(({ label, value, unit }) => (
                 <Card key={label} style={{ padding: '16px 20px', textAlign: 'center' as const }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 8 }}>{label}</div>
                   <div style={{ fontSize: 24, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: INK }}>{value}<span style={{ fontSize: 14, color: MU, marginLeft: 4 }}>{unit}</span></div>
-                  {detail && <div style={{ fontSize: 11, color: MU, marginTop: 6 }}>{detail}</div>}
                 </Card>
               ))}
             </div>
@@ -2323,16 +2332,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                   </div>
                   <div style={{ padding: '20px 24px' }}>
                     <ResponsiveContainer width="100%" height={220}>
-                      <LineChart data={[
-                        { date: '0a', weight: 3.2 },
-                        { date: '3m', weight: 6.5 },
-                        { date: '6m', weight: 8.0 },
-                        { date: '9m', weight: 9.2 },
-                        { date: '1a', weight: 10.2 },
-                        { date: '2a', weight: 12.5 },
-                        { date: '3a', weight: 14.0 },
-                        { date: '4a', weight: 14.2 },
-                      ]}>
+                      <LineChart data={growthRecords.length > 0 ? growthRecords.sort((a, b) => a.month - b.month).map(g => ({ date: `${g.month}m`, weight: g.weight })) : []}>
                         <CartesianGrid strokeDasharray="3 3" stroke={BO} />
                         <XAxis dataKey="date" tick={{ fontSize: 11, fill: MU }} />
                         <YAxis tick={{ fontSize: 11, fill: MU }} />
@@ -3666,7 +3666,7 @@ export default function App() {
     <MobileCtx.Provider value={isMobile}>
       <ProntuarioFormatCtx.Provider value={{ format: prontuarioFormat, setFormat: setProntuarioFormat }}>
         <Layout screen={screen} go={go} breadcrumb={breadcrumbs[screen]} onBack={screen === 'patient-detail' ? () => go('patients') : undefined} doctorName={doctorName} notifications={notifications} onNotificationClick={(patientId) => { const p = (activePatient?.id === patientId ? activePatient : null); if (patientId) { db.fetchPatients().then(ps => { const found = ps.find(x => x.id === patientId); if (found) { setActivePatient(found); go('patient-detail'); } }); } }}>
-          {screen === 'dashboard' && <DashboardPage go={go} setActivePatient={setActivePatient} user={user} />}
+          {screen === 'dashboard' && <DashboardPage go={go} setActivePatient={setActivePatient} user={user} doctorName={doctorName} />}
           {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
           {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={() => setFlow('consent')} refetchTrigger={refetchTrigger} />}
           {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} />}
