@@ -2275,152 +2275,354 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
       </div>
       <div style={{ paddingTop: isMobile ? 14 : 24 }}>
 
-        {tab === 'Resumo' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Health Metrics */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 12 }}>
-              {[
-                { label: 'PESO ATUAL', value: lastMeasurement?.weight ? `${lastMeasurement.weight}` : '—', unit: 'kg' },
-                { label: 'ALTURA', value: lastMeasurement?.height ? `${lastMeasurement.height}` : '—', unit: 'cm' },
-                { label: 'P. CEFÁLICO', value: lastMeasurement?.hc ? `${lastMeasurement.hc}` : '—', unit: 'cm' },
-              ].map(({ label, value, unit }) => (
-                <Card key={label} style={{ padding: '16px 20px', textAlign: 'center' as const }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 8 }}>{label}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: INK }}>{value}<span style={{ fontSize: 14, color: MU, marginLeft: 4 }}>{unit}</span></div>
-                </Card>
-              ))}
-            </div>
+        {tab === 'Resumo' && (() => {
+          // ── Helpers para derivar dados clínicos ──────────────────────────────
+          const today = new Date();
+          const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-            {/* Main Content Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 16 }}>
+          function consultDaysDiff(c: Consultation) {
+            const d = new Date(c.scheduled_at);
+            const dm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            return Math.floor((todayMidnight.getTime() - dm.getTime()) / 86400000);
+          }
+
+          // Última consulta passada (não futura)
+          const pastConsults = consultations.filter(c => consultDaysDiff(c) >= 0);
+          const last = pastConsults[0] ?? null;
+          const allMeds = consultations
+            .filter(c => c.prescription && c.prescription.trim())
+            .map(c => ({ prescription: c.prescription, date: c.scheduled_at, complaint: c.chief_complaint }));
+          const currentMeds = allMeds.slice(0, 3);
+
+          // Retorno
+          const returnDate = patient.next_return ? new Date(patient.next_return) : null;
+          const returnDays = returnDate
+            ? Math.floor((new Date(returnDate.getFullYear(), returnDate.getMonth(), returnDate.getDate()).getTime() - todayMidnight.getTime()) / 86400000)
+            : null;
+
+          // Bullets do resumo clínico
+          const clinicalBullets: string[] = [];
+          if (consultations.length === 0) {
+            clinicalBullets.push('Nenhuma consulta registrada ainda.');
+          } else {
+            if (last?.plan) clinicalBullets.push(`Último acompanhamento: ${last.chief_complaint || 'consulta registrada'}.`);
+            if (lastMeasurement?.weight) clinicalBullets.push(`Peso atual: ${lastMeasurement.weight} kg${lastMeasurement.height ? ` · Altura: ${lastMeasurement.height} cm` : ''}.`);
+            if (pend === 0) clinicalBullets.push('Vacinação em dia conforme calendário PNI.');
+            else clinicalBullets.push(`Vacinação com ${pend} pendência${pend > 1 ? 's' : ''} no calendário PNI.`);
+            if (returnDate) clinicalBullets.push(`Próximo retorno previsto: ${fmtDate(patient.next_return!)}.`);
+            if (patient.notes) clinicalBullets.push(`Alergia registrada: ${patient.notes}.`);
+            else clinicalBullets.push('Sem alergias registradas.');
+            if (currentMeds.length === 0) clinicalBullets.push('Sem medicações contínuas registradas.');
+          }
+
+          // Alertas
+          type AlertItem = { text: string; level: 'danger' | 'warn' | 'info' };
+          const alerts: AlertItem[] = [];
+          if (pend > 0) alerts.push({ text: `${pend} vacina${pend > 1 ? 's' : ''} pendente${pend > 1 ? 's' : ''} no calendário PNI.`, level: 'warn' });
+          if (returnDays !== null && returnDays <= 7 && returnDays >= 0) alerts.push({ text: `Retorno previsto em ${returnDays === 0 ? 'hoje' : `${returnDays} dia${returnDays > 1 ? 's' : ''}`} (${fmtDate(patient.next_return!)}).`, level: returnDays <= 2 ? 'danger' : 'warn' });
+          else if (returnDays !== null && returnDays < 0) alerts.push({ text: `Retorno vencido há ${Math.abs(returnDays)} dia${Math.abs(returnDays) > 1 ? 's' : ''} (${fmtDate(patient.next_return!)}).`, level: 'danger' });
+          else if (returnDate) alerts.push({ text: `Retorno previsto: ${fmtDate(patient.next_return!)}.`, level: 'info' });
+          if (patient.notes) alerts.push({ text: `Alergia registrada: ${patient.notes}.`, level: 'warn' });
+          if (consultations.length === 0) alerts.push({ text: 'Nenhuma consulta registrada. Inicie o acompanhamento.', level: 'info' });
+
+          const alertColors = {
+            danger: { bg: '#FEF2F2', border: '#FECACA', text: DES, icon: DES },
+            warn:   { bg: WARNL,   border: '#F3C07B', text: WARN, icon: WARN },
+            info:   { bg: '#EFF6FF', border: '#BFDBFE', text: '#3B82F6', icon: '#3B82F6' },
+          };
+
+          // Curva de crescimento — interpretação
+          const sortedGrowth = [...growthRecords].sort((a, b) => a.month - b.month);
+          const growthChartData = sortedGrowth.map(g => ({ date: `${g.month}m`, weight: g.weight }));
+          let growthNote = 'Ainda há poucas medições para avaliar tendência.';
+          if (sortedGrowth.length >= 2) {
+            const prev = sortedGrowth[sortedGrowth.length - 2];
+            const curr = sortedGrowth[sortedGrowth.length - 1];
+            const diff = (curr.weight ?? 0) - (prev.weight ?? 0);
+            growthNote = diff > 0
+              ? `Ganho de ${diff.toFixed(2)} kg desde a medição anterior — trajetória estável.`
+              : diff === 0
+              ? 'Peso estável na última medição. Acompanhar evolução.'
+              : 'Queda de peso observada. Acompanhar na próxima consulta.';
+          } else if (sortedGrowth.length === 1) {
+            growthNote = `Primeira medição registrada: ${sortedGrowth[0].weight} kg. Acompanhar evolução.`;
+          }
+
+          // Estilo dos cards de seção
+          const SH = ({ title, right }: { title: string; right?: React.ReactNode }) => (
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>{title}</span>
+              {right}
+            </div>
+          );
+
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '3fr 2fr', gap: 16 }}>
+
+              {/* ══ COLUNA ESQUERDA ═══════════════════════════════════════════ */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* Recent Consultations */}
+
+                {/* 1. Resumo clínico */}
                 <Card>
-                  <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Consultas recentes</div>
-                  {consultations.length === 0 ? (
-                    <div style={{ padding: '40px 20px', textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada</div>
-                  ) : consultations.slice(0, 4).map((c, i) => {
-                    // Calculate days difference considering only dates (ignore time), using Brasília timezone
-                    const today = new Date();
-                    const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                    const consultDate = new Date(c.scheduled_at);
-                    const consultDateAtMidnight = new Date(consultDate.getFullYear(), consultDate.getMonth(), consultDate.getDate());
-                    const daysDiff = Math.floor((todayAtMidnight.getTime() - consultDateAtMidnight.getTime()) / (1000 * 60 * 60 * 24));
-                    const isFuture = daysDiff < 0;
-                    const isToday = daysDiff === 0;
-                    const status = isFuture ? 'Próxima' : (isToday ? 'Hoje' : 'Concluída');
-                    const timeLabel = isToday ? 'HOJE' : (isFuture ? `PRÓXIMA (${Math.abs(daysDiff)}d)` : `HÁ ${daysDiff} ${daysDiff === 1 ? 'DIA' : 'DIAS'}`);
-                    return (
-                      <div key={c.id} style={{ padding: '16px 20px', borderBottom: i < Math.min(consultations.length, 4) - 1 ? `1px solid ${BO}` : 'none' }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <SH title="Resumo clínico" right={<span style={{ fontSize: 11, color: MU }}>gerado dos dados registrados</span>} />
+                  <div style={{ padding: '16px 20px' }}>
+                    {clinicalBullets.length === 0 ? (
+                      <p style={{ margin: 0, fontSize: 13, color: MU }}>Resumo clínico ainda não disponível. Realize a primeira consulta para gerar o acompanhamento.</p>
+                    ) : (
+                      <ul style={{ margin: 0, padding: '0 0 0 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {clinicalBullets.map((b, i) => (
+                          <li key={i} style={{ fontSize: 13, color: INK, lineHeight: 1.5 }}>{b}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </Card>
+
+                {/* 2. Plano atual */}
+                <Card>
+                  <SH title="Plano atual" right={last ? <span style={{ fontSize: 11, color: MU }}>{fmtDate(last.scheduled_at.split('T')[0])}</span> : undefined} />
+                  <div style={{ padding: '16px 20px' }}>
+                    {!last ? (
+                      <p style={{ margin: 0, fontSize: 13, color: MU }}>Plano atual ainda não registrado.</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {last.plan && (
                           <div>
-                            <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 12, fontWeight: 600, color: MU }}>
-                              {timeLabel} · {c.duration_minutes || 28} MIN
-                            </div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Conduta</div>
+                            <p style={{ margin: 0, fontSize: 13, color: INK, lineHeight: 1.6 }}>{last.plan}</p>
                           </div>
-                          <span style={{ fontSize: 12, color: isFuture ? P : (isToday ? ACCENT : SUC), fontWeight: 500 }}>{status}</span>
+                        )}
+                        {last.summary?.conduta && last.summary.conduta !== last.plan && (
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Orientações</div>
+                            <p style={{ margin: 0, fontSize: 13, color: INK, lineHeight: 1.6 }}>{last.summary.conduta}</p>
+                          </div>
+                        )}
+                        {patient.next_return && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: PL, borderRadius: 8, marginTop: 4 }}>
+                            <CalendarBlank size={14} color={P} />
+                            <span style={{ fontSize: 13, color: P, fontWeight: 500 }}>Retorno previsto: {fmtDate(patient.next_return)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* 3. Medicações */}
+                <Card>
+                  <SH title="Medicações atuais" />
+                  <div style={{ padding: '16px 20px' }}>
+                    {patient.notes && patient.notes.toLowerCase().match(/dipirona|amoxicilina|ibuprofeno|paracetamol|nimesulida/) && (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, marginBottom: 12 }}>
+                        <Warning size={14} color={DES} />
+                        <span style={{ fontSize: 12, color: DES }}>Atenção: alergia registrada pode envolver medicação. Revisar antes de prescrever.</span>
+                      </div>
+                    )}
+                    {currentMeds.length === 0 ? (
+                      <p style={{ margin: 0, fontSize: 13, color: MU }}>Sem medicações atuais registradas.</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {currentMeds.map((m, i) => (
+                          <div key={i} style={{ padding: '12px 14px', background: BG, borderRadius: 8, border: `1px solid ${BO}` }}>
+                            <div style={{ fontSize: 11, color: MU, marginBottom: 4, fontFamily: '"JetBrains Mono", monospace' }}>
+                              Prescrito em {fmtDate(m.date.split('T')[0])} · {m.complaint}
+                            </div>
+                            <p style={{ margin: 0, fontSize: 13, color: INK, lineHeight: 1.6, whiteSpace: 'pre-line' as const }}>{m.prescription}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* 4. Dados antropométricos */}
+                <Card>
+                  <SH title="Dados antropométricos"
+                    right={lastMeasurement ? <span style={{ fontSize: 11, color: MU }}>última medição: mês {lastMeasurement.month}</span> : undefined}
+                  />
+                  <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                    {[
+                      { label: 'Peso', value: lastMeasurement?.weight, unit: 'kg', note: lastMeasurement?.weight ? 'Dentro do esperado' : 'Sem dados' },
+                      { label: 'Altura', value: lastMeasurement?.height, unit: 'cm', note: lastMeasurement?.height ? 'Acompanhar evolução' : 'Sem dados' },
+                      { label: 'P. Cefálico', value: lastMeasurement?.hc, unit: 'cm', note: lastMeasurement?.hc ? 'Acompanhar evolução' : 'Sem dados' },
+                    ].map(({ label, value, unit, note }) => (
+                      <div key={label} style={{ textAlign: 'center', padding: '14px 12px', background: BG, borderRadius: 8, border: `1px solid ${BO}` }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 8 }}>{label}</div>
+                        <div style={{ fontSize: 22, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: INK, lineHeight: 1 }}>
+                          {value ?? '—'}<span style={{ fontSize: 12, color: MU, marginLeft: 3 }}>{value ? unit : ''}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: MU, marginTop: 6 }}>{note}</div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {/* 5. Consultas recentes */}
+                <Card>
+                  <SH title="Consultas recentes"
+                    right={<Btn variant="ghost" size="sm" onClick={() => setTab('Consultas')}>Ver todas</Btn>}
+                  />
+                  {consultations.length === 0 ? (
+                    <div style={{ padding: '32px 20px', textAlign: 'center' as const }}>
+                      <p style={{ margin: '0 0 12px', fontSize: 13, color: MU }}>Nenhuma consulta registrada.</p>
+                      <Btn size="sm" onClick={onStartConsult}><Plus size={14} /> Iniciar primeira consulta</Btn>
+                    </div>
+                  ) : consultations.slice(0, 3).map((c, i) => {
+                    const dd = consultDaysDiff(c);
+                    const isFuture = dd < 0;
+                    const isToday = dd === 0;
+                    const statusLabel = isFuture ? 'Próxima' : isToday ? 'Hoje' : 'Concluída';
+                    const statusColor = isFuture ? P : isToday ? ACCENT : SUC;
+                    const timeLabel = isToday ? 'HOJE' : isFuture ? `PRÓXIMA · ${Math.abs(dd)}d` : `HÁ ${dd} ${dd === 1 ? 'DIA' : 'DIAS'}`;
+                    return (
+                      <div key={c.id} style={{ padding: '14px 20px', borderBottom: i < Math.min(consultations.length, 3) - 1 ? `1px solid ${BO}` : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600, color: MU }}>{timeLabel}</div>
+                          <span style={{ fontSize: 12, color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
                         </div>
                         <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{c.chief_complaint}</div>
-                        <div style={{ fontSize: 12, color: MU, marginBottom: 4 }}>HD: {c.diagnosis?.slice(0, 60) || 'N/A'}</div>
-                        {c.plan && <div style={{ fontSize: 12, color: MU }}>Conduta: {c.plan.slice(0, 80)}…</div>}
-                        <div style={{ marginTop: 10, display: 'flex', gap: 12 }}>
-                          <Btn variant="ghost" size="sm" onClick={() => { setSelectedConsult(c); setTab('Consultas'); }}>Ver prontuário completo</Btn>
-                          <Btn variant="ghost" size="sm">Ouvir transcrição</Btn>
+                        {c.diagnosis && <div style={{ fontSize: 12, color: MU, marginBottom: 2 }}>Hipótese: {c.diagnosis.slice(0, 70)}{c.diagnosis.length > 70 ? '…' : ''}</div>}
+                        {!isFuture && c.plan && <div style={{ fontSize: 12, color: MU }}>Conduta: {c.plan.slice(0, 70)}{c.plan.length > 70 ? '…' : ''}</div>}
+                        {c.prescription && !isFuture && (
+                          <div style={{ marginTop: 6, padding: '6px 10px', background: BG, borderRadius: 6, border: `1px solid ${BO}`, fontSize: 12, color: INK }}>
+                            Rx: {c.prescription.slice(0, 80)}{c.prescription.length > 80 ? '…' : ''}
+                          </div>
+                        )}
+                        <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
+                          <Btn variant="ghost" size="sm" onClick={() => { setSelectedConsult(c); setTab('Consultas'); }}>Ver prontuário</Btn>
+                          {isFuture && <Btn size="sm" onClick={onStartConsult}><Stethoscope size={13} /> Iniciar consulta</Btn>}
                         </div>
                       </div>
                     );
                   })}
                 </Card>
 
-                {/* Growth Chart */}
+                {/* 6. Curva de crescimento */}
                 <Card>
-                  <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Curva de crescimento</div>
-                    <span style={{ fontSize: 12, color: MU }}>PESO</span>
+                  <SH title="Curva de crescimento"
+                    right={<Btn variant="ghost" size="sm" onClick={() => setTab('Crescimento')}>Ver completo</Btn>}
+                  />
+                  <div style={{ padding: '12px 20px 4px', fontSize: 12, color: MU }}>{growthNote}</div>
+                  <div style={{ padding: '8px 16px 20px' }}>
+                    {growthChartData.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '32px 0', color: MU, fontSize: 13 }}>Nenhuma medição registrada. Adicione dados de crescimento na aba Crescimento.</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={200}>
+                        <LineChart data={growthChartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={BO} />
+                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: MU }} />
+                          <YAxis tick={{ fontSize: 11, fill: MU }} />
+                          <Tooltip contentStyle={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 8 }} formatter={(v: any) => [`${v} kg`, 'Peso']} />
+                          <Line type="monotone" dataKey="weight" stroke={P} strokeWidth={2} dot={{ fill: P, r: 4 }} isAnimationActive={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
-                  <div style={{ padding: '20px 24px' }}>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <LineChart data={growthRecords.length > 0 ? growthRecords.sort((a, b) => a.month - b.month).map(g => ({ date: `${g.month}m`, weight: g.weight })) : []}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={BO} />
-                        <XAxis dataKey="date" tick={{ fontSize: 11, fill: MU }} />
-                        <YAxis tick={{ fontSize: 11, fill: MU }} />
-                        <Tooltip contentStyle={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 8 }} />
-                        <Line type="monotone" dataKey="weight" stroke={P} strokeWidth={2} dot={{ fill: P, r: 4 }} isAnimationActive={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div style={{ padding: '12px 20px', borderTop: `1px solid ${BO}`, fontSize: 11, color: MU, textAlign: 'center' as const }}>Atualmente em P55 · trajetória estável</div>
                 </Card>
               </div>
 
+              {/* ══ COLUNA DIREITA ════════════════════════════════════════════ */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* Vaccine Schedule */}
+
+                {/* Alertas e pontos de atenção */}
                 <Card>
-                  <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Esquema vacinal</div>
-                    <CheckCircle size={14} color={SUC} />
-                  </div>
-                  <div style={{ padding: 16 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
-                      {[
-                        { name: 'BCG', status: 'done' },
-                        { name: 'Hep B', status: 'done' },
-                        { name: 'Penta', status: 'done' },
-                        { name: 'Pólio', status: 'done' },
-                        { name: 'Pneumo', status: 'done' },
-                        { name: 'Rota', status: 'done' },
-                        { name: 'Menin', status: 'done' },
-                        { name: 'FA', status: 'done' },
-                        { name: 'Tríplice', status: 'done' },
-                        { name: 'VarA', status: 'done' },
-                        { name: 'D2 5a', status: 'pending' },
-                        { name: 'HPV', status: 'done' },
-                      ].map((vac) => (
-                        <div key={vac.name} style={{
-                          padding: '12px 8px',
-                          background: vac.status === 'pending' ? '#FBE8D3' : '#E8F5E9',
-                          border: `1px solid ${vac.status === 'pending' ? '#D4A574' : '#A5D6A7'}`,
-                          borderRadius: 8,
-                          textAlign: 'center' as const,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: vac.status === 'pending' ? '#C68B3E' : '#5B8A6F',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}>
-                          {vac.name}
+                  <SH title="Pontos de atenção"
+                    right={alerts.length === 0
+                      ? <CheckCircle size={14} color={SUC} />
+                      : <span style={{ fontSize: 11, fontWeight: 600, color: alerts.some(a => a.level === 'danger') ? DES : WARN }}>{alerts.length}</span>
+                    }
+                  />
+                  <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {alerts.length === 0 ? (
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8 }}>
+                        <CheckCircle size={14} color={SUC} />
+                        <span style={{ fontSize: 13, color: SUC }}>Sem pontos críticos identificados.</span>
+                      </div>
+                    ) : alerts.map((a, i) => {
+                      const c = alertColors[a.level];
+                      return (
+                        <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', background: c.bg, border: `1px solid ${c.border}`, borderRadius: 8 }}>
+                          <Warning size={14} color={c.icon} style={{ marginTop: 1, flexShrink: 0 }} />
+                          <span style={{ fontSize: 13, color: c.text, lineHeight: 1.5 }}>{a.text}</span>
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
-                  <div style={{ padding: '12px 20px', borderTop: `1px solid ${BO}`, fontSize: 11, color: MU, textAlign: 'center' as const }}>Próxima dose: Tríplice viral D2 em 11 meses.</div>
                 </Card>
 
-                {/* Allergies & Notes */}
+                {/* Vacinas resumo */}
                 <Card>
-                  <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Alergias e observações</div>
-                  <div style={{ padding: 20 }}>
+                  <SH title="Vacinas"
+                    right={
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {pend === 0
+                          ? <span style={{ fontSize: 11, fontWeight: 600, color: SUC, background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 99, padding: '2px 8px' }}>Em dia</span>
+                          : <span style={{ fontSize: 11, fontWeight: 600, color: WARN, background: WARNL, border: `1px solid #F3C07B`, borderRadius: 99, padding: '2px 8px' }}>{pend} pendente{pend > 1 ? 's' : ''}</span>
+                        }
+                        <Btn variant="ghost" size="sm" onClick={() => setTab('Vacinas')}>Ver</Btn>
+                      </div>
+                    }
+                  />
+                  <div style={{ padding: '12px 16px' }}>
+                    {pend === 0 ? (
+                      <div style={{ fontSize: 13, color: MU, padding: '4px 0' }}>Vacinação em dia conforme calendário PNI.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ fontSize: 12, color: MU, marginBottom: 4 }}>{pend} vacina{pend > 1 ? 's' : ''} pendente{pend > 1 ? 's' : ''} para a idade atual.</div>
+                        <Btn variant="secondary" size="sm" onClick={() => setTab('Vacinas')} style={{ justifyContent: 'center' }}>Ver esquema completo</Btn>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Alergias e observações */}
+                <Card>
+                  <SH title="Alergias e observações" />
+                  <div style={{ padding: '14px 16px' }}>
                     {patient.notes ? (
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                        <div style={{ width: 24, height: 24, borderRadius: 4, background: WARNL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <Warning size={14} color={WARN} />
-                        </div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', background: WARNL, border: `1px solid #F3C07B`, borderRadius: 8 }}>
+                        <Warning size={16} color={WARN} style={{ marginTop: 1, flexShrink: 0 }} />
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: 13, color: WARN, marginBottom: 4 }}>Diploema — rash cutâneo</div>
-                          <div style={{ fontSize: 12, color: MU, lineHeight: 1.5 }}>Pele com asma. Mãe rifte alérgica.</div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: WARN, marginBottom: 4 }}>Alergia registrada</div>
+                          <div style={{ fontSize: 13, color: INK, lineHeight: 1.5 }}>{patient.notes}</div>
+                          <div style={{ fontSize: 11, color: MU, marginTop: 6 }}>Considerar na prescrição e antes de procedimentos.</div>
                         </div>
                       </div>
                     ) : (
-                      <div style={{ fontSize: 12, color: MU, textAlign: 'center' as const, padding: '12px 0' }}>Nenhuma alergia registrada</div>
+                      <div style={{ fontSize: 13, color: MU }}>Nenhuma alergia registrada.</div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Insights longitudinais */}
+                <Card>
+                  <SH title="Insights longitudinais" right={<span style={{ fontSize: 11, color: MU }}>com base no histórico</span>} />
+                  <div style={{ padding: '12px 16px' }}>
+                    {consultations.length < 2 ? (
+                      <p style={{ margin: 0, fontSize: 13, color: MU }}>Insights serão gerados após mais consultas registradas.</p>
+                    ) : (
+                      <ul style={{ margin: 0, padding: '0 0 0 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {[
+                          sortedGrowth.length >= 2 ? growthNote : null,
+                          pend > 0
+                            ? `Vacinação apresenta ${pend} pendência${pend > 1 ? 's' : ''} observada${pend > 1 ? 's' : ''} no histórico.`
+                            : 'Vacinação em dia em todas as consultas registradas.',
+                          consultations.filter(c => c.prescription).length > 0
+                            ? `Prescrições registradas em ${consultations.filter(c => c.prescription).length} consulta${consultations.filter(c => c.prescription).length > 1 ? 's' : ''}.`
+                            : 'Sem prescrições registradas no histórico.',
+                          patient.notes ? `Alergia documentada: ${patient.notes}.` : null,
+                        ].filter(Boolean).map((b, i) => (
+                          <li key={i} style={{ fontSize: 13, color: INK, lineHeight: 1.5 }}>{b as string}</li>
+                        ))}
+                      </ul>
                     )}
                   </div>
                 </Card>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {tab === 'Consultas' && (
           selectedConsult
