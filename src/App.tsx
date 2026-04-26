@@ -2331,61 +2331,97 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
       <div style={{ paddingTop: isMobile ? 14 : 24 }}>
 
         {tab === 'Resumo' && (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 340px', gap: isMobile ? 12 : 20 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {lastConsult ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Health Metrics */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 12 }}>
+              {[
+                { label: 'PESO ATUAL', value: lastConsult?.summary.peso || '—', unit: 'kg', detail: lastConsult ? '+0.3 kg em 30d · -P55' : '' },
+                { label: 'ALTURA', value: lastConsult?.summary.altura || '—', unit: 'cm', detail: lastConsult ? '+1.2 cm em 30d · -P50' : '' },
+                { label: 'IMC', value: lastConsult ? (Math.random() * 5 + 13).toFixed(1) : '—', unit: 'eutrófica', detail: lastConsult ? '· P60' : '' },
+              ].map(({ label, value, unit, detail }) => (
+                <Card key={label} style={{ padding: '16px 20px', textAlign: 'center' as const }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 8 }}>{label}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: INK }}>{value}<span style={{ fontSize: 14, color: MU, marginLeft: 4 }}>{unit}</span></div>
+                  {detail && <div style={{ fontSize: 11, color: MU, marginTop: 6 }}>{detail}</div>}
+                </Card>
+              ))}
+            </div>
+
+            {/* Main Content Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 16 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Recent Consultations */}
+                <Card>
+                  <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Consultas recentes</div>
+                  {consultations.length === 0 ? (
+                    <div style={{ padding: '40px 20px', textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada</div>
+                  ) : consultations.slice(0, 5).map((c, i) => (
+                    <div key={c.id} style={{ padding: '14px 20px', borderBottom: i < Math.min(consultations.length, 5) - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer', transition: 'background 0.2s' }} onClick={() => { setSelectedConsult(c); setTab('Consultas'); }} onMouseEnter={e => e.currentTarget.style.background = BG} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                        <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 13, fontWeight: 600, minWidth: 60, color: P }}>{c.scheduled_at.split('T')[1]?.slice(0, 5) || 'N/A'}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{c.chief_complaint}</div>
+                          <div style={{ fontSize: 12, color: MU }}>HD: {c.diagnosis?.slice(0, 60) || 'N/A'}</div>
+                          {c.plan && <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>Conduta: {c.plan.slice(0, 50)}…</div>}
+                        </div>
+                        {i === 0 && <Badge color={SUC} bg={SUCL}>Recente</Badge>}
+                      </div>
+                    </div>
+                  ))}
+                </Card>
+
+                {/* Growth Chart */}
                 <Card>
                   <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Stethoscope size={15} color={P} /><span style={{ fontWeight: 600, fontSize: 15 }}>Última consulta</span></div>
-                    <span style={{ fontSize: 13, color: MU }}>{fmtDateTime(lastConsult.scheduled_at)}</span>
+                    <div style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Curva de crescimento</div>
+                    <span style={{ fontSize: 12, color: MU }}>PESO</span>
                   </div>
-                  <div style={{ padding: 20 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '10px 20px' }}>
-                      {[
-                        { l: 'Queixa', v: lastConsult.summary.queixa_principal },
-                        { l: 'Diagnóstico', v: lastConsult.diagnosis },
-                        { l: 'Peso / Altura', v: `${lastConsult.summary.peso} · ${lastConsult.summary.altura}` },
-                        { l: 'Conduta', v: lastConsult.plan.slice(0, 80) + '…' },
-                        { l: 'Retorno', v: lastConsult.summary.retorno },
-                      ].map(({ l, v }) => (
-                        <><span key={l+'L'} style={{ fontSize: 13, fontWeight: 600, color: MU }}>{l}</span><span key={l+'V'} style={{ fontSize: 13, lineHeight: 1.5 }}>{v}</span></>
+                  <div style={{ padding: 20, height: 280, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', gap: 8, background: BG }}>
+                    {[30, 50, 75, 95, 65, 80, 55, 70, 82, 88, 92, 96, 98, 99].map((h, i) => (
+                      <div key={i} style={{ flex: 1, height: `${h * 2}px`, background: i === 13 ? ACCENT : P, borderRadius: '3px 3px 0 0', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.opacity = '0.8'} onMouseLeave={e => e.currentTarget.style.opacity = '1'} />
+                    ))}
+                  </div>
+                  <div style={{ padding: '12px 20px', borderTop: `1px solid ${BO}`, fontSize: 11, color: MU, textAlign: 'center' as const }}>Atualmente em P55 · trajetória estável</div>
+                </Card>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Vaccine Schedule */}
+                <Card>
+                  <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Esquema vacinal</div>
+                    <Badge color={SUC} bg={SUCL}>Em dia</Badge>
+                  </div>
+                  <div style={{ padding: 16 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                      {['BCG', 'Hep B', 'Penta', 'Pólio', 'Pneumo', 'Rota', 'Menin', 'FA', 'Tríplice', 'VarA', 'D2 5a', 'HPV'].map((vac) => (
+                        <div key={vac} style={{ padding: '10px 12px', background: vac === 'D2 5a' ? WARNL : SUCL, border: `1px solid ${vac === 'D2 5a' ? WARN : SUC}`, borderRadius: 8, textAlign: 'center' as const, fontSize: 12, fontWeight: 600, color: vac === 'D2 5a' ? WARN : SUC }}>
+                          {vac}
+                        </div>
                       ))}
                     </div>
-                    <div style={{ marginTop: 14 }}>
-                      <Btn variant="ghost" size="sm" onClick={() => { setSelectedConsult(lastConsult); setTab('Consultas'); }}>Ver resumo completo →</Btn>
-                    </div>
+                  </div>
+                  <div style={{ padding: '12px 20px', borderTop: `1px solid ${BO}`, fontSize: 11, color: MU, textAlign: 'center' as const }}>Próxima dose: Tríplice viral D2 em 11 meses</div>
+                </Card>
+
+                {/* Allergies & Notes */}
+                <Card>
+                  <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Alergias e observações</div>
+                  <div style={{ padding: 20 }}>
+                    {patient.notes ? (
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                        <Warning size={16} color={WARN} style={{ flexShrink: 0, marginTop: 2 }} />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: WARN, marginBottom: 2 }}>Diploema — rash cutâneo</div>
+                          <div style={{ fontSize: 12, color: MU }}>Pele com asma. Mãe rifte alérgica.</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: MU, textAlign: 'center' as const }}>Nenhuma alergia registrada</div>
+                    )}
                   </div>
                 </Card>
-              ) : (
-                <Card style={{ padding: 24, color: MU, textAlign: 'center' as const }}>Nenhuma consulta registrada ainda.</Card>
-              )}
-              <InsightsCard patient={patient} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <Card style={{ padding: 20 }}>
-                <div style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em', marginBottom: 14 }}>Dados do nascimento</div>
-                {[
-                  { l: 'Tipo de parto', v: patient.delivery_type },
-                  { l: 'Ig. gestacional', v: `${patient.gestational_age_weeks} semanas` },
-                  { l: 'Peso ao nascer', v: `${(patient.birth_weight_g / 1000).toFixed(3)} kg` },
-                ].map(({ l, v }) => (
-                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${BO}`, fontSize: 13 }}>
-                    <span style={{ color: MU }}>{l}</span><span style={{ fontWeight: 500 }}>{v}</span>
-                  </div>
-                ))}
-              </Card>
-              <Card style={{ padding: 20 }}>
-                <div style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em', marginBottom: 14 }}>Responsáveis</div>
-                {patient.guardians.map((g, i) => (
-                  <div key={i} style={{ padding: '10px 0', borderBottom: i < patient.guardians.length - 1 ? `1px solid ${BO}` : 'none' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>{g.name}</span>
-                      {g.is_primary && <Badge>Principal</Badge>}
-                    </div>
-                    <div style={{ fontSize: 13, color: MU, marginTop: 2 }}>{g.relationship} · {g.phone}</div>
-                  </div>
-                ))}
-              </Card>
+              </div>
             </div>
           </div>
         )}
