@@ -2355,19 +2355,29 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                   <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Consultas recentes</div>
                   {consultations.length === 0 ? (
                     <div style={{ padding: '40px 20px', textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada</div>
-                  ) : consultations.slice(0, 5).map((c, i) => (
-                    <div key={c.id} style={{ padding: '14px 20px', borderBottom: i < Math.min(consultations.length, 5) - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer', transition: 'background 0.2s' }} onClick={() => { setSelectedConsult(c); setTab('Consultas'); }} onMouseEnter={e => e.currentTarget.style.background = BG} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                        <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 13, fontWeight: 600, minWidth: 60, color: P }}>{c.scheduled_at.split('T')[1]?.slice(0, 5) || 'N/A'}</div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{c.chief_complaint}</div>
-                          <div style={{ fontSize: 12, color: MU }}>HD: {c.diagnosis?.slice(0, 60) || 'N/A'}</div>
-                          {c.plan && <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>Conduta: {c.plan.slice(0, 50)}…</div>}
+                  ) : consultations.slice(0, 4).map((c, i) => {
+                    const daysDiff = Math.floor((new Date().getTime() - new Date(c.scheduled_at).getTime()) / (1000 * 60 * 60 * 24));
+                    const status = i === 0 ? 'Em revisão' : 'Concluída';
+                    return (
+                      <div key={c.id} style={{ padding: '16px 20px', borderBottom: i < Math.min(consultations.length, 4) - 1 ? `1px solid ${BO}` : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <div>
+                            <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 12, fontWeight: 600, color: MU }}>
+                              {daysDiff === 0 ? 'HOJE' : `HÁ ${daysDiff} ${daysDiff === 1 ? 'DIA' : 'DIAS'}`} · {c.duration_minutes || 28} MIN
+                            </div>
+                          </div>
+                          <span style={{ fontSize: 12, color: i === 0 ? ACCENT : SUC, fontWeight: 500 }}>{status}</span>
                         </div>
-                        {i === 0 && <Badge color={SUC} bg={SUCL}>Recente</Badge>}
+                        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{c.chief_complaint}</div>
+                        <div style={{ fontSize: 12, color: MU, marginBottom: 4 }}>HD: {c.diagnosis?.slice(0, 60) || 'N/A'}</div>
+                        {c.plan && <div style={{ fontSize: 12, color: MU }}>Conduta: {c.plan.slice(0, 80)}…</div>}
+                        <div style={{ marginTop: 10, display: 'flex', gap: 12 }}>
+                          <Btn variant="ghost" size="sm" onClick={() => { setSelectedConsult(c); setTab('Consultas'); }}>Ver prontuário completo</Btn>
+                          <Btn variant="ghost" size="sm">Ouvir transcrição</Btn>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </Card>
 
                 {/* Growth Chart */}
@@ -2376,10 +2386,25 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                     <div style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Curva de crescimento</div>
                     <span style={{ fontSize: 12, color: MU }}>PESO</span>
                   </div>
-                  <div style={{ padding: 20, height: 280, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', gap: 8, background: BG }}>
-                    {[30, 50, 75, 95, 65, 80, 55, 70, 82, 88, 92, 96, 98, 99].map((h, i) => (
-                      <div key={i} style={{ flex: 1, height: `${h * 2}px`, background: i === 13 ? ACCENT : P, borderRadius: '3px 3px 0 0', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.opacity = '0.8'} onMouseLeave={e => e.currentTarget.style.opacity = '1'} />
-                    ))}
+                  <div style={{ padding: '20px 24px' }}>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <LineChart data={[
+                        { date: '0a', weight: 3.2 },
+                        { date: '3m', weight: 6.5 },
+                        { date: '6m', weight: 8.0 },
+                        { date: '9m', weight: 9.2 },
+                        { date: '1a', weight: 10.2 },
+                        { date: '2a', weight: 12.5 },
+                        { date: '3a', weight: 14.0 },
+                        { date: '4a', weight: 14.2 },
+                      ]}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={BO} />
+                        <XAxis dataKey="date" tick={{ fontSize: 11, fill: MU }} />
+                        <YAxis tick={{ fontSize: 11, fill: MU }} />
+                        <Tooltip contentStyle={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 8 }} />
+                        <Line type="monotone" dataKey="weight" stroke={P} strokeWidth={2} dot={{ fill: P, r: 4 }} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
                   <div style={{ padding: '12px 20px', borderTop: `1px solid ${BO}`, fontSize: 11, color: MU, textAlign: 'center' as const }}>Atualmente em P55 · trajetória estável</div>
                 </Card>
@@ -2390,18 +2415,44 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                 <Card>
                   <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Esquema vacinal</div>
-                    <Badge color={SUC} bg={SUCL}>Em dia</Badge>
+                    <CheckCircle size={14} color={SUC} />
                   </div>
                   <div style={{ padding: 16 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                      {['BCG', 'Hep B', 'Penta', 'Pólio', 'Pneumo', 'Rota', 'Menin', 'FA', 'Tríplice', 'VarA', 'D2 5a', 'HPV'].map((vac) => (
-                        <div key={vac} style={{ padding: '10px 12px', background: vac === 'D2 5a' ? WARNL : SUCL, border: `1px solid ${vac === 'D2 5a' ? WARN : SUC}`, borderRadius: 8, textAlign: 'center' as const, fontSize: 12, fontWeight: 600, color: vac === 'D2 5a' ? WARN : SUC }}>
-                          {vac}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
+                      {[
+                        { name: 'BCG', status: 'done' },
+                        { name: 'Hep B', status: 'done' },
+                        { name: 'Penta', status: 'done' },
+                        { name: 'Pólio', status: 'done' },
+                        { name: 'Pneumo', status: 'done' },
+                        { name: 'Rota', status: 'done' },
+                        { name: 'Menin', status: 'done' },
+                        { name: 'FA', status: 'done' },
+                        { name: 'Tríplice', status: 'done' },
+                        { name: 'VarA', status: 'done' },
+                        { name: 'D2 5a', status: 'pending' },
+                        { name: 'HPV', status: 'done' },
+                      ].map((vac) => (
+                        <div key={vac.name} style={{
+                          padding: '12px 8px',
+                          background: vac.status === 'pending' ? '#FBE8D3' : '#E8F5E9',
+                          border: `1px solid ${vac.status === 'pending' ? '#D4A574' : '#A5D6A7'}`,
+                          borderRadius: 8,
+                          textAlign: 'center' as const,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: vac.status === 'pending' ? '#C68B3E' : '#5B8A6F',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}>
+                          {vac.name}
                         </div>
                       ))}
                     </div>
                   </div>
-                  <div style={{ padding: '12px 20px', borderTop: `1px solid ${BO}`, fontSize: 11, color: MU, textAlign: 'center' as const }}>Próxima dose: Tríplice viral D2 em 11 meses</div>
+                  <div style={{ padding: '12px 20px', borderTop: `1px solid ${BO}`, fontSize: 11, color: MU, textAlign: 'center' as const }}>Próxima dose: Tríplice viral D2 em 11 meses.</div>
                 </Card>
 
                 {/* Allergies & Notes */}
@@ -2409,15 +2460,17 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                   <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>Alergias e observações</div>
                   <div style={{ padding: 20 }}>
                     {patient.notes ? (
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                        <Warning size={16} color={WARN} style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <div style={{ width: 24, height: 24, borderRadius: 4, background: WARNL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Warning size={14} color={WARN} />
+                        </div>
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: 13, color: WARN, marginBottom: 2 }}>Diploema — rash cutâneo</div>
-                          <div style={{ fontSize: 12, color: MU }}>Pele com asma. Mãe rifte alérgica.</div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: WARN, marginBottom: 4 }}>Diploema — rash cutâneo</div>
+                          <div style={{ fontSize: 12, color: MU, lineHeight: 1.5 }}>Pele com asma. Mãe rifte alérgica.</div>
                         </div>
                       </div>
                     ) : (
-                      <div style={{ fontSize: 12, color: MU, textAlign: 'center' as const }}>Nenhuma alergia registrada</div>
+                      <div style={{ fontSize: 12, color: MU, textAlign: 'center' as const, padding: '12px 0' }}>Nenhuma alergia registrada</div>
                     )}
                   </div>
                 </Card>
