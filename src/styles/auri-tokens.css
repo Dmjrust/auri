@@ -1,0 +1,112 @@
+/**
+ * Auri — design tokens as CSS variables (HSL-based, shadcn-compatible)
+ * Place at: src/styles/auri-tokens.css
+ * Then import once in src/index.css:  @import "./styles/auri-tokens.css";
+ *
+ * Why HSL channels (not hex)? shadcn/ui and Tailwind's HSL alpha modifiers
+ * (e.g. bg-primary/40) require values like `H S% L%` without hsl() wrapper.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@layer base {
+  :root {
+    /* ---------- Brand ---------- */
+    --primary:           194 71% 21%;     /* #0F4C5C */
+    --primary-hover:     194 75% 17%;
+    --primary-pressed:   194 80% 13%;
+    --primary-soft:      200 35% 94%;
+    --primary-foreground: 0 0% 100%;
+
+    --accent:            18 75% 64%;      /* #E8825B */
+    --accent-hover:      14 73% 57%;
+    --accent-soft:       20 75% 95%;
+    --accent-foreground: 0 0% 100%;
+
+    --sage:              108 21% 70%;     /* #A9C2A1 */
+    --sage-soft:         110 25% 95%;
+    --sand:              37 50% 81%;      /* #E6D5B8 */
+    --sand-soft:         42 40% 95%;
+
+    /* ---------- Surface ---------- */
+    --cream:             40 50% 95%;      /* #F7F3EC */
+    --surface:           0 0% 100%;
+    --surface-2:         42 50% 97%;
+    --surface-inset:     38 30% 92%;
+
+    /* ---------- Ink ---------- */
+    --ink:               195 24% 15%;     /* #1C2A2E */
+    --ink-2:             204 14% 34%;
+    --ink-3:             204 8% 47%;
+    --ink-4:             204 7% 63%;
+
+    /* ---------- Borders ---------- */
+    --border:            200 15% 92%;
+    --border-strong:     200 12% 86%;
+
+    /* ---------- Semantic ---------- */
+    --success:           147 21% 45%;
+    --success-soft:      147 25% 95%;
+    --warning:           34 56% 51%;
+    --warning-soft:      40 70% 95%;
+    --danger:            10 49% 47%;
+    --danger-soft:       12 55% 95%;
+    --info:              199 33% 44%;
+    --info-soft:         200 35% 95%;
+
+    /* ---------- Radii (shadcn-compatible) ---------- */
+    --radius: 10px;
+
+    /* ---------- shadcn aliases ---------- */
+    --background:           var(--cream);
+    --foreground:           var(--ink);
+    --card:                 var(--surface);
+    --card-foreground:      var(--ink);
+    --popover:              var(--surface);
+    --popover-foreground:   var(--ink);
+    --secondary:            var(--surface-inset);
+    --secondary-foreground: var(--ink);
+    --muted:                var(--surface-inset);
+    --muted-foreground:     var(--ink-2);
+    --destructive:          var(--danger);
+    --destructive-foreground: 0 0% 100%;
+    --input:                var(--border-strong);
+    --ring:                 var(--primary);
+  }
+
+  html, body, #root { height: 100%; }
+  body {
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    background: hsl(var(--cream));
+    color: hsl(var(--ink));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, .font-display {
+    font-family: "Fraunces", Georgia, serif;
+    font-variation-settings: "opsz" 72;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+
+  /* Tabular numbers wherever clinical data appears */
+  .num, .font-mono { font-feature-settings: "tnum" 1; }
+
+  /* Recording pulse helper */
+  .auri-dot {
+    width: 6px; height: 6px; border-radius: 9999px;
+    background: hsl(var(--accent));
+    animation: auri-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes auri-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.5; transform: scale(0.85); }
+  }
+
+  @keyframes auri-wave {
+    0%, 100% { transform: scaleY(0.4); }
+    50%       { transform: scaleY(1); }
+  }
+}

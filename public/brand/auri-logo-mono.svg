@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" fill="none">
+  <g stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none">
+    <path d="M12 32 Q 12 20, 24 20"></path>
+    <path d="M19 32 Q 19 25, 24 25"></path>
+  </g>
+  <circle cx="24" cy="32" r="3" fill="currentColor"></circle>
+  <g stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.55">
+    <path d="M31 25 Q 38 25, 38 32 Q 38 39, 31 39"></path>
+  </g>
+  <g stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.85">
+    <path d="M34 20 Q 45 20, 45 32 Q 45 44, 34 44"></path>
+  </g>
+  <text x="62" y="42" font-family="Fraunces, Georgia, serif" font-size="32" font-weight="500" fill="currentColor" letter-spacing="-0.5">Auri</text>
+</svg>

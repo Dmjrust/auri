@@ -1,0 +1,86 @@
+/* ── Auri Design System tokens ─────────────────────────────────────────────── */
+@import "./styles/auri-tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { @apply border-border; }
+}
+
+.recording-wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.recording-wave span {
+  display: inline-block;
+  width: 4px;
+  background: #E8825B;
+  border-radius: 2px;
+  animation: wave 1s ease-in-out infinite;
+}
+.recording-wave span:nth-child(2) { animation-delay: 0.1s; }
+.recording-wave span:nth-child(3) { animation-delay: 0.2s; }
+.recording-wave span:nth-child(4) { animation-delay: 0.3s; }
+.recording-wave span:nth-child(5) { animation-delay: 0.4s; }
+.recording-wave span:nth-child(6) { animation-delay: 0.2s; }
+.recording-wave span:nth-child(7) { animation-delay: 0.1s; }
+
+@keyframes wave {
+  0%, 100% { height: 8px; }
+  50% { height: 28px; }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.pulse-ring {
+  animation: pulse-ring 1.5s ease-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Hero wave (landing page — scaleY variant) */
+.hero-wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 48px;
+}
+.hero-wave span {
+  width: 5px;
+  border-radius: 3px;
+  background: #E8825B;
+  animation: hero-w 1.4s ease-in-out infinite;
+  transform-origin: bottom;
+}
+.hero-wave span:nth-child(1) { height: 30%; animation-delay: 0s; }
+.hero-wave span:nth-child(2) { height: 70%; animation-delay: 0.1s; }
+.hero-wave span:nth-child(3) { height: 100%; animation-delay: 0.2s; }
+.hero-wave span:nth-child(4) { height: 60%; animation-delay: 0.3s; }
+.hero-wave span:nth-child(5) { height: 90%; animation-delay: 0.4s; }
+.hero-wave span:nth-child(6) { height: 40%; animation-delay: 0.5s; }
+.hero-wave span:nth-child(7) { height: 80%; animation-delay: 0.6s; }
+.hero-wave span:nth-child(8) { height: 50%; animation-delay: 0.7s; }
+.hero-wave span:nth-child(9) { height: 65%; animation-delay: 0.8s; }
+@keyframes hero-w {
+  0%, 100% { transform: scaleY(0.4); }
+  50%       { transform: scaleY(1); }
+}
+
+/* Recording dot (landing hero-visual pill) */
+.live-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #E8825B;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
