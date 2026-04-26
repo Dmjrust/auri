@@ -1,0 +1,11 @@
+﻿node_modules
+.git
+.env
+.env.local
+.env.*.local
+.parcel-cache
+dist
+.vite
+.DS_Store
+*.log
+.claude

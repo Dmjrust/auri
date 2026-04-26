@@ -785,6 +785,7 @@ function DashboardPage({ go, setActivePatient }: { go: (s: string) => void; setA
   const [evolutionData, setEvolutionData] = useState<{ date: string; 'Primeira vez': number; 'Retorno': number }[]>([]);
   const [evolutionPeriod, setEvolutionPeriod] = useState<7 | 30 | 90>(30);
   const isMobile = useIsMobile();
+  const doctorName = 'Dr. Lucas Mendes';
 
   useEffect(() => {
     Promise.all([
