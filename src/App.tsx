@@ -2300,17 +2300,25 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                   {consultations.length === 0 ? (
                     <div style={{ padding: '40px 20px', textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada</div>
                   ) : consultations.slice(0, 4).map((c, i) => {
-                    const daysDiff = Math.floor((new Date().getTime() - new Date(c.scheduled_at).getTime()) / (1000 * 60 * 60 * 24));
-                    const status = i === 0 ? 'Em revisão' : 'Concluída';
+                    // Calculate days difference considering only dates (ignore time), using Brasília timezone
+                    const today = new Date();
+                    const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                    const consultDate = new Date(c.scheduled_at);
+                    const consultDateAtMidnight = new Date(consultDate.getFullYear(), consultDate.getMonth(), consultDate.getDate());
+                    const daysDiff = Math.floor((todayAtMidnight.getTime() - consultDateAtMidnight.getTime()) / (1000 * 60 * 60 * 24));
+                    const isFuture = daysDiff < 0;
+                    const isToday = daysDiff === 0;
+                    const status = isFuture ? 'Próxima' : (isToday ? 'Hoje' : 'Concluída');
+                    const timeLabel = isToday ? 'HOJE' : (isFuture ? `PRÓXIMA (${Math.abs(daysDiff)}d)` : `HÁ ${daysDiff} ${daysDiff === 1 ? 'DIA' : 'DIAS'}`);
                     return (
                       <div key={c.id} style={{ padding: '16px 20px', borderBottom: i < Math.min(consultations.length, 4) - 1 ? `1px solid ${BO}` : 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
                           <div>
                             <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 12, fontWeight: 600, color: MU }}>
-                              {daysDiff === 0 ? 'HOJE' : `HÁ ${daysDiff} ${daysDiff === 1 ? 'DIA' : 'DIAS'}`} · {c.duration_minutes || 28} MIN
+                              {timeLabel} · {c.duration_minutes || 28} MIN
                             </div>
                           </div>
-                          <span style={{ fontSize: 12, color: i === 0 ? ACCENT : SUC, fontWeight: 500 }}>{status}</span>
+                          <span style={{ fontSize: 12, color: isFuture ? P : (isToday ? ACCENT : SUC), fontWeight: 500 }}>{status}</span>
                         </div>
                         <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{c.chief_complaint}</div>
                         <div style={{ fontSize: 12, color: MU, marginBottom: 4 }}>HD: {c.diagnosis?.slice(0, 60) || 'N/A'}</div>
