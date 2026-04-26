@@ -1,8 +1,8 @@
-# Vínculo — Prontuário Eletrônico Pediátrico com IA
+# Auri — Prontuário Eletrônico Pediátrico com IA
 
 ## O que é este projeto
 
-**Vínculo** é um sistema de EMR (Electronic Medical Record) inteligente + CRM longitudinal para pediatras em consultório privado. Combina prontuário clínico estruturado com um **AI Ambient Scribe**: o médico grava a consulta, a IA transcreve, estrutura e preenche o prontuário automaticamente.
+**Auri** é um sistema de EMR (Electronic Medical Record) inteligente + CRM longitudinal para pediatras em consultório privado. Combina prontuário clínico estruturado com um **AI Ambient Scribe**: o médico grava a consulta, a IA transcreve, estrutura e preenche o prontuário automaticamente.
 
 **Status atual:** Protótipo interativo com dados mockados. Sem backend real. Sem autenticação real. O objetivo é validar o fluxo com um médico (Dr. Lucas Mendes) antes de conectar ao banco.
 

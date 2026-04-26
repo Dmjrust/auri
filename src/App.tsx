@@ -782,8 +782,6 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
   const [recentActivity, setRecentActivity] = useState<{ id: string; patient_id: string; patient_name: string; date: string; type: string }[]>([]);
   const [consultSummaries, setConsultSummaries] = useState<Record<string, { count: number; lastDate: string | null }>>({});
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
-  const [evolutionData, setEvolutionData] = useState<{ date: string; 'Primeira vez': number; 'Retorno': number }[]>([]);
-  const [evolutionPeriod, setEvolutionPeriod] = useState<7 | 30 | 90>(30);
   const isMobile = useIsMobile();
   const doctorName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Médico';
 
@@ -824,11 +822,6 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
       setOverdueVaccPatients(results);
     }).catch(() => {});
   }, []);
-
-  // Load consultation evolution data
-  useEffect(() => {
-    db.fetchConsultationEvolution(evolutionPeriod).then(setEvolutionData).catch(() => {});
-  }, [evolutionPeriod]);
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? 'Bom dia' : now.getHours() < 18 ? 'Boa tarde' : 'Boa noite';
@@ -885,12 +878,11 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
     ? 'Nenhuma consulta agendada'
     : `${todayAppts.length} consulta${todayAppts.length !== 1 ? 's' : ''} agendada${todayAppts.length !== 1 ? 's' : ''}, próxima às ${nextAppt?.time || ''} com ${nextAppt?.patient_name || ''}`;
 
-  // Check if all KPIs are 0 (new user)
-  const allKpisZero = todayAppts.length === 0 && retornosPendentes === 0 && overdueVaccPatients.length === 0 && firstTimePatients.length === 0;
+  const totalPrioridades = overdueAppts.length + overdueVaccPatients.length + firstTimePatients.length;
 
   // Helper: format relative timestamp
   const formatRelativeTime = (iso: string) => {
-    const then = new Date(iso).getTime(), now = new Date().getTime(), diff = (now - then) / 1000;
+    const then = new Date(iso).getTime(), nowMs = new Date().getTime(), diff = (nowMs - then) / 1000;
     if (diff < 60) return 'há poucos segundos';
     if (diff < 3600) return `há ${Math.floor(diff / 60)}m`;
     if (diff < 86400) return `há ${Math.floor(diff / 3600)}h`;
@@ -899,127 +891,123 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
 
   return (
     <div>
-      {/* ── Greeting + Context ── */}
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ margin: 0, fontSize: isMobile ? 24 : 36, fontWeight: 500, color: INK, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.02em', lineHeight: 1.1, fontVariationSettings: '"opsz" 72' }}>
-          {greeting}, Dr. {doctorName.split(' ')[0]}
+      {/* ── Header ── */}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 32, fontWeight: 500, color: INK, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+          {greeting}, {doctorName.split(' ')[0]}
         </h1>
-        <p style={{ margin: '8px 0 0', color: MU, fontSize: 14, lineHeight: 1.4 }}>
-          Hoje · {todayStr}. {agendaStr}{todayAppts.length === 0 ? ' — ' : '.'}
-          {todayAppts.length === 0 && <a href="#" onClick={() => go('agenda')} style={{ color: P, textDecoration: 'none', fontWeight: 500 }}>Ver agenda da semana →</a>}
-        </p>
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const }}>
+          <p style={{ margin: 0, color: MU, fontSize: 14 }}>
+            {todayAppts.length === 0
+              ? 'Nenhuma consulta hoje.'
+              : `Você tem ${todayAppts.length} consulta${todayAppts.length !== 1 ? 's' : ''} hoje — ${completedToday} realizada${completedToday !== 1 ? 's' : ''}.`}
+          </p>
+          <a href="#" onClick={e => { e.preventDefault(); go('agenda'); }} style={{ fontSize: 13, color: P, fontWeight: 500, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' as const }}>
+            Ver agenda da semana <CaretRight size={13} />
+          </a>
+        </div>
       </div>
 
-      {/* ── KPI Section ── */}
-      {allKpisZero ? (
-        <Card style={{ padding: '32px 24px', marginBottom: 24 }}>
-          <div style={{ textAlign: 'center' as const }}>
-            <div style={{ fontFamily: '"Fraunces", Georgia, serif', fontSize: 24, fontWeight: 500, color: INK, marginBottom: 8 }}>Comece agora</div>
-            <p style={{ color: MU, fontSize: 14, marginBottom: 24 }}>Sua primeira consulta vai aparecer aqui.</p>
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' as const }}>
-              <Btn onClick={() => { const p = patients[0]; if (p) { setActivePatient(p); go('patient-detail'); } }}>
-                <Stethoscope size={14} /> Iniciar primeira consulta
-              </Btn>
-              <Btn variant="secondary">Importar agenda do Google</Btn>
-            </div>
-          </div>
-        </Card>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '2fr 1fr 1fr', gap: 16, marginBottom: 24 }}>
-          {/* Primary KPI — Consultas hoje */}
-          <Card style={{ padding: '20px 24px', gridColumn: isMobile ? 'auto' : 'span 1' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span style={{ fontSize: 12, color: MU, fontWeight: 500 }}>Consultas hoje</span>
-              <div style={{ background: P + '18', borderRadius: 8, padding: 7 }}><CalendarBlank size={16} color={P} /></div>
-            </div>
-            <div style={{ fontSize: isMobile ? 28 : 32, fontWeight: 700, color: INK, fontFamily: '"JetBrains Mono", monospace', fontFeatureSettings: '"tnum"', letterSpacing: '-0.02em' }}>{todayAppts.length}</div>
-            <div style={{ fontSize: 11, color: MU, marginTop: 4 }}>vs. semana passada: +{Math.floor(Math.random() * 5)}</div>
-            {/* Mini sparkline — mock 14 days */}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, marginTop: 12, height: 24 }}>
-              {Array.from({ length: 14 }).map((_, i) => {
-                const h = Math.floor(Math.random() * 20) + 5;
-                const isToday = i === 13;
-                return <div key={i} style={{ flex: 1, height: h, background: isToday ? ACCENT : P, opacity: isToday ? 1 : 0.4, borderRadius: 2 }} />;
-              })}
-            </div>
-          </Card>
-
-          {/* Secondary KPIs */}
-          <Card style={{ padding: '20px 24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span style={{ fontSize: 12, color: MU, fontWeight: 500 }}>Pacientes ativos</span>
-              <div style={{ background: P + '18', borderRadius: 8, padding: 7 }}><Users size={16} color={P} /></div>
-            </div>
-            <div style={{ fontSize: isMobile ? 24 : 28, fontWeight: 700, color: INK, fontFamily: '"JetBrains Mono", monospace', fontFeatureSettings: '"tnum"' }}>{patients.length}</div>
-            <div style={{ fontSize: 11, color: MU, marginTop: 4 }}>+{Math.floor(patients.length * 0.1)} este mês</div>
-          </Card>
-
-          <Card style={{ padding: '20px 24px', border: `1px solid ${overdueVaccPatients.length > 0 ? ACCENT : BO}`, background: overdueVaccPatients.length > 0 ? ACCENTL + '20' : undefined }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span style={{ fontSize: 12, color: MU, fontWeight: 500 }}>Pendências</span>
-              <div style={{ background: (overdueVaccPatients.length > 0 ? ACCENT : MU) + '18', borderRadius: 8, padding: 7 }}>
-                <CheckCircle size={16} color={overdueVaccPatients.length > 0 ? ACCENT : MU} />
-              </div>
-            </div>
-            <div style={{ fontSize: isMobile ? 24 : 28, fontWeight: 700, color: overdueVaccPatients.length > 0 ? ACCENT : INK, fontFamily: '"JetBrains Mono", monospace', fontFeatureSettings: '"tnum"' }}>
-              {retornosPendentes + overdueVaccPatients.length}
-            </div>
-            <div style={{ fontSize: 11, color: MU, marginTop: 4 }}>{overdueVaccPatients.length > 0 ? 'ação requerida' : 'em dia'}</div>
-          </Card>
-        </div>
-      )}
-
       {/* ── Main grid ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 340px', gap: isMobile ? 12 : 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 300px', gap: isMobile ? 12 : 20, alignItems: 'start' }}>
 
         {/* LEFT COLUMN */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-          {/* 1. Consultas do dia */}
-          {todayAppts.length === 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', height: 56, padding: '0 20px', background: '#fff', border: `1px solid ${BO}`, borderRadius: 10, boxShadow: '0 1px 2px rgba(28,42,46,0.05)' }}>
-              <CalendarBlank size={18} color={MU} style={{ marginRight: 12, flexShrink: 0 }} />
-              <div style={{ flex: 1, fontSize: 13, color: MU }}>Sem consultas agendadas para hoje</div>
-              <a href="#" onClick={() => go('agenda')} style={{ color: P, textDecoration: 'none', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', marginLeft: 8 }}>Ver agenda →</a>
+          {/* 1. Prioridades */}
+          <Card style={{ border: totalPrioridades > 0 ? `1.5px solid ${DES}40` : `1px solid ${BO}` }}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Warning size={16} color={totalPrioridades > 0 ? DES : SUC} />
+              <span style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', flex: 1 }}>Prioridades</span>
+              {totalPrioridades > 0 && <Badge color={DES} bg={DESL}>{totalPrioridades}</Badge>}
             </div>
-          ) : (
-            <Card>
-              <SectionHeader
-                icon={CalendarBlank}
-                title={`Consultas de hoje (${completedToday}/${todayAppts.length})`}
-                action="Ver agenda"
-                onAction={() => go('agenda')}
-              />
-              {todayAppts.map((a, i) => {
-              const patient = patients.find(p => p.id === a.patient_id);
-              const isPending = a.status !== 'completed';
-              return (
-                <div key={a.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 14, padding: '12px 20px',
-                  borderBottom: i < todayAppts.length - 1 ? `1px solid ${BO}` : 'none',
-                  background: !isPending ? SUCL + '66' : 'transparent',
-                }}>
-                  <div style={{ textAlign: 'center' as const, minWidth: 44 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: isPending ? P : MU }}>{a.time}</div>
+            {totalPrioridades === 0 ? (
+              <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <CheckCircle size={16} color={SUC} />
+                <span style={{ fontSize: 14, color: MU }}>Sem pendências críticas hoje</span>
+              </div>
+            ) : (
+              <div>
+                {overdueAppts.length > 0 && (
+                  <div onClick={() => go('patients')}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', borderBottom: overdueVaccPatients.length > 0 || firstTimePatients.length > 0 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = DESL}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: DES, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 14 }}>
+                      <strong style={{ color: DES }}>{overdueAppts.length}</strong> retorno{overdueAppts.length !== 1 ? 's' : ''} vencido{overdueAppts.length !== 1 ? 's' : ''}
+                    </span>
+                    <CaretRight size={13} color={MU} />
                   </div>
+                )}
+                {overdueVaccPatients.length > 0 && (
+                  <div onClick={() => go('patients')}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', borderBottom: firstTimePatients.length > 0 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = ACCENTL}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: ACCENT, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 14 }}>
+                      <strong style={{ color: ACCENT }}>{overdueVaccPatients.length}</strong> paciente{overdueVaccPatients.length !== 1 ? 's' : ''} com vacinas em atraso
+                    </span>
+                    <CaretRight size={13} color={MU} />
+                  </div>
+                )}
+                {firstTimePatients.length > 0 && (
+                  <div onClick={() => go('patients')}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', cursor: 'pointer' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = WARNL}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: WARN, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 14 }}>
+                      <strong style={{ color: WARN }}>{firstTimePatients.length}</strong> paciente{firstTimePatients.length !== 1 ? 's' : ''} sem consulta registrada
+                    </span>
+                    <CaretRight size={13} color={MU} />
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
+          {/* 2. Consultas de hoje */}
+          <Card>
+            <SectionHeader
+              icon={CalendarBlank}
+              title={`Consultas de hoje${todayAppts.length > 0 ? ` (${completedToday}/${todayAppts.length})` : ''}`}
+              action="Ver agenda"
+              onAction={() => go('agenda')}
+            />
+            {todayAppts.length === 0 ? (
+              <div style={{ padding: '28px 20px', textAlign: 'center' as const }}>
+                <CalendarBlank size={28} color={BO} style={{ display: 'block', margin: '0 auto 10px' }} />
+                <div style={{ fontWeight: 500, fontSize: 15, color: INK, marginBottom: 4 }}>Nenhuma consulta hoje</div>
+                <div style={{ fontSize: 13, color: MU, marginBottom: 20 }}>Sua agenda está livre.</div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' as const }}>
+                  <Btn variant="secondary" onClick={() => go('agenda')}><CalendarBlank size={14} /> Ver agenda da semana</Btn>
+                  <Btn onClick={() => { const p = patients[0]; if (p) { setActivePatient(p); go('patient-detail'); } }}><Stethoscope size={14} /> Iniciar nova consulta</Btn>
+                </div>
+              </div>
+            ) : todayAppts.map((a, i) => {
+              const patient = patients.find(p => p.id === a.patient_id);
+              const isDone = a.status === 'completed';
+              return (
+                <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < todayAppts.length - 1 ? `1px solid ${BO}` : 'none', background: isDone ? `${SUC}08` : 'transparent' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: isDone ? MU : P, fontFamily: '"JetBrains Mono", monospace', width: 44, flexShrink: 0 }}>{a.time}</span>
                   <div style={{ width: 1, height: 32, background: BO, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
                       <span style={{ fontWeight: 600, fontSize: 14 }}>{a.patient_name}</span>
                       <span style={{ fontSize: 12, color: MU }}>{a.age}</span>
                       <Pill type={a.type} />
-                      {isPending
-                        ? <Badge color={WARN} bg={WARNL}>Pendente</Badge>
-                        : <Badge color={SUC} bg={SUCL}>Realizada</Badge>}
+                      {isDone ? <Badge color={SUC} bg={SUCL}>Realizada</Badge> : <Badge color={WARN} bg={WARNL}>Pendente</Badge>}
                     </div>
                     {a.guardian && <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>Resp: {a.guardian}</div>}
                   </div>
-                  {isPending && patient && (
+                  {!isDone && patient && (
                     <Btn size="sm" onClick={e => { e.stopPropagation(); setActivePatient(patient); go('patient-detail'); }}>
                       <Stethoscope size={13} /> Iniciar
                     </Btn>
                   )}
-                  {!isPending && patient && (
+                  {isDone && patient && (
                     <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setActivePatient(patient); go('patient-detail'); }}>
                       <FileText size={13} /> Prontuário
                     </Btn>
@@ -1028,80 +1016,41 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
               );
             })}
           </Card>
+
+          {/* 3. Alertas clínicos por paciente */}
+          {alertGroups.length > 0 && (
+            <Card>
+              <SectionHeader icon={Warning} title="Pacientes que precisam de atenção" action="Ver todos" onAction={() => go('patients')} />
+              {alertGroups.map((g, i) => (
+                <div key={i}
+                  onClick={() => { if (g.patient) { setActivePatient(g.patient); go('patient-detail'); } }}
+                  style={{ padding: '12px 20px', borderBottom: i < alertGroups.length - 1 ? `1px solid ${BO}` : 'none', cursor: g.patient ? 'pointer' : 'default' }}
+                  onMouseEnter={e => g.patient && ((e.currentTarget as HTMLElement).style.background = PL)}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{g.name}</span>
+                    {g.patient && <CaretRight size={13} color={MU} />}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {g.issues.map((issue, j) => (
+                      <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: MU }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: issue.color, flexShrink: 0 }} />
+                        {issue.text}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </Card>
           )}
 
-          {/* 2. Evolução de consultas */}
+          {/* 4. Pacientes recentes */}
           <Card>
-            <div style={{ padding: '20px 24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ background: PL, borderRadius: 8, padding: 8 }}><TrendUp size={16} color={P} /></div>
-                  <span style={{ fontWeight: 500, fontSize: 18, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>Evolução de consultas</span>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {[7, 30, 90].map(days => (
-                    <button key={days} onClick={() => setEvolutionPeriod(days as 7 | 30 | 90)}
-                      style={{
-                        fontSize: 11, padding: '6px 12px', borderRadius: 6, border: `1px solid ${evolutionPeriod === days ? P : BO}`, cursor: 'pointer',
-                        background: evolutionPeriod === days ? P : 'transparent', color: evolutionPeriod === days ? '#fff' : MU,
-                        fontWeight: 500, transition: 'all 0.15s', fontFamily: '"JetBrains Mono", monospace'
-                      }}>
-                      {days}d
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {evolutionData.length < 7 ? (
-                <div style={{ padding: '40px 0', textAlign: 'center' as const, color: MU }}>
-                  <TrendUp size={24} color={BO} style={{ display: 'block', margin: '0 auto 12px' }} />
-                  <div style={{ fontSize: 14 }}>Continue usando o Auri por mais {7 - evolutionData.length} dias para ver tendências</div>
-                </div>
-              ) : (
-                <>
-                  {/* Inline legend */}
-                  <div style={{ display: 'flex', gap: 24, marginBottom: 16, fontSize: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 12, height: 12, background: P, borderRadius: 2 }} />
-                      <span style={{ color: MU }}>Retorno</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 12, height: 12, background: '#E6D5B8', borderRadius: 2 }} />
-                      <span style={{ color: MU }}>Primeira vez</span>
-                    </div>
-                  </div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={evolutionData} margin={{ top: 0, right: 30, left: 0, bottom: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={BO} />
-                      <XAxis dataKey="date" tick={{ fontSize: 11, fill: MU }}
-                        tickFormatter={(date) => {
-                          const d = new Date(date);
-                          return `${d.getDate()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
-                        }} />
-                      <YAxis tick={{ fontSize: 11, fill: MU }} domain={[0, Math.max(10, Math.ceil((evolutionData.reduce((max, d) => Math.max(max, d['Primeira vez'] + d['Retorno']), 0) + 2) / 5) * 5)]} />
-                      <Tooltip
-                        contentStyle={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 8 }}
-                        labelFormatter={(date) => {
-                          const d = new Date(date);
-                          return d.toLocaleDateString('pt-BR');
-                        }}
-                        formatter={(value: any) => value as number}
-                      />
-                      <Bar dataKey="Retorno" fill={P} radius={[3,3,0,0] as any} isAnimationActive={false} />
-                      <Bar dataKey="Primeira vez" fill="#E6D5B8" radius={[3,3,0,0] as any} isAnimationActive={false} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </>
-              )}
-            </div>
-          </Card>
-
-          {/* 4. Pacientes */}
-          <Card>
-            <SectionHeader icon={Users} title="Pacientes" action="Ver todos" onAction={() => go('patients')} />
+            <SectionHeader icon={Users} title="Pacientes recentes" action="Ver todos" onAction={() => go('patients')} />
             {patients.length === 0 ? (
-              <div style={{ padding: '32px 24px', textAlign: 'center' as const }}>
-                <Users size={28} color={BO} style={{ display: 'block', margin: '0 auto 8px' }} />
-                <div style={{ fontSize: 13, color: MU, marginBottom: 16 }}>Nenhum paciente cadastrado ainda.</div>
+              <div style={{ padding: '28px 20px', textAlign: 'center' as const }}>
+                <Users size={28} color={BO} style={{ display: 'block', margin: '0 auto 10px' }} />
+                <div style={{ fontSize: 13, color: MU, marginBottom: 16 }}>Nenhum paciente cadastrado.</div>
                 <Btn onClick={() => go('patients')}><Plus size={14} /> Cadastrar paciente</Btn>
               </div>
             ) : patients.slice(0, 5).map((p, i) => {
@@ -1110,19 +1059,17 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
               const nextReturn = (p as any).next_return as string | null;
               return (
                 <div key={p.id} onClick={() => { setActivePatient(p); go('patient-detail'); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 20px', borderBottom: i < Math.min(patients.length, 5) - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer', transition: 'background 0.12s' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = PL; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-                  <div style={{ width: 38, height: 38, borderRadius: '50%', background: p.gender === 'M' ? PL : FEMALEL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <User size={16} color={p.gender === 'M' ? P : FEMALE} />
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 20px', borderBottom: i < Math.min(patients.length, 5) - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = PL}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: p.gender === 'M' ? PL : FEMALEL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <User size={15} color={p.gender === 'M' ? P : FEMALE} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }}>
                       <span style={{ fontWeight: 600, fontSize: 14 }}>{p.full_name}</span>
                       <span style={{ fontSize: 12, color: MU }}>{calcAge(p.birth_date)}</span>
-                      {isFirst
-                        ? <Badge color={ACCENT} bg={ACCENTL}>1ª consulta</Badge>
-                        : <Badge color={SUC} bg={SUCL}>Retorno</Badge>}
+                      {isFirst ? <Badge color={ACCENT} bg={ACCENTL}>1ª consulta</Badge> : <Badge color={SUC} bg={SUCL}>Retorno</Badge>}
                     </div>
                     <div style={{ fontSize: 11, color: MU, marginTop: 2, display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
                       <span>{primaryGuardian(p)?.name || '—'}</span>
@@ -1131,7 +1078,7 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
                     </div>
                   </div>
                   <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setActivePatient(p); go('patient-detail'); }}>
-                    <Stethoscope size={13} /> Consultar
+                    Consultar
                   </Btn>
                 </div>
               );
@@ -1142,73 +1089,61 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
         {/* RIGHT COLUMN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-          {/* 1. Próxima consulta — sticky, only if within 2h */}
-          {todayAppts[0] && (
-            (() => {
-              const nextAppt = todayAppts[0];
-              const [h, m] = nextAppt.time.split(':').map(Number);
-              const apptTime = new Date(now);
-              apptTime.setHours(h, m, 0, 0);
-              const diffMinutes = (apptTime.getTime() - now.getTime()) / 60000;
-              return diffMinutes > 0 && diffMinutes <= 120 ? (
-                <Card style={{ border: `1.5px solid ${P}50`, background: PL }}>
-                  <div style={{ padding: '14px 20px', borderBottom: `1px solid ${P}15`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Clock size={14} color={P} />
-                    <span style={{ fontWeight: 600, fontSize: 13, color: P }}>Próxima consulta em {Math.round(diffMinutes)} min</span>
-                  </div>
-                  <div style={{ padding: '16px 20px' }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>{nextAppt.patient_name}</div>
-                    <div style={{ fontSize: 12, color: MU, marginBottom: 12, lineHeight: 1.5 }}>
-                      <div>{nextAppt.age} · Às {nextAppt.time}</div>
-                      {nextAppt.guardian && <div>Resp: {nextAppt.guardian}</div>}
-                    </div>
-                    <Btn onClick={() => {
-                      const p = patients.find(pt => pt.id === nextAppt.patient_id);
-                      if (p) { setActivePatient(p); go('patient-detail'); }
-                    }} style={{ width: '100%', justifyContent: 'center' }}>
-                      <Stethoscope size={13} /> Iniciar consulta
-                    </Btn>
-                  </div>
-                </Card>
-              ) : null;
-            })()
-          )}
-
-          {/* 2. Pendências — unified alerts + attention points */}
-          <Card style={{ padding: 20 }}>
-            <div style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 8, marginBottom: (alertGroups.length + attentionPoints.length) > 0 ? 14 : 0 }}>
-              <Warning size={15} color={ACCENT} /> Pendências
-              {(alertGroups.length + attentionPoints.length) > 0 && <Badge color={ACCENT} bg={ACCENTL}>{alertGroups.length + attentionPoints.length}</Badge>}
+          {/* Iniciar consulta rápida */}
+          <Card style={{ border: `1.5px solid ${P}40`, background: PL }}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${P}25`, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Stethoscope size={15} color={P} />
+              <span style={{ fontWeight: 600, fontSize: 14, color: P }}>Iniciar consulta</span>
             </div>
-            {(alertGroups.length + attentionPoints.length) === 0 ? (
-              <div style={{ fontSize: 13, color: MU, textAlign: 'center' as const, padding: '12px 0' }}>Tudo em ordem</div>
-            ) : (
-              <div>
-                {alertGroups.slice(0, 3).map((g, i) => (
-                  <div key={`alert-${i}`}
-                    onClick={() => { if (g.patient) { setActivePatient(g.patient); go('patient-detail'); } }}
-                    style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 0', borderBottom: `1px solid ${BO}`, cursor: g.patient ? 'pointer' : 'default', fontSize: 12 }}>
-                    <Warning size={12} color={ACCENT} style={{ flexShrink: 0, marginTop: 3 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 500 }}>{g.name}</div>
-                      <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>{g.issues[0]?.text}</div>
-                    </div>
+            <div style={{ padding: '16px 20px' }}>
+              {lastPatient ? (
+                <>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.6, textTransform: 'uppercase' as const, marginBottom: 6 }}>Último paciente</div>
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>{lastPatient.full_name}</div>
+                    <div style={{ fontSize: 12, color: MU }}>{calcAge(lastPatient.birth_date)}</div>
                   </div>
-                ))}
-                {attentionPoints.slice(0, Math.max(0, 5 - alertGroups.length)).map((pt, i) => (
-                  <div key={`attn-${i}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 0', borderBottom: (i < Math.min(attentionPoints.length, 5 - alertGroups.length) - 1 || alertGroups.length > 0) ? `1px solid ${BO}` : 'none', fontSize: 12 }}>
-                    <Info size={12} color={P} style={{ flexShrink: 0, marginTop: 3 }} />
-                    <span style={{ flex: 1, color: INK }}>{pt}</span>
+                  <Btn onClick={() => { setActivePatient(lastPatient); go('patient-detail'); }} style={{ width: '100%', justifyContent: 'center', marginBottom: 8 }}>
+                    <Stethoscope size={14} /> Continuar com {lastPatient.full_name.split(' ')[0]}
+                  </Btn>
+                  <Btn variant="secondary" onClick={() => go('patients')} style={{ width: '100%', justifyContent: 'center' }}>
+                    Selecionar outro paciente
+                  </Btn>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, color: MU, marginBottom: 14 }}>Selecione um paciente para iniciar.</div>
+                  <Btn onClick={() => go('patients')} style={{ width: '100%', justifyContent: 'center' }}>
+                    <Users size={14} /> Selecionar paciente
+                  </Btn>
+                </>
+              )}
+            </div>
+          </Card>
+
+          {/* Pontos de atenção (IA leve) */}
+          {attentionPoints.length > 0 && (
+            <Card style={{ padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <Info size={15} color={P} />
+                <span style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif' }}>Pontos de atenção</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {attentionPoints.slice(0, 5).map((pt, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: INK }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: WARN, flexShrink: 0, marginTop: 5 }} />
+                    <span>{pt}</span>
                   </div>
                 ))}
               </div>
-            )}
-          </Card>
+            </Card>
+          )}
 
-          {/* 6. Atividade recente */}
+          {/* Atividade recente */}
           <Card style={{ padding: 20 }}>
-            <div style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: 8, marginBottom: recentActivity.length > 0 ? 14 : 0 }}>
-              <Clock size={15} color={MU} /> Atividade recente
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: recentActivity.length > 0 ? 14 : 0 }}>
+              <Clock size={15} color={MU} />
+              <span style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif' }}>Atividade recente</span>
             </div>
             {recentActivity.length === 0 ? (
               <div style={{ fontSize: 13, color: MU, textAlign: 'center' as const, padding: '12px 0' }}>Nenhuma atividade ainda</div>
@@ -1220,7 +1155,7 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{a.patient_name}</div>
                   <div style={{ fontSize: 11, color: MU, display: 'flex', alignItems: 'center', gap: 6, marginTop: 1 }}>
-                    {fmtDate(a.date)} · <Pill type={a.type} />
+                    <Pill type={a.type} /> {formatRelativeTime(a.date)}
                   </div>
                 </div>
               </div>
@@ -1228,7 +1163,6 @@ function DashboardPage({ go, setActivePatient, user }: { go: (s: string) => void
           </Card>
         </div>
       </div>
-
     </div>
   );
 }
