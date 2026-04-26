@@ -8,7 +8,7 @@ import {
   Play, Square, CheckCircle, Clock, Warning, Info, ArrowLeft, Plus,
   Microphone, FileText, TrendUp, Stethoscope, X, DownloadSimple, User,
   Baby, Heartbeat, Syringe, CaretDown, CaretUp, CaretLeft,
-  FloppyDisk, Buildings, Brain, ShieldCheck, PlayCircle,
+  FloppyDisk, Buildings, Brain, ShieldCheck, PlayCircle, PencilSimple, Trash,
 } from '@phosphor-icons/react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -2875,16 +2875,186 @@ function NewAppointmentModal({ onClose, onSaved, defaultDate }: { onClose: () =>
   );
 }
 
+// ─── APPOINTMENT DETAIL MODAL ─────────────────────────────────────────────────
+function AppointmentDetailModal({
+  appt, onClose, onUpdate, onStartConsult,
+}: {
+  appt: any; onClose: () => void; onUpdate: () => void; onStartConsult: (appt: any) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState(appt.date);
+  const [time, setTime] = useState(appt.time);
+  const [type, setType] = useState<'retorno' | 'primeira vez'>(appt.type);
+  const [complaint, setComplaint] = useState(appt.chief_complaint || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const inputSt: React.CSSProperties = { width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 8, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', background: '#fff', color: INK };
+  const labelSt: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 };
+
+  const STATUS_LABEL: Record<string, string> = { scheduled: 'Aguardando confirmação', in_progress: 'Em andamento', completed: 'Realizada', cancelled: 'Cancelada' };
+  const STATUS_COLOR: Record<string, string> = { scheduled: WARN, in_progress: P, completed: SUC, cancelled: MU };
+  const sColor = STATUS_COLOR[appt.status] || MU;
+
+  async function save() {
+    setSaving(true); setError('');
+    try {
+      await db.updateAppointment(appt.id, { scheduled_at: `${date}T${time}:00`, type, chief_complaint: complaint });
+      onUpdate();
+    } catch (e: any) { setError(e.message || 'Erro ao salvar.'); setSaving(false); }
+  }
+  async function confirm() {
+    setSaving(true);
+    try { await db.updateAppointment(appt.id, { status: 'in_progress' }); onUpdate(); }
+    catch (e: any) { setError(e.message || 'Erro.'); setSaving(false); }
+  }
+  async function markDone() {
+    setSaving(true);
+    try { await db.updateAppointment(appt.id, { status: 'completed' }); onUpdate(); }
+    catch (e: any) { setError(e.message || 'Erro.'); setSaving(false); }
+  }
+  async function cancel() {
+    if (!window.confirm('Cancelar esta consulta?')) return;
+    setSaving(true);
+    try { await db.cancelAppointment(appt.id); onUpdate(); }
+    catch (e: any) { setError(e.message || 'Erro.'); setSaving(false); }
+  }
+
+  const dateLabel = new Date(appt.date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 460, boxShadow: '0 24px 64px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 44, height: 44, borderRadius: '50%', background: PL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: P }}>{appt.patient_name[0]}</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 16, color: INK }}>{appt.patient_name}</div>
+            <div style={{ fontSize: 13, color: MU }}>{appt.age}{appt.guardian ? ` · ${appt.guardian}` : ''}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU, padding: 4, flexShrink: 0 }}><X size={20} /></button>
+        </div>
+
+        <div style={{ padding: '20px 24px' }}>
+          {/* Status row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: sColor, background: sColor + '18', padding: '4px 12px', borderRadius: 99, border: `1px solid ${sColor}30` }}>
+              {STATUS_LABEL[appt.status] || appt.status}
+            </span>
+            {!editing && appt.status !== 'completed' && appt.status !== 'cancelled' && (
+              <button onClick={() => setEditing(true)} style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 13, color: MU, display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
+                <PencilSimple size={13} /> Editar
+              </button>
+            )}
+          </div>
+
+          {!editing ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ padding: '12px 16px', background: BG, borderRadius: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.5, marginBottom: 6 }}>DATA</div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: INK, textTransform: 'capitalize' as const }}>{dateLabel}</div>
+                </div>
+                <div style={{ padding: '12px 16px', background: BG, borderRadius: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.5, marginBottom: 6 }}>HORÁRIO</div>
+                  <div style={{ fontWeight: 700, fontSize: 24, fontFamily: '"JetBrains Mono", monospace', color: P, letterSpacing: '-0.02em' }}>{appt.time}</div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: appt.chief_complaint ? '1fr 1fr' : '1fr', gap: 10 }}>
+                <div style={{ padding: '12px 16px', background: BG, borderRadius: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.5, marginBottom: 6 }}>TIPO</div>
+                  <div style={{ fontWeight: 600, fontSize: 13, textTransform: 'capitalize' as const }}>{appt.type}</div>
+                </div>
+                {appt.chief_complaint && (
+                  <div style={{ padding: '12px 16px', background: BG, borderRadius: 10 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.5, marginBottom: 6 }}>MOTIVO</div>
+                    <div style={{ fontSize: 13, color: INK }}>{appt.chief_complaint}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={labelSt}>Data</label>
+                  <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />
+                </div>
+                <div>
+                  <label style={labelSt}>Horário</label>
+                  <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputSt} />
+                </div>
+              </div>
+              <div>
+                <label style={labelSt}>Tipo de consulta</label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {(['retorno', 'primeira vez'] as const).map(opt => (
+                    <button key={opt} onClick={() => setType(opt)} style={{ flex: 1, padding: '10px 0', border: `2px solid ${type === opt ? P : BO}`, borderRadius: 8, background: type === opt ? PL : '#fff', color: type === opt ? P : MU, fontWeight: type === opt ? 600 : 400, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' as const }}>{opt}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label style={labelSt}>Motivo / observação</label>
+                <input value={complaint} onChange={e => setComplaint(e.target.value)} placeholder="Ex: Retorno pós-antibiótico" style={inputSt} />
+              </div>
+            </div>
+          )}
+
+          {error && <div style={{ marginTop: 12, fontSize: 13, color: DES, background: DESL, borderRadius: 8, padding: '8px 12px' }}>{error}</div>}
+        </div>
+
+        {/* Footer actions */}
+        <div style={{ padding: '16px 24px', borderTop: `1px solid ${BO}`, background: BG }}>
+          {editing ? (
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <Btn variant="secondary" onClick={() => setEditing(false)}>Cancelar</Btn>
+              <Btn onClick={save} disabled={saving}>{saving ? 'Salvando…' : 'Salvar alterações'}</Btn>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {appt.status !== 'completed' && appt.status !== 'cancelled' && (
+                <Btn onClick={() => onStartConsult(appt)} style={{ width: '100%', justifyContent: 'center' }}>
+                  <Stethoscope size={15} /> Iniciar consulta agora
+                </Btn>
+              )}
+              {appt.status === 'scheduled' && (
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <Btn variant="secondary" onClick={confirm} disabled={saving} style={{ flex: 1, justifyContent: 'center' }}>
+                    <CheckCircle size={14} /> Confirmar presença
+                  </Btn>
+                  <Btn variant="secondary" onClick={markDone} disabled={saving} style={{ flex: 1, justifyContent: 'center' }}>
+                    <CheckCircle size={14} /> Marcar realizada
+                  </Btn>
+                </div>
+              )}
+              {appt.status !== 'completed' && appt.status !== 'cancelled' && (
+                <button onClick={cancel} disabled={saving} style={{ background: 'none', border: 'none', cursor: 'pointer', color: DES, fontSize: 13, padding: '4px 0', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  <Trash size={13} /> Cancelar consulta
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AgendaPage({ go, setActivePatient }: { go: (s: string) => void; setActivePatient: (p: Patient) => void }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [weekOffset, setWeekOffset] = useState(0);
-  const [selected, setSelected] = useState(todayIso);
+  const [selectedDay, setSelectedDay] = useState(todayIso); // mobile only
   const [apptsByDate, setApptsByDate] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(true);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [newModalDate, setNewModalDate] = useState(todayIso);
+  const [selectedAppt, setSelectedAppt] = useState<any | null>(null);
   const isMobile = useIsMobile();
 
   const weekDays = getWeekDays(weekOffset);
+  const gridDays = weekDays.slice(0, 5); // Mon–Fri
   const weekStart = weekDays[0].date;
   const weekEnd = weekDays[6].date;
 
@@ -2900,125 +3070,212 @@ function AgendaPage({ go, setActivePatient }: { go: (s: string) => void; setActi
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { loadWeek(); }, [weekStart, weekEnd]);
+  useEffect(() => { loadWeek(); }, [weekStart]);
 
-  const appts = apptsByDate[selected] || [];
   const allAppts = Object.values(apptsByDate).flat();
-  const totalWeek = allAppts.length;
-  const totalDone = allAppts.filter(a => a.status === 'completed').length;
-  const todayCount = (apptsByDate[todayIso] || []).length;
-  const isPast = (date: string) => date < todayIso;
+  const todayAppts = apptsByDate[todayIso] || [];
+  const confirmed = allAppts.filter(a => a.status === 'completed' || a.status === 'in_progress').length;
+  const pending = allAppts.filter(a => a.status === 'scheduled').length;
+  const nextAppt = todayAppts.find(a => a.status === 'scheduled' || a.status === 'in_progress');
 
+  // Collect all unique times from week, sorted
+  const allTimes = [...new Set(allAppts.map(a => a.time))].sort();
+
+  // Week label: "Abril · semana N"
   const weekLabel = (() => {
-    const fmt = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
-    return `Semana de ${fmt(weekStart)} a ${fmt(weekEnd)}`;
+    const d = new Date(weekStart + 'T12:00:00');
+    const month = d.toLocaleDateString('pt-BR', { month: 'long' });
+    const jan1 = new Date(d.getFullYear(), 0, 1);
+    const wn = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7);
+    return `${month.charAt(0).toUpperCase() + month.slice(1)} · semana ${wn}`;
   })();
+
+  // Appointment card colors
+  function apptBg(a: any) {
+    if (a.status === 'in_progress') return `${ACCENT}20`;
+    if (a.status === 'completed') return `${SUC}12`;
+    if (a.type === 'primeira vez') return `${ACCENT}14`;
+    return `${P}10`;
+  }
+  function apptBorder(a: any) {
+    if (a.status === 'in_progress') return ACCENT;
+    if (a.status === 'completed') return SUC;
+    if (a.type === 'primeira vez') return ACCENT;
+    return P;
+  }
+
+  function handleStartConsult(appt: any) {
+    // Find patient and navigate
+    db.fetchPatients().then(patients => {
+      const p = patients.find(p => p.id === appt.patient_id);
+      if (p) { setActivePatient(p); go('patient-detail'); }
+    });
+    setSelectedAppt(null);
+  }
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isMobile ? 14 : 24 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={() => setWeekOffset(w => w - 1)} style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <CaretLeft size={14} color={MU} />
+          </button>
+          <h2 style={{ margin: 0, fontSize: isMobile ? 15 : 18, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>{weekLabel}</h2>
+          <button onClick={() => setWeekOffset(w => w + 1)} style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <CaretRight size={14} color={MU} />
+          </button>
+          {weekOffset !== 0 && (
+            <button onClick={() => setWeekOffset(0)} style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 13, color: MU, fontFamily: 'inherit' }}>Hoje</button>
+          )}
+        </div>
+        <Btn onClick={() => { setNewModalDate(selectedDay); setShowNewModal(true); }}>
+          <Plus size={14} /> {isMobile ? 'Novo' : 'Nova consulta'}
+        </Btn>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: isMobile ? 10 : 16, marginBottom: 24 }}>
+        <Card style={{ padding: isMobile ? 14 : '16px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>HOJE</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            <span style={{ fontSize: 32, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: INK, letterSpacing: '-0.02em' }}>{loading ? '—' : todayAppts.length}</span>
+            <span style={{ fontSize: 13, color: MU }}>consultas</span>
+          </div>
+        </Card>
+        <Card style={{ padding: isMobile ? 14 : '16px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>CONFIRMADAS</div>
+          <span style={{ fontSize: 32, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: SUC, letterSpacing: '-0.02em' }}>{loading ? '—' : confirmed}</span>
+        </Card>
+        <Card style={{ padding: isMobile ? 14 : '16px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>AGUARDANDO</div>
+          <span style={{ fontSize: 32, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: pending > 0 ? WARN : MU, letterSpacing: '-0.02em' }}>{loading ? '—' : pending}</span>
+        </Card>
+        <Card style={{ padding: isMobile ? 14 : '16px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>PRÓXIMA</div>
+          {nextAppt ? (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <span style={{ fontSize: 22, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: P }}>{nextAppt.time}</span>
+              <span style={{ fontSize: 13, color: MU, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{nextAppt.patient_name.split(' ').slice(0, 2).join(' ')}</span>
+            </div>
+          ) : <span style={{ fontSize: 20, color: MU }}>—</span>}
+        </Card>
+      </div>
+
+      {/* Weekly grid (desktop) / Day list (mobile) */}
+      {!isMobile ? (
+        <Card style={{ overflow: 'hidden' }}>
+          {/* Day headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: '64px repeat(5, 1fr)', borderBottom: `1px solid ${BO}` }}>
+            <div style={{ borderRight: `1px solid ${BO}` }} />
+            {gridDays.map(({ date, short, day }, i) => {
+              const isToday = date === todayIso;
+              const cnt = (apptsByDate[date] || []).length;
+              return (
+                <div key={date} style={{ padding: '14px 16px', borderRight: i < 4 ? `1px solid ${BO}` : 'none', background: isToday ? PL : 'transparent', cursor: 'pointer' }}
+                  onClick={() => { setNewModalDate(date); setShowNewModal(true); }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: isToday ? P : MU, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{short}</div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: '50%', background: isToday ? P : 'transparent', color: isToday ? '#fff' : INK, fontSize: 18, fontWeight: isToday ? 700 : 600, marginTop: 4 }}>{day}</div>
+                  {cnt > 0 && <div style={{ fontSize: 11, color: isToday ? P : MU, marginTop: 4 }}>{cnt} consulta{cnt > 1 ? 's' : ''}</div>}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Rows */}
+          {loading ? (
+            <div style={{ padding: 60, textAlign: 'center' as const, color: MU, fontSize: 13 }}>Carregando agenda…</div>
+          ) : allTimes.length === 0 ? (
+            <div style={{ padding: '60px 24px', textAlign: 'center' as const }}>
+              <CalendarBlank size={36} color={BO} style={{ display: 'block', margin: '0 auto 12px' }} />
+              <div style={{ fontWeight: 600, color: INK, marginBottom: 6 }}>Nenhuma consulta esta semana</div>
+              <div style={{ fontSize: 13, color: MU, marginBottom: 20 }}>Clique em um dia ou no botão para adicionar</div>
+              <Btn onClick={() => setShowNewModal(true)}><Plus size={14} /> Nova consulta</Btn>
+            </div>
+          ) : allTimes.map((time, ti) => (
+            <div key={time} style={{ display: 'grid', gridTemplateColumns: '64px repeat(5, 1fr)', borderBottom: ti < allTimes.length - 1 ? `1px solid ${BO}` : 'none', minHeight: 80 }}>
+              <div style={{ padding: '16px 8px', borderRight: `1px solid ${BO}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }}>
+                <span style={{ fontSize: 12, fontFamily: '"JetBrains Mono", monospace', color: MU, fontWeight: 600 }}>{time}</span>
+              </div>
+              {gridDays.map(({ date }, ci) => {
+                const appt = (apptsByDate[date] || []).find(a => a.time === time);
+                const isToday = date === todayIso;
+                return (
+                  <div key={date} style={{ borderRight: ci < 4 ? `1px solid ${BO}` : 'none', padding: 8, background: isToday ? `${PL}60` : 'transparent', cursor: appt ? 'pointer' : 'default' }}
+                    onClick={() => appt && setSelectedAppt(appt)}>
+                    {appt && (
+                      <div style={{ borderRadius: 8, padding: '8px 12px', background: apptBg(appt), borderLeft: `3px solid ${apptBorder(appt)}`, minHeight: 60, boxSizing: 'border-box' as const, transition: 'opacity 0.1s' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.8'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
+                        {appt.status === 'in_progress' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: ACCENT, fontWeight: 600, marginBottom: 2 }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: ACCENT, display: 'inline-block', animation: 'live-pulse 2s ease-in-out infinite' }} />
+                            ao vivo
+                          </div>
+                        )}
+                        <div style={{ fontWeight: 600, fontSize: 13, color: INK }}>{appt.patient_name} · {appt.age}</div>
+                        <div style={{ fontSize: 11, color: MU, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                          {appt.chief_complaint || appt.type}
+                        </div>
+                        {appt.status === 'completed' && (
+                          <div style={{ fontSize: 10, color: SUC, fontWeight: 600, marginTop: 2 }}>✓ realizada</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </Card>
+      ) : (
+        /* Mobile: day tabs + list */
         <div>
-          <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 26, fontWeight: 500 }}>Agenda</h1>
-          {!isMobile && <p style={{ margin: '4px 0 0', color: MU, fontSize: 14 }}>{weekLabel}</p>}
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {!isMobile && <>
-            <Btn variant="secondary" size="sm" onClick={() => setWeekOffset(w => w - 1)}><CaretLeft size={14} /> Semana anterior</Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setWeekOffset(w => w + 1)}>Próxima semana <CaretRight size={14} /></Btn>
-          </>}
-          {isMobile && <>
-            <Btn variant="secondary" size="sm" onClick={() => setWeekOffset(w => w - 1)}><CaretLeft size={14} /></Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setWeekOffset(w => w + 1)}><CaretRight size={14} /></Btn>
-          </>}
-          <Btn size="sm" onClick={() => setShowNewModal(true)}><Plus size={14} /> {isMobile ? '' : 'Novo agendamento'}</Btn>
-        </div>
-      </div>
-      {showNewModal && <NewAppointmentModal defaultDate={selected} onClose={() => setShowNewModal(false)} onSaved={() => { setShowNewModal(false); loadWeek(); }} />}
-
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? 10 : 16, marginBottom: isMobile ? 14 : 24 }}>
-        {[
-          { label: isMobile ? 'Na semana' : 'Consultas na semana', value: totalWeek, icon: CalendarBlank, color: P },
-          { label: 'Realizadas', value: totalDone, icon: CheckCircle, color: SUC },
-          { label: 'Agendadas', value: totalWeek - totalDone, icon: Clock, color: WARN },
-          { label: 'Hoje', value: todayCount, icon: Baby, color: ACCENT },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <Card key={label} style={{ padding: isMobile ? 14 : 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isMobile ? 6 : 12 }}>
-              <span style={{ fontSize: isMobile ? 11 : 13, color: MU, fontWeight: 500 }}>{label}</span>
-              <div style={{ background: color + '18', borderRadius: 8, padding: isMobile ? 6 : 8 }}><Icon size={isMobile ? 15 : 18} color={color} /></div>
+          <Card style={{ marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+              {weekDays.map(({ date, short, day }, i) => {
+                const cnt = (apptsByDate[date] || []).length;
+                const isToday = date === todayIso;
+                const isSel = date === selectedDay;
+                return (
+                  <button key={date} onClick={() => setSelectedDay(date)} style={{ padding: '10px 4px', background: isSel ? PL : 'transparent', border: 'none', borderBottom: isSel ? `2px solid ${P}` : '2px solid transparent', borderRight: i < 6 ? `1px solid ${BO}` : 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <div style={{ fontSize: 9, fontWeight: 600, color: isSel ? P : MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 }}>{short}</div>
+                    <div style={{ width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 4px', background: isToday ? P : 'transparent', color: isToday ? '#fff' : INK, fontWeight: isToday ? 700 : 600, fontSize: 13 }}>{day}</div>
+                    {cnt > 0 ? <span style={{ fontSize: 9, background: isSel ? P : BO, color: isSel ? '#fff' : MU, borderRadius: 99, padding: '1px 4px', fontWeight: 600 }}>{cnt}</span> : <span style={{ fontSize: 10, color: BO }}>·</span>}
+                  </button>
+                );
+              })}
             </div>
-            <div style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', letterSpacing: '-0.02em' }}>{loading ? '—' : value}</div>
           </Card>
-        ))}
-      </div>
-
-      <Card style={{ marginBottom: isMobile ? 12 : 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-          {weekDays.map(({ date, short, day }, i) => {
-            const cnt = (apptsByDate[date] || []).length;
-            const isToday = date === todayIso;
-            const isSel = date === selected;
-            const past = isPast(date);
-            return (
-              <button key={date} onClick={() => setSelected(date)}
-                style={{
-                  padding: isMobile ? '10px 4px' : '16px 8px', background: isSel ? PL : 'transparent', border: 'none',
-                  borderBottom: isSel ? `2px solid ${P}` : `2px solid transparent`,
-                  borderRight: i < 6 ? `1px solid ${BO}` : 'none',
-                  cursor: 'pointer', fontFamily: 'inherit', transition: 'background 0.15s',
-                }}>
-                <div style={{ fontSize: isMobile ? 9 : 11, fontWeight: 600, color: isSel ? P : MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: isMobile ? 4 : 6 }}>{short}</div>
-                <div style={{
-                  width: isMobile ? 26 : 32, height: isMobile ? 26 : 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: `0 auto ${isMobile ? 4 : 8}px`,
-                  background: isToday ? P : 'transparent',
-                  color: isToday ? '#fff' : past ? MU : INK,
-                  fontWeight: isToday ? 700 : 600, fontSize: isMobile ? 13 : 16,
-                }}>{day}</div>
-                {cnt > 0
-                  ? <span style={{ fontSize: isMobile ? 9 : 11, background: isSel ? P : BO, color: isSel ? '#fff' : MU, borderRadius: 99, padding: isMobile ? '1px 4px' : '2px 8px', fontWeight: 600 }}>{cnt}</span>
-                  : <span style={{ fontSize: 10, color: BO }}>·</span>
-                }
-              </button>
-            );
-          })}
+          <Card>
+            {loading ? (
+              <div style={{ padding: 40, textAlign: 'center' as const, color: MU, fontSize: 13 }}>Carregando…</div>
+            ) : (apptsByDate[selectedDay] || []).length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center' as const, color: MU }}>
+                <CalendarBlank size={28} color={BO} style={{ display: 'block', margin: '0 auto 10px' }} />
+                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>Sem consultas</div>
+                <Btn size="sm" style={{ marginTop: 8 }} onClick={() => { setNewModalDate(selectedDay); setShowNewModal(true); }}><Plus size={13} /> Adicionar</Btn>
+              </div>
+            ) : (apptsByDate[selectedDay] || []).map((appt, i, arr) => (
+              <div key={appt.id} onClick={() => setSelectedAppt(appt)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: i < arr.length - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer', background: 'transparent', transition: 'background 0.15s' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = PL}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                <div style={{ width: 4, height: 36, borderRadius: 2, background: apptBorder(appt), flexShrink: 0 }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: P, fontFamily: '"JetBrains Mono", monospace', width: 44, flexShrink: 0 }}>{appt.time}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{appt.patient_name}</div>
+                  <div style={{ fontSize: 12, color: MU }}>{appt.age} · {appt.chief_complaint || appt.type}</div>
+                </div>
+                {appt.status === 'completed' && <Badge color={SUC} bg={SUCL}><CheckCircle size={10} /></Badge>}
+                {appt.status === 'in_progress' && <Badge color={P} bg={PL}><Heartbeat size={10} /></Badge>}
+              </div>
+            ))}
+          </Card>
         </div>
-      </Card>
+      )}
 
-      <Card>
-        <div style={{ padding: '16px 24px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontWeight: 600, fontSize: 15 }}>
-            {new Date(selected + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </span>
-          {selected === todayIso && <Badge color={P} bg={PL}>Hoje</Badge>}
-          {isPast(selected) && selected !== todayIso && <Badge color={MU} bg={BO}>Passado</Badge>}
-        </div>
-        {loading ? (
-          <div style={{ padding: 60, textAlign: 'center' as const, color: MU }}>
-            <div style={{ fontSize: 13 }}>Carregando…</div>
-          </div>
-        ) : appts.length === 0 ? (
-          <div style={{ padding: 60, textAlign: 'center' as const, color: MU }}>
-            <CalendarBlank size={32} color={BO} style={{ marginBottom: 12, display: 'block', margin: '0 auto 12px' }} />
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>Sem consultas neste dia</div>
-            <div style={{ fontSize: 13 }}>As consultas aparecem aqui após serem salvas</div>
-          </div>
-        ) : appts.map((appt, i) => (
-          <div key={appt.id}
-            style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 24px', borderBottom: i < appts.length - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = PL; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-            <span style={{ width: 48, fontSize: 14, fontWeight: 600, color: P, flexShrink: 0 }}>{appt.time}</span>
-            <StatusDot status={appt.status} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{appt.patient_name}</div>
-              <div style={{ fontSize: 12, color: MU }}>{appt.age}{appt.guardian ? ` · ${appt.guardian}` : ''}</div>
-            </div>
-            <Pill type={appt.type} />
-            {appt.status === 'completed' && <Badge color={SUC} bg={SUCL}><CheckCircle size={11} /> Realizada</Badge>}
-            {appt.status === 'in_progress' && <Badge color={P} bg={PL}><Heartbeat size={11} /> Em andamento</Badge>}
-          </div>
-        ))}
-      </Card>
+      {showNewModal && <NewAppointmentModal defaultDate={newModalDate} onClose={() => setShowNewModal(false)} onSaved={() => { setShowNewModal(false); loadWeek(); }} />}
+      {selectedAppt && <AppointmentDetailModal appt={selectedAppt} onClose={() => setSelectedAppt(null)} onUpdate={() => { setSelectedAppt(null); loadWeek(); }} onStartConsult={handleStartConsult} />}
     </div>
   );
 }

@@ -178,7 +178,7 @@ export async function createAppointment(input: {
 export async function fetchAppointmentsForWeek(from: string, to: string) {
   const { data, error } = await supabase
     .from('consultations')
-    .select('id, scheduled_at, status, type, patient_id, patients(full_name, birth_date, patient_guardians(name, is_primary))')
+    .select('id, scheduled_at, status, type, chief_complaint, patient_id, patients(full_name, birth_date, patient_guardians(name, is_primary))')
     .gte('scheduled_at', from + 'T00:00:00')
     .lte('scheduled_at', to + 'T23:59:59')
     .order('scheduled_at', { ascending: true });
@@ -203,10 +203,26 @@ export async function fetchAppointmentsForWeek(from: string, to: string) {
       age,
       type: (c.type || 'retorno') as 'retorno' | 'primeira vez',
       status: (c.status || 'scheduled') as 'completed' | 'in_progress' | 'scheduled',
+      chief_complaint: c.chief_complaint || '',
       guardian: primary?.name || '',
       date: c.scheduled_at.slice(0, 10),
     };
   });
+}
+
+export async function updateAppointment(id: string, input: {
+  scheduled_at?: string;
+  type?: 'retorno' | 'primeira vez';
+  chief_complaint?: string;
+  status?: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+}): Promise<void> {
+  const { error } = await supabase.from('consultations').update(input).eq('id', id);
+  if (error) throw error;
+}
+
+export async function cancelAppointment(id: string): Promise<void> {
+  const { error } = await supabase.from('consultations').update({ status: 'cancelled' }).eq('id', id);
+  if (error) throw error;
 }
 
 // ── Today's appointments ──────────────────────────────────────────────────────
