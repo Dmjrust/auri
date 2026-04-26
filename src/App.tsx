@@ -2300,7 +2300,8 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
           </div>
           {!isMobile && (
             <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-              <Btn variant="secondary"><FileText size={15} /> Editar ficha</Btn>
+              <Btn variant="secondary" onClick={() => window.print()}><DownloadSimple size={15} /> Imprimir</Btn>
+              <Btn variant="secondary"><User size={15} /> Compartilhar</Btn>
               <Btn onClick={onStartConsult}><Stethoscope size={15} /> Iniciar consulta</Btn>
             </div>
           )}
