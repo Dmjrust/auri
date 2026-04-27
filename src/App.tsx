@@ -2281,8 +2281,9 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
           const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
           function consultDaysDiff(c: Consultation) {
-            const d = new Date(c.scheduled_at);
-            return Math.floor((todayMidnight.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000);
+            // Parse date portion directly from ISO string to avoid UTC→local timezone shift
+            const [y, m, d] = c.scheduled_at.slice(0, 10).split('-').map(Number);
+            return Math.floor((todayMidnight.getTime() - new Date(y, m - 1, d).getTime()) / 86400000);
           }
 
           // Parse texto corrido em bullets (split por ". " ou "\n")
@@ -2309,8 +2310,8 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
           const pastConsults = consultations.filter(c => consultDaysDiff(c) >= 0);
           const last = pastConsults[0] ?? null;
 
-          // Prescrições: histórico de todas as consultas com receituário
-          const medsHistory = consultations
+          // Prescrições: apenas consultas já realizadas
+          const medsHistory = pastConsults
             .filter(c => c.prescription?.trim())
             .map(c => ({ rx: c.prescription, date: c.scheduled_at, complaint: c.chief_complaint }));
           const lastRx = medsHistory[0] ?? null;
