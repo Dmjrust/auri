@@ -84,6 +84,7 @@ export async function fetchConsultations(patientId: string): Promise<Consultatio
     .from('consultations')
     .select('*')
     .eq('patient_id', patientId)
+    .neq('status', 'draft')
     .order('scheduled_at', { ascending: false });
   if (error) throw error;
   return (data || []).map(mapConsultation);
@@ -133,6 +134,74 @@ export async function saveConsultation(
   if (error) throw error;
 
   // Grava em growth_records se houver alguma medida
+  const bd = new Date(birthDate);
+  const monthAge = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
+  const weightKg = parseNum(summary.peso);
+  const heightCm = parseNum(summary.altura);
+  const hcCm = parseNum(summary.perimetro_cefalico);
+  if (weightKg || heightCm || hcCm) {
+    await supabase.from('growth_records').insert({
+      patient_id: patientId,
+      month_age: Math.max(0, monthAge),
+      weight_kg: weightKg,
+      height_cm: heightCm,
+      head_circumference_cm: hcCm,
+    });
+  }
+}
+
+// ── Save draft consultation (auto-saved on processing complete) ───────────────
+export async function saveDraftConsultation(
+  patientId: string,
+  summary: StructuredSummary,
+  durationSeconds: number,
+): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Não autenticado');
+  const now = new Date();
+  const { data, error } = await supabase.from('consultations').insert({
+    patient_id: patientId,
+    doctor_id: user.id,
+    scheduled_at: now.toISOString(),
+    status: 'draft',
+    type: 'retorno',
+    duration_minutes: Math.max(1, Math.round(durationSeconds / 60)),
+    chief_complaint: summary.queixa_principal,
+    diagnosis: summary.hipoteses[0] || '',
+    plan: summary.conduta,
+    prescription: '',
+    anamnesis: summary.hda,
+    physical_exam: summary.exame_fisico,
+    sum_queixa_principal: summary.queixa_principal,
+    sum_hda: summary.hda,
+    sum_exame_fisico: summary.exame_fisico,
+    sum_hipoteses: summary.hipoteses,
+    sum_conduta: summary.conduta,
+    sum_retorno: summary.retorno,
+    sum_peso: summary.peso,
+    sum_altura: summary.altura,
+    sum_perimetro_cefalico: summary.perimetro_cefalico,
+    sum_vacinas_mencionadas: summary.vacinas_mencionadas,
+  }).select('id').single();
+  if (error) throw error;
+  return data.id;
+}
+
+// ── Confirm draft → completed (saves growth records too) ─────────────────────
+export async function confirmDraftConsultation(
+  draftId: string,
+  patientId: string,
+  summary: StructuredSummary,
+  durationSeconds: number,
+  birthDate: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('consultations')
+    .update({ status: 'completed', duration_minutes: Math.max(1, Math.round(durationSeconds / 60)) })
+    .eq('id', draftId);
+  if (error) throw error;
+
+  const now = new Date();
   const bd = new Date(birthDate);
   const monthAge = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
   const weightKg = parseNum(summary.peso);

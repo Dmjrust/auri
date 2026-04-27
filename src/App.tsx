@@ -3034,9 +3034,10 @@ function ProcessingScreen({ audioBlob, onDone }: { audioBlob: Blob | null; onDon
   );
 }
 
-function SummaryDoneScreen({ patient, recTime, summary, transcript, onSave }: {
+function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, onSave }: {
   patient: Patient | null; recTime: number;
   summary: StructuredSummary; transcript: string;
+  draftId: string | null;
   onSave: () => void;
 }) {
   const [showTranscript, setShowTranscript] = useState(false);
@@ -3046,7 +3047,13 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, onSave }: {
   async function handleSave() {
     if (!patient) { onSave(); return; }
     setSaving(true);
-    try { await db.saveConsultation(patient.id, s, recTime, patient.birth_date); } catch (e) { console.error(e); }
+    try {
+      if (draftId) {
+        await db.confirmDraftConsultation(draftId, patient.id, s, recTime, patient.birth_date);
+      } else {
+        await db.saveConsultation(patient.id, s, recTime, patient.birth_date);
+      }
+    } catch (e) { console.error(e); }
     finally { setSaving(false); onSave(); }
   }
   return (
@@ -3056,8 +3063,14 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, onSave }: {
           <div style={{ width: 44, height: 44, borderRadius: '50%', background: SUCL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CheckCircle size={22} color={SUC} /></div>
           <div>
             <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500 }}>Consulta processada</h2>
-            <p style={{ margin: '4px 0 0', color: MU, fontSize: 14 }}>Revise o resumo antes de salvar no histórico.</p>
+            <p style={{ margin: '4px 0 0', color: MU, fontSize: 14 }}>Revise o resumo e confirme para salvar no histórico.</p>
           </div>
+          {draftId && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: SUC, background: SUCL, padding: '6px 12px', borderRadius: 99 }}>
+              <CheckCircle size={13} color={SUC} weight="fill" />
+              Rascunho salvo automaticamente
+            </div>
+          )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
           {[
@@ -3112,7 +3125,7 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, onSave }: {
         </Card>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
           <Btn variant="secondary" size="lg"><DownloadSimple size={16} /> Exportar PDF</Btn>
-          <Btn size="lg" onClick={handleSave} disabled={saving}>{saving ? 'Salvando…' : <><CheckCircle size={16} /> Salvar no histórico</>}</Btn>
+          <Btn size="lg" onClick={handleSave} disabled={saving}>{saving ? 'Confirmando…' : <><CheckCircle size={16} /> {draftId ? 'Confirmar prontuário' : 'Salvar no histórico'}</>}</Btn>
         </div>
       </div>
     </div>
@@ -3966,6 +3979,7 @@ export default function App() {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [realSummary, setRealSummary] = useState<StructuredSummary | null>(null);
   const [realTranscript, setRealTranscript] = useState('');
+  const [draftConsultationId, setDraftConsultationId] = useState<string | null>(null);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [prontuarioFormat, setProntuarioFormatState] = useState<ProntuarioFormat>('narrativo');
@@ -4059,8 +4073,15 @@ export default function App() {
 
   if (flow === 'consent')    return <ConsentScreen onOk={() => setFlow('recording')} onCancel={() => setFlow(null)} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} />;
-  if (flow === 'processing') return <ProcessingScreen audioBlob={audioBlob} onDone={(summary, transcript) => { setRealSummary(summary); setRealTranscript(transcript); setFlow('done'); }} />;
-  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} onSave={() => { setFlow(null); setAudioBlob(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
+  if (flow === 'processing') return <ProcessingScreen audioBlob={audioBlob} onDone={(summary, transcript) => {
+    setRealSummary(summary); setRealTranscript(transcript); setFlow('done');
+    if (activePatient) {
+      db.saveDraftConsultation(activePatient.id, summary, recTime)
+        .then(id => setDraftConsultationId(id))
+        .catch(err => console.error('Auto-save draft failed:', err));
+    }
+  }} />;
+  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} onSave={() => { setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
 
   const breadcrumbs: Record<string, string[]> = {
     dashboard:        ['Início', 'Dashboard'],
