@@ -2304,9 +2304,12 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
       .catch(() => setPendingVaccinesCount(0));
   }, [patient.id, refetchTrigger]);
 
-  // Only consultations that have already occurred (not future scheduled)
+  // Drafts: awaiting doctor confirmation
+  const draftConsultations = consultations.filter(c => c.status === 'draft');
+  // Past (completed/scheduled) — excludes drafts and future appointments
   const todayMidnightOuter = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
   const pastConsultations = consultations.filter(c => {
+    if (c.status === 'draft') return false;
     const [y, m, d] = c.scheduled_at.slice(0, 10).split('-').map(Number);
     return (todayMidnightOuter.getTime() - new Date(y, m - 1, d).getTime()) / 86400000 >= 0;
   });
@@ -2413,7 +2416,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
           }
 
           // Última consulta passada
-          const pastConsults = consultations.filter(c => consultDaysDiff(c) >= 0);
+          const pastConsults = consultations.filter(c => c.status !== 'draft' && consultDaysDiff(c) >= 0);
           const last = pastConsults[0] ?? null;
 
           // Prescrições: apenas consultas já realizadas
@@ -2824,13 +2827,87 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
 
         {tab === 'Consultas' && (
           selectedConsult
-            ? <ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} />
+            ? selectedConsult.status === 'draft'
+              ? (
+                /* ── Draft review panel ─────────────────────────────────── */
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                    <button onClick={() => setSelectedConsult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 6, color: MU, fontSize: 13 }}>
+                      <CaretLeft size={14} /> Voltar
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', background: WARNL, border: `1.5px solid ${WARN}`, borderRadius: 10, marginBottom: 20 }}>
+                    <Warning size={18} color={WARN} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: INK }}>Rascunho aguardando confirmação</div>
+                      <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>Salvo automaticamente em {fmtDateTime(selectedConsult.scheduled_at)}. Revise e confirme para registrar no histórico.</div>
+                    </div>
+                  </div>
+                  <Card style={{ marginBottom: 16 }}>
+                    <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <FileText size={15} color={P} /><span style={{ fontWeight: 600, fontSize: 15 }}>Resumo estruturado</span>
+                    </div>
+                    {[
+                      { label: 'Queixa principal', val: selectedConsult.summary.queixa_principal },
+                      { label: 'HDA', val: selectedConsult.summary.hda },
+                      { label: 'Exame físico', val: selectedConsult.summary.exame_fisico },
+                      { label: 'Hipóteses', val: selectedConsult.summary.hipoteses.length > 0 ? <>{selectedConsult.summary.hipoteses.map((h, i) => <div key={i}>• {h}</div>)}</> : '—' },
+                      { label: 'Conduta', val: selectedConsult.summary.conduta },
+                      { label: 'Retorno', val: selectedConsult.summary.retorno },
+                    ].map(({ label, val }) => val && String(val).trim() ? (
+                      <div key={label} style={{ padding: '12px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>{label}</span>
+                        <span style={{ fontSize: 14, lineHeight: 1.6 }}>{val}</span>
+                      </div>
+                    ) : null)}
+                  </Card>
+                  <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                    <Btn variant="secondary" onClick={() => setSelectedConsult(null)}>Cancelar</Btn>
+                    <Btn onClick={async () => {
+                      try {
+                        await db.confirmDraftConsultation(selectedConsult.id, patient.id, selectedConsult.summary, selectedConsult.duration_minutes * 60, patient.birth_date);
+                        setSelectedConsult(null);
+                        setRefetchTrigger(t => t + 1);
+                      } catch (e) { console.error(e); }
+                    }}><CheckCircle size={15} /> Confirmar prontuário</Btn>
+                  </div>
+                </div>
+              )
+              : <ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} />
             : (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
                   <Btn size="sm" onClick={onStartConsult}><Plus size={14} /> Nova consulta</Btn>
                 </div>
-                {pastConsultations.length === 0 && <Card style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada.</Card>}
+
+                {/* Drafts section */}
+                {draftConsultations.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: WARN, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Warning size={12} color={WARN} /> {draftConsultations.length} rascunho{draftConsultations.length !== 1 ? 's' : ''} aguardando confirmação
+                    </div>
+                    {draftConsultations.map(c => (
+                      <Card key={c.id} style={{ marginBottom: 8, cursor: 'pointer', border: `1.5px solid ${WARN}40`, background: WARNL }} onClick={() => setSelectedConsult(c)}>
+                        <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <div style={{ width: 40, height: 40, borderRadius: 8, background: `${WARN}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={18} color={WARN} /></div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                              <span style={{ fontWeight: 600, fontSize: 14 }}>{fmtDateTime(c.scheduled_at)}</span>
+                              <Badge color={WARN} bg={`${WARN}20`}>Rascunho</Badge>
+                            </div>
+                            <div style={{ fontSize: 13, color: INK }}>{c.chief_complaint || 'Sem queixa registrada'}</div>
+                          </div>
+                          <CaretRight size={18} color={WARN} />
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {/* Completed consultations */}
+                {pastConsultations.length === 0 && draftConsultations.length === 0 && (
+                  <Card style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada.</Card>
+                )}
                 {pastConsultations.map((c, i) => (
                   <Card key={c.id} style={{ marginBottom: 12, cursor: 'pointer' }} onClick={() => setSelectedConsult(c)}>
                     <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>

@@ -84,7 +84,6 @@ export async function fetchConsultations(patientId: string): Promise<Consultatio
     .from('consultations')
     .select('*')
     .eq('patient_id', patientId)
-    .neq('status', 'draft')
     .order('scheduled_at', { ascending: false });
   if (error) throw error;
   return (data || []).map(mapConsultation);
