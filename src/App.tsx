@@ -3045,7 +3045,7 @@ function NewAppointmentModal({ onClose, onSaved, defaultDate }: { onClose: () =>
     if (!patientId) { setError('Selecione um paciente.'); return; }
     setSaving(true); setError('');
     try {
-      await db.createAppointment({ patient_id: patientId, scheduled_at: `${date}T${time}:00`, type, chief_complaint: complaint });
+      await db.createAppointment({ patient_id: patientId, scheduled_at: new Date(`${date}T${time}:00`).toISOString(), type, chief_complaint: complaint });
       onSaved();
     } catch (e: any) {
       setError(e.message || 'Erro ao agendar.');
@@ -3137,7 +3137,7 @@ function AppointmentDetailModal({
   async function save() {
     setSaving(true); setError('');
     try {
-      await db.updateAppointment(appt.id, { scheduled_at: `${date}T${time}:00`, type, chief_complaint: complaint });
+      await db.updateAppointment(appt.id, { scheduled_at: new Date(`${date}T${time}:00`).toISOString(), type, chief_complaint: complaint });
       onUpdate();
     } catch (e: any) { setError(e.message || 'Erro ao salvar.'); setSaving(false); }
   }
