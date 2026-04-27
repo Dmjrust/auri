@@ -2302,7 +2302,14 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
       .catch(() => setPendingVaccinesCount(0));
   }, [patient.id, refetchTrigger]);
 
-  const lastConsult = consultations[0];
+  // Only consultations that have already occurred (not future scheduled)
+  const todayMidnightOuter = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  const pastConsultations = consultations.filter(c => {
+    const [y, m, d] = c.scheduled_at.slice(0, 10).split('-').map(Number);
+    return (todayMidnightOuter.getTime() - new Date(y, m - 1, d).getTime()) / 86400000 >= 0;
+  });
+
+  const lastConsult = pastConsultations[0];
 
   // Obter última medida (peso, altura, perímetro cefálico) de growth_records ou consultas
   const lastMeasurement = growthRecords.length > 0 ? growthRecords[growthRecords.length - 1] : null;
@@ -2354,7 +2361,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
         )}
         <div style={{ display: 'flex', gap: isMobile ? 8 : 16, marginTop: 14, paddingTop: 14, borderTop: `1px solid ${BO}`, flexWrap: 'wrap' as const }}>
           {[
-            { l: 'Consultas', v: loadingC ? '…' : consultations.length },
+            { l: 'Consultas', v: loadingC ? '…' : pastConsultations.length },
             { l: 'Última', v: lastConsult ? fmtDate(lastConsult.scheduled_at.split('T')[0]) : '—' },
             { l: 'Retorno', v: fmtDate(patient.next_return) },
             { l: 'Vacinas pend.', v: pend, warn: pend > 0 },
@@ -2643,35 +2650,33 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                 {/* 5. Consultas recentes */}
                 <Card>
                   <SH title="Consultas recentes" right={<Btn variant="ghost" size="sm" onClick={() => setTab('Consultas')}>Ver todas</Btn>} />
-                  {consultations.length === 0 ? (
+                  {pastConsults.length === 0 ? (
                     <div style={{ padding: '28px 20px', textAlign: 'center' as const }}>
                       <p style={{ margin: '0 0 12px', fontSize: 13, color: MU }}>Nenhuma consulta registrada.</p>
                       <Btn size="sm" onClick={onStartConsult}><Plus size={14} /> Iniciar primeira consulta</Btn>
                     </div>
-                  ) : consultations.slice(0, 3).map((c, i) => {
+                  ) : pastConsults.slice(0, 3).map((c, i) => {
                     const dd = consultDaysDiff(c);
-                    const isFuture = dd < 0;
                     const isToday = dd === 0;
-                    const statusLabel = isFuture ? 'Próxima' : isToday ? 'Hoje' : 'Concluída';
-                    const statusColor = isFuture ? P : isToday ? ACCENT : SUC;
-                    const timeLabel = isToday ? 'HOJE' : isFuture ? `PRÓXIMA · ${Math.abs(dd)}d` : `HÁ ${dd} ${dd === 1 ? 'DIA' : 'DIAS'}`;
+                    const statusLabel = isToday ? 'Hoje' : 'Concluída';
+                    const statusColor = isToday ? ACCENT : SUC;
+                    const timeLabel = isToday ? 'HOJE' : `HÁ ${dd} ${dd === 1 ? 'DIA' : 'DIAS'}`;
                     return (
-                      <div key={c.id} style={{ padding: '14px 20px', borderBottom: i < Math.min(consultations.length, 3) - 1 ? `1px solid ${BO}` : 'none' }}>
+                      <div key={c.id} style={{ padding: '14px 20px', borderBottom: i < Math.min(pastConsults.length, 3) - 1 ? `1px solid ${BO}` : 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                           <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600, color: MU }}>{timeLabel}</div>
                           <span style={{ fontSize: 11, color: statusColor, fontWeight: 600, background: statusColor + '18', padding: '2px 8px', borderRadius: 99 }}>{statusLabel}</span>
                         </div>
                         <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, color: INK }}>{c.chief_complaint}</div>
                         {c.diagnosis && <div style={{ fontSize: 12, color: MU, marginBottom: 2 }}>Hipótese: {c.diagnosis.slice(0, 65)}{c.diagnosis.length > 65 ? '…' : ''}</div>}
-                        {!isFuture && c.plan && <div style={{ fontSize: 12, color: MU }}>Conduta: {c.plan.slice(0, 65)}{c.plan.length > 65 ? '…' : ''}</div>}
-                        {c.prescription && !isFuture && (
+                        {c.plan && <div style={{ fontSize: 12, color: MU }}>Conduta: {c.plan.slice(0, 65)}{c.plan.length > 65 ? '…' : ''}</div>}
+                        {c.prescription && (
                           <div style={{ marginTop: 6, padding: '5px 10px', background: BG, borderRadius: 6, border: `1px solid ${BO}`, fontSize: 12, color: INK }}>
                             Rx: {c.prescription.slice(0, 75)}{c.prescription.length > 75 ? '…' : ''}
                           </div>
                         )}
                         <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
                           <Btn variant="ghost" size="sm" onClick={() => { setSelectedConsult(c); setTab('Consultas'); }}>Ver prontuário</Btn>
-                          {isFuture && <Btn size="sm" onClick={onStartConsult}><Stethoscope size={13} /> Iniciar</Btn>}
                         </div>
                       </div>
                     );
@@ -2823,8 +2828,8 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
                   <Btn size="sm" onClick={onStartConsult}><Plus size={14} /> Nova consulta</Btn>
                 </div>
-                {consultations.length === 0 && <Card style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada.</Card>}
-                {consultations.map((c, i) => (
+                {pastConsultations.length === 0 && <Card style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada.</Card>}
+                {pastConsultations.map((c, i) => (
                   <Card key={c.id} style={{ marginBottom: 12, cursor: 'pointer' }} onClick={() => setSelectedConsult(c)}>
                     <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
                       <div style={{ width: 40, height: 40, borderRadius: 8, background: PL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={18} color={P} /></div>
