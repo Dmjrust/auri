@@ -2338,9 +2338,6 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                 </div>
               ))}
             </div>
-            {patient.notes && (
-              <div style={{ marginTop: 8, padding: '6px 10px', background: WARNL, borderRadius: 6, fontSize: 12, color: WARN }}>{patient.notes}</div>
-            )}
           </div>
           {!isMobile && (
             <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
