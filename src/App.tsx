@@ -782,8 +782,14 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
   const [recentActivity, setRecentActivity] = useState<{ id: string; patient_id: string; patient_name: string; date: string; type: string }[]>([]);
   const [consultSummaries, setConsultSummaries] = useState<Record<string, { count: number; lastDate: string | null }>>({});
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
+  const [expandedPriority, setExpandedPriority] = useState<'retorno' | 'vacinas' | 'sem-consulta' | null>(null);
   const isMobile = useIsMobile();
   const doctorName = doctorNameProp || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Médico';
+
+  function navToPatient(patientId: string) {
+    const p = patients.find(x => x.id === patientId);
+    if (p) { setActivePatient(p); go('patient-detail'); }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -928,42 +934,136 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
               </div>
             ) : (
               <div>
-                {overdueAppts.length > 0 && (
-                  <div onClick={() => go('patients')}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', borderBottom: overdueVaccPatients.length > 0 || firstTimePatients.length > 0 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = DESL}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: DES, flexShrink: 0 }} />
-                    <span style={{ flex: 1, fontSize: 14 }}>
-                      <strong style={{ color: DES }}>{overdueAppts.length}</strong> retorno{overdueAppts.length !== 1 ? 's' : ''} vencido{overdueAppts.length !== 1 ? 's' : ''}
-                    </span>
-                    <CaretRight size={13} color={MU} />
-                  </div>
-                )}
-                {overdueVaccPatients.length > 0 && (
-                  <div onClick={() => go('patients')}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', borderBottom: firstTimePatients.length > 0 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = ACCENTL}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: ACCENT, flexShrink: 0 }} />
-                    <span style={{ flex: 1, fontSize: 14 }}>
-                      <strong style={{ color: ACCENT }}>{overdueVaccPatients.length}</strong> paciente{overdueVaccPatients.length !== 1 ? 's' : ''} com vacinas em atraso
-                    </span>
-                    <CaretRight size={13} color={MU} />
-                  </div>
-                )}
-                {firstTimePatients.length > 0 && (
-                  <div onClick={() => go('patients')}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', cursor: 'pointer' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = WARNL}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: WARN, flexShrink: 0 }} />
-                    <span style={{ flex: 1, fontSize: 14 }}>
-                      <strong style={{ color: WARN }}>{firstTimePatients.length}</strong> paciente{firstTimePatients.length !== 1 ? 's' : ''} sem consulta registrada
-                    </span>
-                    <CaretRight size={13} color={MU} />
-                  </div>
-                )}
+                {/* Retornos vencidos */}
+                {overdueAppts.length > 0 && (() => {
+                  const isLast = overdueVaccPatients.length === 0 && firstTimePatients.length === 0;
+                  const expanded = expandedPriority === 'retorno';
+                  const handleClick = () => {
+                    if (overdueAppts.length === 1) {
+                      navToPatient(overdueAppts[0].patient_id);
+                    } else {
+                      setExpandedPriority(expanded ? null : 'retorno');
+                    }
+                  };
+                  return (
+                    <div style={{ borderBottom: isLast && !expanded ? 'none' : `1px solid ${BO}` }}>
+                      <div onClick={handleClick}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', cursor: 'pointer' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = DESL}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: DES, flexShrink: 0 }} />
+                        <span style={{ flex: 1, fontSize: 14 }}>
+                          <strong style={{ color: DES }}>{overdueAppts.length}</strong> retorno{overdueAppts.length !== 1 ? 's' : ''} vencido{overdueAppts.length !== 1 ? 's' : ''}
+                        </span>
+                        {overdueAppts.length === 1
+                          ? <CaretRight size={13} color={MU} />
+                          : <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>}
+                      </div>
+                      {expanded && (
+                        <div style={{ borderTop: `1px solid ${BO}`, background: `${DES}06` }}>
+                          {overdueAppts.map(a => {
+                            const daysDiff = Math.floor((new Date().getTime() - new Date(a.scheduled_at).getTime()) / 86400000);
+                            return (
+                              <div key={a.patient_id} onClick={() => navToPatient(a.patient_id)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px 10px 36px', cursor: 'pointer', borderBottom: `1px solid ${BO}` }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = DESL}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                                <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{a.patient_name}</span>
+                                <span style={{ fontSize: 12, color: DES }}>{daysDiff}d em atraso</span>
+                                <CaretRight size={12} color={MU} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Vacinas em atraso */}
+                {overdueVaccPatients.length > 0 && (() => {
+                  const isLast = firstTimePatients.length === 0;
+                  const expanded = expandedPriority === 'vacinas';
+                  const handleClick = () => {
+                    if (overdueVaccPatients.length === 1) {
+                      navToPatient(overdueVaccPatients[0].id);
+                    } else {
+                      setExpandedPriority(expanded ? null : 'vacinas');
+                    }
+                  };
+                  return (
+                    <div style={{ borderBottom: isLast && !expanded ? 'none' : `1px solid ${BO}` }}>
+                      <div onClick={handleClick}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', cursor: 'pointer' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = ACCENTL}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: ACCENT, flexShrink: 0 }} />
+                        <span style={{ flex: 1, fontSize: 14 }}>
+                          <strong style={{ color: ACCENT }}>{overdueVaccPatients.length}</strong> paciente{overdueVaccPatients.length !== 1 ? 's' : ''} com vacinas em atraso
+                        </span>
+                        {overdueVaccPatients.length === 1
+                          ? <CaretRight size={13} color={MU} />
+                          : <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>}
+                      </div>
+                      {expanded && (
+                        <div style={{ borderTop: `1px solid ${BO}`, background: `${ACCENT}06` }}>
+                          {overdueVaccPatients.map(v => (
+                            <div key={v.id} onClick={() => navToPatient(v.id)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px 10px 36px', cursor: 'pointer', borderBottom: `1px solid ${BO}` }}
+                              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = ACCENTL}
+                              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{v.full_name}</span>
+                              <span style={{ fontSize: 12, color: ACCENT }}>{v.overdueCount} vacina{v.overdueCount !== 1 ? 's' : ''}</span>
+                              <CaretRight size={12} color={MU} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Sem consulta registrada */}
+                {firstTimePatients.length > 0 && (() => {
+                  const expanded = expandedPriority === 'sem-consulta';
+                  const handleClick = () => {
+                    if (firstTimePatients.length === 1) {
+                      setActivePatient(firstTimePatients[0]); go('patient-detail');
+                    } else {
+                      setExpandedPriority(expanded ? null : 'sem-consulta');
+                    }
+                  };
+                  return (
+                    <div>
+                      <div onClick={handleClick}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', cursor: 'pointer' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = WARNL}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: WARN, flexShrink: 0 }} />
+                        <span style={{ flex: 1, fontSize: 14 }}>
+                          <strong style={{ color: WARN }}>{firstTimePatients.length}</strong> paciente{firstTimePatients.length !== 1 ? 's' : ''} sem consulta registrada
+                        </span>
+                        {firstTimePatients.length === 1
+                          ? <CaretRight size={13} color={MU} />
+                          : <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>}
+                      </div>
+                      {expanded && (
+                        <div style={{ borderTop: `1px solid ${BO}`, background: `${WARN}06` }}>
+                          {firstTimePatients.map(p => (
+                            <div key={p.id} onClick={() => { setActivePatient(p); go('patient-detail'); }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px 10px 36px', cursor: 'pointer', borderBottom: `1px solid ${BO}` }}
+                              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = WARNL}
+                              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{p.full_name}</span>
+                              <span style={{ fontSize: 12, color: WARN }}>sem consultas</span>
+                              <CaretRight size={12} color={MU} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </Card>
