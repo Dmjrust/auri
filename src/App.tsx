@@ -33,7 +33,9 @@ function calcAge(bd: string) {
 }
 function fmtDate(iso: string | null) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('pt-BR');
+  // Parse date portion directly to avoid UTC-midnight → local-day-shift
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
 }
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
