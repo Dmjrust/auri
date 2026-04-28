@@ -193,9 +193,9 @@ function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) =
   );
 }
 
-function Header({ breadcrumb, onBack, notifications = [], onNotificationClick }: {
+function Header({ breadcrumb, onBack, notifications = [], onNotificationClick, onClearNotifications }: {
   breadcrumb?: string[]; onBack?: () => void;
-  notifications?: AppNotification[]; onNotificationClick?: (patientId?: string) => void;
+  notifications?: AppNotification[]; onNotificationClick?: (patientId?: string) => void; onClearNotifications?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -239,7 +239,14 @@ function Header({ breadcrumb, onBack, notifications = [], onNotificationClick }:
             <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 8, width: 360, background: '#fff', border: `1px solid ${BO}`, borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', zIndex: 200, overflow: 'hidden' }}>
               <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontWeight: 700, fontSize: 14 }}>Notificações</span>
-                {notifications.length > 0 && <Badge color={DES} bg={DESL}>{notifications.length} pendente{notifications.length > 1 ? 's' : ''}</Badge>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {notifications.length > 0 && <Badge color={DES} bg={DESL}>{notifications.length} pendente{notifications.length > 1 ? 's' : ''}</Badge>}
+                  {notifications.length > 0 && (
+                    <button onClick={onClearNotifications} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: MU, padding: '4px 8px', borderRadius: 6, transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = BO + '20'} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                      Limpar
+                    </button>
+                  )}
+                </div>
               </div>
               <div style={{ maxHeight: 400, overflowY: 'auto' }}>
                 {notifications.length === 0 ? (
@@ -294,7 +301,7 @@ function Layout({ children, screen, go, breadcrumb, onBack, doctorName, notifica
     <div style={{ display: 'flex', minHeight: '100vh', background: BG }}>
       <Sidebar screen={screen} go={go} doctorName={doctorName} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <Header breadcrumb={breadcrumb} onBack={onBack} notifications={notifications} onNotificationClick={onNotificationClick} />
+        <Header breadcrumb={breadcrumb} onBack={onBack} notifications={notifications} onNotificationClick={onNotificationClick} onClearNotifications={() => setNotifications([])} />
         <main style={{ flex: 1, padding: 32, overflowY: 'auto' }}>{children}</main>
       </div>
     </div>
