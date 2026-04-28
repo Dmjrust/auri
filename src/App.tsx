@@ -735,6 +735,119 @@ function LandingPage({ onEnter }: { onEnter: () => void }) {
         </div>
       </section>
 
+      {/* ── Pricing ──────────────────────────────────────────────────── */}
+      <section id="precos" style={{ maxWidth: 1120, margin: '0 auto 100px', padding: '0 32px' }}>
+        <div style={{ textAlign: 'center' as const, marginBottom: 56 }}>
+          <h2 style={{
+            fontFamily: '"Fraunces", Georgia, serif',
+            fontSize: mobile ? 34 : 48,
+            fontWeight: 400,
+            letterSpacing: '-0.02em',
+            margin: '0 0 14px',
+            color: INK,
+            lineHeight: 1.1,
+          }}>
+            Simples, transparente e pensado para sua rotina
+          </h2>
+          <p style={{ fontSize: 16, color: DS_INK2, margin: 0 }}>
+            Teste completo por 14 dias. Sem cartão. Sem compromisso.
+          </p>
+        </div>
+
+        {/* Cards grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3, 1fr)', gap: mobile ? 16 : 20, alignItems: 'start' }}>
+
+          {/* Starter */}
+          <div style={{ padding: 32, background: '#fff', border: `1px solid ${BO}`, borderRadius: 16, boxShadow: '0 1px 3px rgba(28,42,46,0.06)' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: DS_INK3, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Starter</div>
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ fontFamily: '"Fraunces", Georgia, serif', fontSize: 42, fontWeight: 500, color: INK, letterSpacing: '-0.03em' }}>R$ 149</span>
+              <span style={{ fontSize: 14, color: DS_INK3, marginLeft: 4 }}>/mês</span>
+            </div>
+            <p style={{ fontSize: 14, color: DS_INK2, margin: '0 0 28px', lineHeight: 1.5 }}>
+              Para quem está começando ou tem menor volume de consultas.
+            </p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 32px', display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+              {['Até 50 consultas/mês', 'Prontuário automático', 'Histórico de pacientes', 'Crescimento e vacinas'].map(item => (
+                <li key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: INK }}>
+                  <span style={{ width: 18, height: 18, borderRadius: '50%', background: DS_PRISOFT, color: P, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>✓</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <button onClick={onEnter} style={{ width: '100%', fontFamily: '"Inter", system-ui, sans-serif', fontSize: 14, fontWeight: 500, padding: '11px 0', borderRadius: 8, border: `1px solid ${BO}`, cursor: 'pointer', background: '#fff', color: INK, transition: 'all 180ms' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = BG; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff'; }}>
+              Começar avaliação
+            </button>
+          </div>
+
+          {/* Pro — destacado */}
+          <div style={{ padding: 32, background: P, border: `2px solid ${P}`, borderRadius: 16, boxShadow: '0 12px 40px rgba(15,76,92,0.18)', position: 'relative' as const }}>
+            {/* badge */}
+            <div style={{ position: 'absolute' as const, top: -13, left: '50%', transform: 'translateX(-50%)', background: ACCENT, color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 14px', borderRadius: 99, letterSpacing: '0.04em', whiteSpace: 'nowrap' as const }}>
+              MAIS ESCOLHIDO
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(220,233,236,0.7)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Pro</div>
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ fontFamily: '"Fraunces", Georgia, serif', fontSize: 42, fontWeight: 500, color: '#fff', letterSpacing: '-0.03em' }}>R$ 199</span>
+              <span style={{ fontSize: 14, color: 'rgba(220,233,236,0.7)', marginLeft: 4 }}>/mês</span>
+            </div>
+            <p style={{ fontSize: 14, color: 'rgba(220,233,236,0.85)', margin: '0 0 28px', lineHeight: 1.5 }}>
+              Para pediatras que querem usar o Auri no dia a dia.
+            </p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 32px', display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+              {['Até 120 consultas/mês', 'Prontuário automático completo', 'Painel do consultório', 'Insights clínicos', 'Exportação PDF'].map(item => (
+                <li key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: '#fff' }}>
+                  <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>✓</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <button onClick={onEnter} style={{ width: '100%', fontFamily: '"Inter", system-ui, sans-serif', fontSize: 14, fontWeight: 600, padding: '11px 0', borderRadius: 8, border: 'none', cursor: 'pointer', background: BG, color: P, transition: 'all 180ms' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.9'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}>
+              Começar avaliação
+            </button>
+          </div>
+
+          {/* Pro+ */}
+          <div style={{ padding: 32, background: '#fff', border: `1px solid ${BO}`, borderRadius: 16, boxShadow: '0 1px 3px rgba(28,42,46,0.06)' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: DS_INK3, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Pro+</div>
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ fontFamily: '"Fraunces", Georgia, serif', fontSize: 42, fontWeight: 500, color: INK, letterSpacing: '-0.03em' }}>R$ 249</span>
+              <span style={{ fontSize: 14, color: DS_INK3, marginLeft: 4 }}>/mês</span>
+            </div>
+            <p style={{ fontSize: 14, color: DS_INK2, margin: '0 0 28px', lineHeight: 1.5 }}>
+              Para maior volume de atendimentos.
+            </p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 32px', display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+              {['Até 200 consultas/mês', 'Tudo do plano Pro', 'Prioridade de processamento', 'Suporte prioritário'].map(item => (
+                <li key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: INK }}>
+                  <span style={{ width: 18, height: 18, borderRadius: '50%', background: DS_PRISOFT, color: P, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>✓</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <button onClick={onEnter} style={{ width: '100%', fontFamily: '"Inter", system-ui, sans-serif', fontSize: 14, fontWeight: 500, padding: '11px 0', borderRadius: 8, border: `1px solid ${BO}`, cursor: 'pointer', background: '#fff', color: INK, transition: 'all 180ms' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = BG; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff'; }}>
+              Começar avaliação
+            </button>
+          </div>
+        </div>
+
+        {/* Safety text */}
+        <p style={{ textAlign: 'center' as const, fontSize: 13, color: DS_INK3, marginTop: 20, marginBottom: 0 }}>
+          Uso dentro de padrões normais de consulta. Sem cobranças inesperadas.
+        </p>
+
+        {/* Microcopy */}
+        <p style={{ textAlign: 'center' as const, fontSize: 15, color: DS_INK2, marginTop: 20, marginBottom: 0, fontStyle: 'italic' }}>
+          Você economiza horas por semana — o equivalente a várias consultas.
+        </p>
+      </section>
+
       {/* ── CTA ──────────────────────────────────────────────────────── */}
       <div style={{ maxWidth: 1120, margin: '0 auto 64px', padding: '0 32px' }}>
         <div style={{
