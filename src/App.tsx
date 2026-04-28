@@ -9,6 +9,7 @@ import {
   Microphone, FileText, TrendUp, Stethoscope, X, DownloadSimple, User,
   Baby, Heartbeat, Syringe, CaretDown, CaretUp, CaretLeft,
   FloppyDisk, Buildings, Brain, ShieldCheck, PlayCircle, PencilSimple, Trash,
+  ChartBar, ArrowUp, ArrowDown, ArrowRight, Lightbulb,
 } from '@phosphor-icons/react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -152,10 +153,11 @@ function BottomNav({ screen, go }: { screen: string; go: (s: string) => void }) 
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) => void; doctorName: string }) {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard',     icon: SquaresFour },
-    { id: 'patients',  label: 'Pacientes',      icon: Users },
-    { id: 'agenda',    label: 'Agenda',         icon: CalendarBlank },
-    { id: 'settings',  label: 'Configurações',  icon: GearSix },
+    { id: 'dashboard', label: 'Dashboard',           icon: SquaresFour },
+    { id: 'patients',  label: 'Pacientes',            icon: Users },
+    { id: 'agenda',    label: 'Agenda',               icon: CalendarBlank },
+    { id: 'painel',    label: 'Painel do consultório', icon: ChartBar },
+    { id: 'settings',  label: 'Configurações',        icon: GearSix },
   ];
   return (
     <div style={{ width: 264, minHeight: '100vh', background: '#fff', borderRight: `1px solid ${BO}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
@@ -4121,6 +4123,380 @@ function SettingsPage({ user }: { user: any }) {
   );
 }
 
+// ─── PAINEL DO CONSULTÓRIO ─────────────────────────────────────────────────────
+function PainelPage({ go, setActivePatient }: { go: (s: string) => void; setActivePatient: (p: Patient) => void }) {
+  const [period, setPeriod] = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<import('./lib/db').ClinicPanelData | null>(null);
+  const isMobile = useIsMobile();
+
+  useEffect(() => {
+    setLoading(true);
+    db.fetchClinicPanelData(period)
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [period]);
+
+  // ── Computed metrics ───────────────────────────────────────────────────────
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+
+  const completedInPeriod = (data?.periodConsults || []).filter(c => c.status === 'completed');
+  const pastScheduledInPeriod = (data?.periodConsults || []).filter(c => c.status === 'scheduled' && c.date < todayStr);
+  const totalPastScheduled = completedInPeriod.length + pastScheduledInPeriod.length;
+  const noShowRate = totalPastScheduled > 0 ? Math.round(pastScheduledInPeriod.length / totalPastScheduled * 100) : 0;
+  const attendanceRate = 100 - noShowRate;
+
+  const prevCount = data?.prevConsults.length || 0;
+  const currentCount = completedInPeriod.length;
+  const consultDelta = prevCount > 0 ? Math.round((currentCount - prevCount) / prevCount * 100) : null;
+
+  const uniquePatientIds = new Set(completedInPeriod.map(c => c.patient_id));
+  const uniquePatientCount = uniquePatientIds.size;
+  const firstTimers = completedInPeriod.filter(c => c.type === 'primeira vez');
+  const retornos = completedInPeriod.filter(c => c.type === 'retorno');
+  const avgPerDay = period === 1 ? currentCount : Math.round(currentCount / period * 10) / 10;
+
+  // Retention
+  const allConsultsByPatient: Record<string, string[]> = {};
+  (data?.allConsults || []).forEach(c => {
+    if (!allConsultsByPatient[c.patient_id]) allConsultsByPatient[c.patient_id] = [];
+    allConsultsByPatient[c.patient_id].push(c.date);
+  });
+  let returningInPeriod = 0;
+  uniquePatientIds.forEach(pid => {
+    const history = allConsultsByPatient[pid] || [];
+    if (history.some(d => d < (data?.periodStart || todayStr))) returningInPeriod++;
+  });
+  const retentionRate = uniquePatientCount > 0 ? Math.round(returningInPeriod / uniquePatientCount * 100) : 0;
+
+  // Patients seen before period but not in period
+  const patientsSeenBeforePeriod = Object.entries(allConsultsByPatient)
+    .filter(([pid, dates]) => dates.some(d => d < (data?.periodStart || todayStr)) && !uniquePatientIds.has(pid));
+
+  // Average days between consultations
+  let totalAvgDays = 0, multiCount = 0;
+  Object.values(allConsultsByPatient).forEach(dates => {
+    if (dates.length < 2) return;
+    const sorted = [...dates].sort();
+    let sum = 0;
+    for (let i = 1; i < sorted.length; i++) sum += (new Date(sorted[i]).getTime() - new Date(sorted[i-1]).getTime()) / 86400000;
+    totalAvgDays += sum / (sorted.length - 1);
+    multiCount++;
+  });
+  const avgDaysBetween = multiCount > 0 ? Math.round(totalAvgDays / multiCount) : null;
+
+  // Vaccination rates
+  const overdueVaccPatients: { id: string; full_name: string }[] = [];
+  let vaccOkCount = 0;
+  (data?.patients || []).forEach(p => {
+    const bd = new Date(p.birth_date);
+    const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
+    const patVacc = (data?.allVaccines || []).filter(v => v.patient_id === p.id);
+    const overdue = PNI_SCHEDULE.filter(pni => {
+      const done = patVacc.find(v => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
+      return !done && pni.age_months <= ageMonths;
+    });
+    if (overdue.length > 0) overdueVaccPatients.push({ id: p.id, full_name: p.full_name });
+    else vaccOkCount++;
+  });
+  const totalPatients = data?.patients.length || 0;
+  const vaccOkRate = totalPatients > 0 ? Math.round(vaccOkCount / totalPatients * 100) : 0;
+
+  // New patients in period
+  const newPatientsInPeriod = (data?.patients || []).filter(p => p.created_at >= (data?.periodStart || todayStr));
+
+  // Bar chart: consultations per day
+  const chartData: { label: string; total: number }[] = [];
+  if (period > 1 && data) {
+    const dateMap: Record<string, number> = {};
+    completedInPeriod.forEach(c => { dateMap[c.date] = (dateMap[c.date] || 0) + 1; });
+    const startDate = new Date(data.periodStart);
+    const endDate = new Date(todayStr);
+    for (const d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const ds = d.toISOString().slice(0, 10);
+      const [, m, day] = ds.split('-');
+      chartData.push({ label: `${day}/${m}`, total: dateMap[ds] || 0 });
+    }
+  }
+
+  // Patients without return list (last seen, sorted oldest first)
+  const patientsWithoutReturn = patientsSeenBeforePeriod
+    .map(([pid, dates]) => {
+      const sorted = [...dates].sort().reverse();
+      const patient = (data?.patients || []).find(p => p.id === pid);
+      return patient ? { patient, lastDate: sorted[0] } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => (a!.lastDate < b!.lastDate ? -1 : 1))
+    .slice(0, 5) as { patient: { id: string; full_name: string; birth_date: string; created_at: string }; lastDate: string }[];
+
+  // Insights
+  type Insight = { color: string; bg: string; icon: any; text: string; action?: { label: string; fn: () => void } };
+  const insights: Insight[] = [];
+  if (consultDelta !== null && consultDelta <= -10) insights.push({ color: DES, bg: DESL, icon: ArrowDown, text: `Consultas caíram ${Math.abs(consultDelta)}% em relação ao período anterior.` });
+  else if (consultDelta !== null && consultDelta >= 10) insights.push({ color: SUC, bg: SUCL, icon: ArrowUp, text: `Consultas cresceram ${consultDelta}% em relação ao período anterior.` });
+  if (overdueVaccPatients.length > 0) insights.push({ color: WARN, bg: WARNL, icon: Syringe, text: `${overdueVaccPatients.length} paciente${overdueVaccPatients.length > 1 ? 's' : ''} com vacinas em atraso no calendário PNI.`, action: { label: 'Ver pacientes', fn: () => go('patients') } });
+  if (patientsWithoutReturn.length > 0) insights.push({ color: WARN, bg: WARNL, icon: Users, text: `${patientsWithoutReturn.length} paciente${patientsWithoutReturn.length > 1 ? 's' : ''} não retornou no período selecionado.`, action: { label: 'Ver lista abaixo', fn: () => {} } });
+  if (noShowRate > 20) insights.push({ color: DES, bg: DESL, icon: Warning, text: `Taxa de faltas de ${noShowRate}% — considere confirmar agendamentos por mensagem.` });
+  if (newPatientsInPeriod.length > 0) insights.push({ color: SUC, bg: SUCL, icon: CheckCircle, text: `${newPatientsInPeriod.length} novo${newPatientsInPeriod.length > 1 ? 's' : ''} paciente${newPatientsInPeriod.length > 1 ? 's' : ''} cadastrado${newPatientsInPeriod.length > 1 ? 's' : ''} no período.` });
+  if (retentionRate < 50 && uniquePatientCount > 3) insights.push({ color: WARN, bg: WARNL, icon: ArrowDown, text: `Retorno de pacientes baixo (${retentionRate}%) — verifique se há agendamentos de retorno pendentes.` });
+  const shownInsights = insights.slice(0, 5);
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const periodLabel = period === 1 ? 'hoje' : `últimos ${period} dias`;
+  const deltaColor = (d: number | null, goodIsPositive = true) => {
+    if (d === null) return MU;
+    return (goodIsPositive ? d >= 0 : d <= 0) ? SUC : DES;
+  };
+  const deltaIcon = (d: number | null) => d !== null && d >= 0 ? ArrowUp : ArrowDown;
+
+  function MetricCard({ label, value, sub, subColor, footer }: { label: string; value: string | number; sub?: string; subColor?: string; footer?: React.ReactNode }) {
+    return (
+      <Card style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ fontSize: 12, color: MU, fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>{label}</div>
+        <div style={{ fontSize: 28, fontWeight: 700, color: INK, fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.1 }}>{value}</div>
+        {sub && <div style={{ fontSize: 13, color: subColor || MU, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>{sub}</div>}
+        {footer && <div style={{ marginTop: 4 }}>{footer}</div>}
+      </Card>
+    );
+  }
+
+  function BlockHeader({ icon: Icon, title }: { icon: any; title: string }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Icon size={17} color={P} />
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: INK, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>{title}</h2>
+      </div>
+    );
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const periodOptions = [
+    { label: 'Hoje', value: 1 },
+    { label: '7 dias', value: 7 },
+    { label: '30 dias', value: 30 },
+    { label: '90 dias', value: 90 },
+  ];
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 14, marginBottom: 24 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 28, fontWeight: 600, color: INK, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.02em' }}>
+            Painel do consultório
+          </h1>
+          <p style={{ margin: '4px 0 0', fontSize: 14, color: MU }}>Visão geral do desempenho e saúde dos pacientes — {periodLabel}</p>
+        </div>
+        {/* Period filter */}
+        <div style={{ display: 'flex', background: SEC, borderRadius: 8, padding: 3, gap: 2, flexShrink: 0 }}>
+          {periodOptions.map(opt => (
+            <button key={opt.value} onClick={() => setPeriod(opt.value)}
+              style={{ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', transition: 'all 0.15s', background: period === opt.value ? '#fff' : 'transparent', color: period === opt.value ? P : MU, boxShadow: period === opt.value ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: MU, gap: 10 }}>
+          <Clock size={20} />
+          <span style={{ fontSize: 14 }}>Carregando dados...</span>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+          {/* ── 1. Summary cards ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 12 }}>
+            <MetricCard
+              label="Consultas"
+              value={currentCount}
+              sub={consultDelta !== null ? `${consultDelta >= 0 ? '↑' : '↓'} ${Math.abs(consultDelta)}% vs anterior` : 'sem dados anteriores'}
+              subColor={deltaColor(consultDelta)}
+            />
+            <MetricCard
+              label="Pacientes únicos"
+              value={uniquePatientCount}
+              sub={firstTimers.length > 0 ? `${firstTimers.length} primeiras consultas` : undefined}
+            />
+            <MetricCard
+              label="Retorno"
+              value={`${retentionRate}%`}
+              sub={retentionRate >= 60 ? '✓ bom nível' : retentionRate >= 40 ? '⚠ atenção' : '↓ baixo'}
+              subColor={retentionRate >= 60 ? SUC : retentionRate >= 40 ? WARN : DES}
+            />
+            <MetricCard
+              label="Vacinação em dia"
+              value={`${vaccOkRate}%`}
+              sub={vaccOkRate >= 80 ? '✓ bom nível' : vaccOkRate >= 60 ? '⚠ atenção' : '↓ atenção necessária'}
+              subColor={vaccOkRate >= 80 ? SUC : vaccOkRate >= 60 ? WARN : DES}
+            />
+          </div>
+
+          {/* ── 2. Operação + Gráfico ── */}
+          <Card>
+            <div style={{ padding: '18px 20px 0' }}>
+              <BlockHeader icon={CalendarBlank} title="Operação do consultório" />
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 0, borderTop: `1px solid ${BO}`, borderLeft: `1px solid ${BO}` }}>
+                {[
+                  { label: 'Consultas realizadas', value: currentCount },
+                  { label: `Média por ${period === 1 ? 'turno' : 'dia'}`, value: avgPerDay },
+                  { label: 'Comparecimento', value: totalPastScheduled > 0 ? `${attendanceRate}%` : '—' },
+                  { label: 'Faltas', value: totalPastScheduled > 0 ? `${noShowRate}%` : '—' },
+                ].map((s, i) => (
+                  <div key={i} style={{ padding: '14px 18px', borderRight: `1px solid ${BO}`, borderBottom: `1px solid ${BO}` }}>
+                    <div style={{ fontSize: 11, color: MU, fontWeight: 500, marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: '0.04em' }}>{s.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: INK, fontFamily: '"JetBrains Mono", monospace' }}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {chartData.length > 1 && (
+              <div style={{ padding: '16px 20px 20px' }}>
+                <div style={{ fontSize: 12, color: MU, marginBottom: 10 }}>Consultas por dia</div>
+                <ResponsiveContainer width="100%" height={120}>
+                  <BarChart data={chartData} margin={{ top: 0, right: 0, left: -30, bottom: 0 }}>
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: MU }} tickLine={false} axisLine={false} interval={period <= 7 ? 0 : Math.floor(chartData.length / 7)} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: MU }} tickLine={false} axisLine={false} domain={[0, 'auto']} />
+                    <Tooltip formatter={(v: any) => [v, 'Consultas']} labelStyle={{ fontSize: 11 }} contentStyle={{ fontSize: 12, borderRadius: 6, border: `1px solid ${BO}` }} />
+                    <Bar dataKey="total" fill={P} radius={[3, 3, 0, 0]} maxBarSize={32} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </Card>
+
+          {/* ── 3. Retenção + 4. Qualidade (side by side on desktop) ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+
+            {/* Retenção */}
+            <Card style={{ padding: '18px 20px' }}>
+              <BlockHeader icon={Users} title="Acompanhamento dos pacientes" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                {[
+                  { label: 'Retorno no período', value: `${retentionRate}%`, color: retentionRate >= 60 ? SUC : retentionRate >= 40 ? WARN : DES },
+                  { label: 'Retornos realizados', value: returningInPeriod },
+                  { label: 'Não retornaram', value: patientsSeenBeforePeriod.length, color: patientsSeenBeforePeriod.length > 0 ? WARN : SUC },
+                  { label: 'Média entre consultas', value: avgDaysBetween ? `${avgDaysBetween} dias` : '—' },
+                ].map((row, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 3 ? `1px solid ${BO}` : 'none' }}>
+                    <span style={{ fontSize: 13, color: MU }}>{row.label}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: (row as any).color || INK, fontFamily: '"JetBrains Mono", monospace' }}>{row.value}</span>
+                  </div>
+                ))}
+              </div>
+              {patientsWithoutReturn.length > 0 && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 8 }}>Não retornaram</div>
+                  {patientsWithoutReturn.map(({ patient, lastDate }) => (
+                    <div key={patient.id}
+                      onClick={() => { setActivePatient(patient as unknown as Patient); go('patient-detail'); }}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderRadius: 6, cursor: 'pointer', marginBottom: 3 }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = PL}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{patient.full_name}</span>
+                      <span style={{ fontSize: 12, color: MU }}>Última: {fmtDate(lastDate)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </Card>
+
+            {/* Qualidade clínica */}
+            <Card style={{ padding: '18px 20px' }}>
+              <BlockHeader icon={Syringe} title="Qualidade do acompanhamento" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                {[
+                  { label: 'Vacinação em dia', value: `${vaccOkCount} pacientes`, sub: `${vaccOkRate}%`, color: vaccOkRate >= 80 ? SUC : WARN },
+                  { label: 'Vacinação em atraso', value: `${overdueVaccPatients.length} pacientes`, sub: `${100 - vaccOkRate}%`, color: overdueVaccPatients.length > 0 ? DES : SUC },
+                  { label: 'Total de pacientes ativos', value: `${totalPatients}`, color: INK },
+                ].map((row, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < 2 ? `1px solid ${BO}` : 'none' }}>
+                    <span style={{ fontSize: 13, color: MU }}>{row.label}</span>
+                    <div style={{ textAlign: 'right' as const }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: row.color || INK }}>{row.value}</span>
+                      {row.sub && <span style={{ fontSize: 12, color: MU, marginLeft: 6 }}>({row.sub})</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Vaccine bar */}
+              {totalPatients > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, color: MU, marginBottom: 6 }}>Distribuição de vacinação</div>
+                  <div style={{ height: 10, borderRadius: 99, background: DESL, overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${vaccOkRate}%`, background: SUC, borderRadius: '99px 0 0 99px', transition: 'width 0.5s' }} />
+                    <div style={{ flex: 1, background: DES, borderRadius: '0 99px 99px 0' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><div style={{ width: 8, height: 8, borderRadius: 2, background: SUC }} /><span style={{ fontSize: 11, color: MU }}>Em dia ({vaccOkRate}%)</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><div style={{ width: 8, height: 8, borderRadius: 2, background: DES }} /><span style={{ fontSize: 11, color: MU }}>Em atraso ({100 - vaccOkRate}%)</span></div>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* ── 5. Crescimento ── */}
+          <Card style={{ padding: '18px 20px' }}>
+            <BlockHeader icon={TrendUp} title="Crescimento" />
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 0, border: `1px solid ${BO}`, borderRadius: 8, overflow: 'hidden' }}>
+              {[
+                { label: 'Novos pacientes', value: newPatientsInPeriod.length, hint: 'no período' },
+                { label: 'Primeiras consultas', value: firstTimers.length, hint: 'no período' },
+                { label: 'Retornos', value: retornos.length, hint: 'no período' },
+                { label: 'Base total', value: totalPatients, hint: 'pacientes ativos' },
+              ].map((s, i) => (
+                <div key={i} style={{ padding: '14px 18px', borderRight: i < 3 ? `1px solid ${BO}` : 'none', ...(isMobile && i >= 2 ? { borderTop: `1px solid ${BO}` } : {}) }}>
+                  <div style={{ fontSize: 11, color: MU, fontWeight: 500, marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: '0.04em' }}>{s.label}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: INK, fontFamily: '"JetBrains Mono", monospace' }}>{s.value}</div>
+                  <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>{s.hint}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* ── 6. Insights ── */}
+          {shownInsights.length > 0 && (
+            <Card style={{ padding: '18px 20px' }}>
+              <BlockHeader icon={Lightbulb} title="O que precisa de atenção" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {shownInsights.map((ins, i) => {
+                  const Icon = ins.icon;
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: ins.bg, borderRadius: 8 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: `${ins.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Icon size={16} color={ins.color} />
+                      </div>
+                      <span style={{ flex: 1, fontSize: 13, color: INK, lineHeight: 1.4 }}>{ins.text}</span>
+                      {ins.action && (
+                        <button onClick={ins.action.fn}
+                          style={{ background: 'none', border: `1px solid ${ins.color}40`, borderRadius: 5, padding: '4px 10px', fontSize: 12, color: ins.color, cursor: 'pointer', whiteSpace: 'nowrap' as const, fontFamily: 'inherit', fontWeight: 500 }}>
+                          {ins.action.label} <ArrowRight size={10} style={{ verticalAlign: 'middle' }} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          {shownInsights.length === 0 && (
+            <Card style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <CheckCircle size={20} color={SUC} />
+              <span style={{ fontSize: 14, color: MU }}>Nenhum ponto crítico identificado no período. Continue assim!</span>
+            </Card>
+          )}
+
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export type AppNotification = { type: 'vaccine' | 'appointment'; title: string; subtitle: string; patientId?: string; };
 
@@ -4245,6 +4621,7 @@ export default function App() {
     patients:         ['Início', 'Pacientes'],
     'patient-detail': ['Início', 'Pacientes', activePatient?.full_name || ''],
     agenda:           ['Início', 'Agenda'],
+    painel:           ['Início', 'Painel do consultório'],
     settings:         ['Início', 'Configurações'],
   };
 
@@ -4256,6 +4633,7 @@ export default function App() {
           {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
           {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={() => setFlow('consent')} refetchTrigger={refetchTrigger} />}
           {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} />}
+          {screen === 'painel'   && <PainelPage go={go} setActivePatient={setActivePatient} />}
           {screen === 'settings' && <SettingsPage user={user} />}
         </Layout>
       </ProntuarioFormatCtx.Provider>

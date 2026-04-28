@@ -411,6 +411,90 @@ export async function fetchConsultationSummaries(): Promise<Record<string, { cou
   return map;
 }
 
+// ── Clinic Panel Data ─────────────────────────────────────────────────────────
+export interface ClinicPanelData {
+  periodStart: string;
+  patients: { id: string; birth_date: string; full_name: string; created_at: string }[];
+  periodConsults: { date: string; type: string; status: string; patient_id: string }[];
+  prevConsults: { date: string; type: string; patient_id: string }[];
+  allConsults: { date: string; type: string; status: string; patient_id: string }[];
+  allVaccines: { patient_id: string; name: string; dose: string; status: string }[];
+}
+
+export async function fetchClinicPanelData(days: number): Promise<ClinicPanelData | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  const periodStartDate = days === 1
+    ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    : new Date(now.getTime() - (days - 1) * 86400000);
+  const periodStart = periodStartDate.toISOString().slice(0, 10);
+
+  const prevEndDate = new Date(periodStartDate.getTime() - 86400000);
+  const prevEnd = prevEndDate.toISOString().slice(0, 10);
+  const prevStartDate = new Date(periodStartDate.getTime() - days * 86400000);
+  const prevStart = prevStartDate.toISOString().slice(0, 10);
+
+  const [patientsRes, periodConsultsRes, prevConsultsRes, allConsultsRes] = await Promise.all([
+    supabase.from('patients')
+      .select('id, birth_date, full_name, created_at')
+      .eq('doctor_id', user.id)
+      .eq('is_active', true),
+    supabase.from('consultations')
+      .select('scheduled_at, type, status, patient_id')
+      .eq('doctor_id', user.id)
+      .gte('scheduled_at', periodStart + 'T00:00:00')
+      .lte('scheduled_at', todayStr + 'T23:59:59'),
+    supabase.from('consultations')
+      .select('scheduled_at, type, patient_id')
+      .eq('doctor_id', user.id)
+      .eq('status', 'completed')
+      .gte('scheduled_at', prevStart + 'T00:00:00')
+      .lte('scheduled_at', prevEnd + 'T23:59:59'),
+    supabase.from('consultations')
+      .select('scheduled_at, type, status, patient_id')
+      .eq('doctor_id', user.id)
+      .in('status', ['completed', 'scheduled'])
+      .order('scheduled_at', { ascending: false }),
+  ]);
+
+  const patientIds = (patientsRes.data || []).map((p: any) => p.id);
+  const vaccinesRes = patientIds.length > 0
+    ? await supabase.from('patient_vaccines').select('patient_id, name, dose, status').in('patient_id', patientIds)
+    : { data: [] };
+
+  return {
+    periodStart,
+    patients: (patientsRes.data || []).map((p: any) => ({
+      id: p.id,
+      birth_date: p.birth_date,
+      full_name: p.full_name,
+      created_at: (p.created_at || '').slice(0, 10),
+    })),
+    periodConsults: (periodConsultsRes.data || []).map((c: any) => ({
+      date: c.scheduled_at.slice(0, 10),
+      type: c.type || 'retorno',
+      status: c.status || 'scheduled',
+      patient_id: c.patient_id,
+    })),
+    prevConsults: (prevConsultsRes.data || []).map((c: any) => ({
+      date: c.scheduled_at.slice(0, 10),
+      type: c.type || 'retorno',
+      patient_id: c.patient_id,
+    })),
+    allConsults: (allConsultsRes.data || []).map((c: any) => ({
+      date: c.scheduled_at.slice(0, 10),
+      type: c.type || 'retorno',
+      status: c.status,
+      patient_id: c.patient_id,
+    })),
+    allVaccines: (vaccinesRes.data || []) as { patient_id: string; name: string; dose: string; status: string }[],
+  };
+}
+
 // ── Dashboard Stats ───────────────────────────────────────────────────────────
 export async function fetchDashboardStats(): Promise<{
   totalConsultations: number;
