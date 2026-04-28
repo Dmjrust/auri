@@ -785,6 +785,7 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
   const [consultSummaries, setConsultSummaries] = useState<Record<string, { count: number; lastDate: string | null }>>({});
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
   const [expandedPriority, setExpandedPriority] = useState<'retorno' | 'vacinas' | 'sem-consulta' | null>(null);
+  const [showAttentionPoints, setShowAttentionPoints] = useState(true);
   const isMobile = useIsMobile();
   const doctorName = doctorNameProp || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Médico';
 
@@ -1224,11 +1225,14 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
           </Card>
 
           {/* Pontos de atenção (IA leve) */}
-          {attentionPoints.length > 0 && (
+          {attentionPoints.length > 0 && showAttentionPoints && (
             <Card style={{ padding: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <Info size={15} color={P} />
-                <span style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif' }}>Pontos de atenção</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Info size={15} color={P} />
+                  <span style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif' }}>Pontos de atenção</span>
+                </div>
+                <Btn size="sm" variant="ghost" onClick={() => setShowAttentionPoints(false)} style={{ color: MU, fontSize: 12 }}><X size={14} /> Limpar</Btn>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {attentionPoints.slice(0, 5).map((pt, i) => (
