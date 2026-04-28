@@ -168,7 +168,7 @@ export function LoginForm() {
       {/* Header */}
       <div className="text-center">
         <div className="flex items-center justify-center mb-3">
-          <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 36, filter: 'brightness(0) invert(1)' }} />
+          <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 52, filter: 'brightness(0) invert(1)' }} />
         </div>
         <p className="text-sm text-gray-300">
           {mode === "login" ? "Acesse seu consultório" : "Crie sua conta"}

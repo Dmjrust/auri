@@ -163,7 +163,7 @@ function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) =
     <div style={{ width: 264, minHeight: '100vh', background: '#fff', borderRight: `1px solid ${BO}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       {/* Brand */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 14px 22px' }}>
-        <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 28 }} />
+        <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 44 }} />
       </div>
       {/* Nav */}
       <nav style={{ flex: 1, padding: '4px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -380,7 +380,7 @@ function LoginScreen({ onBack }: { onBack?: () => void }) {
         <div style={{ position: 'relative', zIndex: 1 }}>
           {/* Brand row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 28 }} />
+            <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 44 }} />
             <div style={{ width: 1, height: 18, background: BORDER_STRONG }} />
             <div style={{ fontSize: 12, color: INK3, letterSpacing: '0.02em' }}>para pediatras</div>
           </div>
@@ -626,7 +626,7 @@ function LandingPage({ onEnter }: { onEnter: () => void }) {
       {/* ── Nav ──────────────────────────────────────────────────────── */}
       <div style={{ background: BG }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 32px', display: 'flex', alignItems: 'center', gap: 32 }}>
-          <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 40 }} />
+          <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 52 }} />
           {!mobile && (
             <div style={{ marginLeft: 32, display: 'flex', gap: 24 }}>
               {[{ l: 'Produto', href: '#produto' }, { l: 'Privacidade', href: '#privacidade' }, { l: 'Preços', href: '#precos' }].map(({ l, href }) => (
@@ -3195,7 +3195,7 @@ function RecordingScreen({ time, patient, onFinish }: { time: number; patient: P
     <div style={{ minHeight: '100vh', background: BG }}>
       <div style={{ height: 56, background: '#fff', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 32px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 22 }} />
+          <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 36 }} />
           <span style={{ color: BO }}>|</span>
           <span style={{ fontSize: 14, color: MU }}>Em consulta — {patient?.full_name}</span>
         </div>
@@ -4697,7 +4697,7 @@ export default function App() {
   if (authLoading) return (
     <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' as const }}>
-        <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 36, marginBottom: 16 }} />
+        <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 52, marginBottom: 16 }} />
         <div style={{ fontSize: 13, color: MU }}>Carregando…</div>
       </div>
     </div>
