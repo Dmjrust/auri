@@ -793,12 +793,31 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
   const [expandedPriority, setExpandedPriority] = useState<'retorno' | 'vacinas' | 'sem-consulta' | null>(null);
   const [showAttentionPoints, setShowAttentionPoints] = useState(true);
+  const [dismissedPriorities, setDismissedPriorities] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('auri_dismissed_priorities');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
   const isMobile = useIsMobile();
   const doctorName = doctorNameProp || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Médico';
 
   function navToPatient(patientId: string) {
     const p = patients.find(x => x.id === patientId);
     if (p) { setActivePatient(p); go('patient-detail'); }
+  }
+
+  function dismissPriority(type: string, patientId: string) {
+    const key = `${type}:${patientId}`;
+    const next = new Set(dismissedPriorities);
+    next.add(key);
+    setDismissedPriorities(next);
+    try { localStorage.setItem('auri_dismissed_priorities', JSON.stringify([...next])); } catch {}
+  }
+
+  function clearDismissedPriorities() {
+    setDismissedPriorities(new Set());
+    try { localStorage.removeItem('auri_dismissed_priorities'); } catch {}
   }
 
   useEffect(() => {
@@ -848,6 +867,12 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
   const retornosPendentes = overdueAppts.length;
   const completedToday = todayAppts.filter(a => a.status === 'completed').length;
 
+  // Filtered by dismissed state
+  const displayedOverdueAppts = overdueAppts.filter(a => !dismissedPriorities.has(`retorno:${a.patient_id}`));
+  const displayedOverdueVaccPatients = overdueVaccPatients.filter(v => !dismissedPriorities.has(`vacinas:${v.id}`));
+  const displayedFirstTimePatients = firstTimePatients.filter(p => !dismissedPriorities.has(`sem-consulta:${p.id}`));
+  const hasDismissed = dismissedPriorities.size > 0;
+
   // Per-patient alert groups, ordenados por prioridade
   const alertsByPatient: Record<string, { patient: Patient | null; name: string; issues: { text: string; color: string }[]; priority: number }> = {};
   overdueAppts.forEach(a => {
@@ -894,7 +919,7 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
     ? 'Nenhuma consulta agendada'
     : `${todayAppts.length} consulta${todayAppts.length !== 1 ? 's' : ''} agendada${todayAppts.length !== 1 ? 's' : ''}, próxima às ${nextAppt?.time || ''} com ${nextAppt?.patient_name || ''}`;
 
-  const totalPrioridades = overdueAppts.length + overdueVaccPatients.length + firstTimePatients.length;
+  const totalPrioridades = displayedOverdueAppts.length + displayedOverdueVaccPatients.length + displayedFirstTimePatients.length;
 
   // Helper: format relative timestamp
   const formatRelativeTime = (iso: string) => {
@@ -935,6 +960,11 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
             <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Warning size={16} color={totalPrioridades > 0 ? DES : SUC} />
               <span style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', flex: 1 }}>Prioridades</span>
+              {hasDismissed && (
+                <button onClick={clearDismissedPriorities} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: MU, padding: '2px 6px', borderRadius: 4 }}>
+                  Restaurar ignorados
+                </button>
+              )}
               {totalPrioridades > 0 && <Badge color={DES} bg={DESL}>{totalPrioridades}</Badge>}
             </div>
             {totalPrioridades === 0 ? (
@@ -945,12 +975,12 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
             ) : (
               <div>
                 {/* Retornos vencidos */}
-                {overdueAppts.length > 0 && (() => {
-                  const isLast = overdueVaccPatients.length === 0 && firstTimePatients.length === 0;
+                {displayedOverdueAppts.length > 0 && (() => {
+                  const isLast = displayedOverdueVaccPatients.length === 0 && displayedFirstTimePatients.length === 0;
                   const expanded = expandedPriority === 'retorno';
                   const handleClick = () => {
-                    if (overdueAppts.length === 1) {
-                      navToPatient(overdueAppts[0].patient_id);
+                    if (displayedOverdueAppts.length === 1) {
+                      navToPatient(displayedOverdueAppts[0].patient_id);
                     } else {
                       setExpandedPriority(expanded ? null : 'retorno');
                     }
@@ -963,24 +993,37 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
                         <div style={{ width: 10, height: 10, borderRadius: '50%', background: DES, flexShrink: 0 }} />
                         <span style={{ flex: 1, fontSize: 14 }}>
-                          <strong style={{ color: DES }}>{overdueAppts.length}</strong> retorno{overdueAppts.length !== 1 ? 's' : ''} vencido{overdueAppts.length !== 1 ? 's' : ''}
+                          <strong style={{ color: DES }}>{displayedOverdueAppts.length}</strong> retorno{displayedOverdueAppts.length !== 1 ? 's' : ''} vencido{displayedOverdueAppts.length !== 1 ? 's' : ''}
                         </span>
-                        {overdueAppts.length === 1
-                          ? <CaretRight size={13} color={MU} />
-                          : <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>}
+                        {displayedOverdueAppts.length === 1 ? (
+                          <>
+                            <button onClick={e => { e.stopPropagation(); dismissPriority('retorno', displayedOverdueAppts[0].patient_id); }}
+                              style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '2px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
+                              Ignorar
+                            </button>
+                            <CaretRight size={13} color={MU} />
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
+                        )}
                       </div>
                       {expanded && (
                         <div style={{ borderTop: `1px solid ${BO}`, background: `${DES}06` }}>
-                          {overdueAppts.map(a => {
+                          {displayedOverdueAppts.map(a => {
                             const daysDiff = Math.floor((new Date().getTime() - new Date(a.scheduled_at).getTime()) / 86400000);
                             return (
-                              <div key={a.patient_id} onClick={() => navToPatient(a.patient_id)}
-                                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px 10px 36px', cursor: 'pointer', borderBottom: `1px solid ${BO}` }}
-                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = DESL}
-                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                                <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{a.patient_name}</span>
-                                <span style={{ fontSize: 12, color: DES }}>{daysDiff}d em atraso</span>
-                                <CaretRight size={12} color={MU} />
+                              <div key={a.patient_id}
+                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px 10px 36px', borderBottom: `1px solid ${BO}` }}>
+                                <span style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer' }} onClick={() => navToPatient(a.patient_id)}>{a.patient_name}</span>
+                                <span style={{ fontSize: 12, color: DES, flexShrink: 0 }}>{daysDiff}d em atraso</span>
+                                <button onClick={() => { navToPatient(a.patient_id); go('agenda'); }}
+                                  style={{ background: `${P}12`, border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: P, cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}>
+                                  Agendar
+                                </button>
+                                <button onClick={() => dismissPriority('retorno', a.patient_id)}
+                                  style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
+                                  Ignorar
+                                </button>
                               </div>
                             );
                           })}
@@ -991,12 +1034,12 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                 })()}
 
                 {/* Vacinas em atraso */}
-                {overdueVaccPatients.length > 0 && (() => {
-                  const isLast = firstTimePatients.length === 0;
+                {displayedOverdueVaccPatients.length > 0 && (() => {
+                  const isLast = displayedFirstTimePatients.length === 0;
                   const expanded = expandedPriority === 'vacinas';
                   const handleClick = () => {
-                    if (overdueVaccPatients.length === 1) {
-                      navToPatient(overdueVaccPatients[0].id);
+                    if (displayedOverdueVaccPatients.length === 1) {
+                      navToPatient(displayedOverdueVaccPatients[0].id);
                     } else {
                       setExpandedPriority(expanded ? null : 'vacinas');
                     }
@@ -1009,22 +1052,35 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
                         <div style={{ width: 10, height: 10, borderRadius: '50%', background: ACCENT, flexShrink: 0 }} />
                         <span style={{ flex: 1, fontSize: 14 }}>
-                          <strong style={{ color: ACCENT }}>{overdueVaccPatients.length}</strong> paciente{overdueVaccPatients.length !== 1 ? 's' : ''} com vacinas em atraso
+                          <strong style={{ color: ACCENT }}>{displayedOverdueVaccPatients.length}</strong> paciente{displayedOverdueVaccPatients.length !== 1 ? 's' : ''} com vacinas em atraso
                         </span>
-                        {overdueVaccPatients.length === 1
-                          ? <CaretRight size={13} color={MU} />
-                          : <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>}
+                        {displayedOverdueVaccPatients.length === 1 ? (
+                          <>
+                            <button onClick={e => { e.stopPropagation(); dismissPriority('vacinas', displayedOverdueVaccPatients[0].id); }}
+                              style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '2px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
+                              Ignorar
+                            </button>
+                            <CaretRight size={13} color={MU} />
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
+                        )}
                       </div>
                       {expanded && (
                         <div style={{ borderTop: `1px solid ${BO}`, background: `${ACCENT}06` }}>
-                          {overdueVaccPatients.map(v => (
-                            <div key={v.id} onClick={() => navToPatient(v.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px 10px 36px', cursor: 'pointer', borderBottom: `1px solid ${BO}` }}
-                              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = ACCENTL}
-                              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{v.full_name}</span>
-                              <span style={{ fontSize: 12, color: ACCENT }}>{v.overdueCount} vacina{v.overdueCount !== 1 ? 's' : ''}</span>
-                              <CaretRight size={12} color={MU} />
+                          {displayedOverdueVaccPatients.map(v => (
+                            <div key={v.id}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px 10px 36px', borderBottom: `1px solid ${BO}` }}>
+                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer' }} onClick={() => navToPatient(v.id)}>{v.full_name}</span>
+                              <span style={{ fontSize: 12, color: ACCENT, flexShrink: 0 }}>{v.overdueCount} vacina{v.overdueCount !== 1 ? 's' : ''}</span>
+                              <button onClick={() => navToPatient(v.id)}
+                                style={{ background: `${ACCENT}18`, border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: ACCENT, cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}>
+                                Ver vacinas
+                              </button>
+                              <button onClick={() => dismissPriority('vacinas', v.id)}
+                                style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
+                                Ignorar
+                              </button>
                             </div>
                           ))}
                         </div>
@@ -1034,11 +1090,11 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                 })()}
 
                 {/* Sem consulta registrada */}
-                {firstTimePatients.length > 0 && (() => {
+                {displayedFirstTimePatients.length > 0 && (() => {
                   const expanded = expandedPriority === 'sem-consulta';
                   const handleClick = () => {
-                    if (firstTimePatients.length === 1) {
-                      setActivePatient(firstTimePatients[0]); go('patient-detail');
+                    if (displayedFirstTimePatients.length === 1) {
+                      setActivePatient(displayedFirstTimePatients[0]); go('patient-detail');
                     } else {
                       setExpandedPriority(expanded ? null : 'sem-consulta');
                     }
@@ -1051,22 +1107,35 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
                         <div style={{ width: 10, height: 10, borderRadius: '50%', background: WARN, flexShrink: 0 }} />
                         <span style={{ flex: 1, fontSize: 14 }}>
-                          <strong style={{ color: WARN }}>{firstTimePatients.length}</strong> paciente{firstTimePatients.length !== 1 ? 's' : ''} sem consulta registrada
+                          <strong style={{ color: WARN }}>{displayedFirstTimePatients.length}</strong> paciente{displayedFirstTimePatients.length !== 1 ? 's' : ''} sem consulta registrada
                         </span>
-                        {firstTimePatients.length === 1
-                          ? <CaretRight size={13} color={MU} />
-                          : <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>}
+                        {displayedFirstTimePatients.length === 1 ? (
+                          <>
+                            <button onClick={e => { e.stopPropagation(); dismissPriority('sem-consulta', displayedFirstTimePatients[0].id); }}
+                              style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '2px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
+                              Ignorar
+                            </button>
+                            <CaretRight size={13} color={MU} />
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
+                        )}
                       </div>
                       {expanded && (
                         <div style={{ borderTop: `1px solid ${BO}`, background: `${WARN}06` }}>
-                          {firstTimePatients.map(p => (
-                            <div key={p.id} onClick={() => { setActivePatient(p); go('patient-detail'); }}
-                              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px 10px 36px', cursor: 'pointer', borderBottom: `1px solid ${BO}` }}
-                              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = WARNL}
-                              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{p.full_name}</span>
-                              <span style={{ fontSize: 12, color: WARN }}>sem consultas</span>
-                              <CaretRight size={12} color={MU} />
+                          {displayedFirstTimePatients.map(p => (
+                            <div key={p.id}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px 10px 36px', borderBottom: `1px solid ${BO}` }}>
+                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer' }} onClick={() => { setActivePatient(p); go('patient-detail'); }}>{p.full_name}</span>
+                              <span style={{ fontSize: 12, color: WARN, flexShrink: 0 }}>sem consultas</span>
+                              <button onClick={() => { setActivePatient(p); go('patient-detail'); }}
+                                style={{ background: `${WARN}18`, border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: WARN, cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}>
+                                Iniciar
+                              </button>
+                              <button onClick={() => dismissPriority('sem-consulta', p.id)}
+                                style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
+                                Ignorar
+                              </button>
                             </div>
                           ))}
                         </div>
