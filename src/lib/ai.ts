@@ -1,97 +1,36 @@
-import { supabase } from './supabase';
 import type { StructuredSummary, ScannableSummary } from '../data/mock';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PRODUÇÃO (Vercel): áudio vai direto do browser → Supabase Storage (sem limite
-//   de tamanho). O servidor recebe apenas a URL assinada (JSON tiny) e a repassa
-//   ao Whisper. Arquivo deletado após transcrição (LGPD).
-//   → OPENAI_API_KEY fica server-side, nunca no bundle do cliente.
+// VALIDAÇÃO CLÍNICA: chama OpenAI diretamente do browser via VITE_OPENAI_API_KEY.
+// Simples, sem proxy, sem limite de tamanho — funciona para qualquer duração.
 //
-// DESENVOLVIMENTO LOCAL (vite dev): chama Whisper diretamente via
-//   VITE_OPENAI_API_KEY no .env.local (gitignored, nunca vai ao repositório).
+// TODO pós-validação: mover para proxy server-side (Vercel Pro + maxDuration 300s)
+//   para não expor a chave no bundle de produção.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const IS_DEV = import.meta.env.DEV;
-const DEV_KEY = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+const KEY = () => import.meta.env.VITE_OPENAI_API_KEY as string;
 
 // ── Whisper: áudio → transcrição ─────────────────────────────────────────────
 export async function transcribeAudio(blob: Blob): Promise<string> {
+  const form = new FormData();
   const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
+  form.append('file', blob, `consulta.${ext}`);
+  form.append('model', 'whisper-1');
+  form.append('language', 'pt');
 
-  // Desenvolvimento local: chama Whisper diretamente (blob → FormData)
-  if (IS_DEV && DEV_KEY) {
-    const form = new FormData();
-    form.append('file', blob, `consulta.${ext}`);
-    form.append('model', 'whisper-1');
-    form.append('language', 'pt');
-    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${DEV_KEY}` },
-      body: form,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `Whisper ${res.status}`);
-    }
-    return (await res.json()).text as string;
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KEY()}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Whisper ${res.status}`);
   }
-
-  // ── Produção: upload para Supabase Storage → URL assinada → proxy server ──
-  // O áudio de 60 min a 32 kbps é ~14 MB — acima do limite de 4,5 MB do Vercel.
-  // Upload vai direto do browser ao Supabase; servidor recebe só a URL (~200 bytes).
-  // Arquivo deletado após transcrição (LGPD).
-
-  // 1. Faz upload para Supabase Storage (bucket: consultation-audio)
-  const path = `audio-${Date.now()}.${ext}`;
-  const { data: upData, error: upErr } = await supabase.storage
-    .from('consultation-audio')
-    .upload(path, blob, { contentType: blob.type, upsert: false });
-  if (upErr) {
-    // Mensagem detalhada para facilitar diagnóstico
-    const hint = upErr.message.includes('not found') || upErr.message.includes('Bucket')
-      ? ' — verifique se o bucket "consultation-audio" foi criado no Supabase Storage'
-      : upErr.message.includes('policy') || upErr.message.includes('403') || upErr.message.includes('Unauthorized')
-        ? ' — verifique as políticas RLS do bucket (INSERT para authenticated)'
-        : '';
-    throw new Error(`[Passo 1/3] Upload do áudio falhou: ${upErr.message}${hint}`);
-  }
-
-  // 2. Cria URL assinada com validade de 2 horas
-  const { data: sigData, error: sigErr } = await supabase.storage
-    .from('consultation-audio')
-    .createSignedUrl(upData.path, 7200);
-  if (sigErr) {
-    await supabase.storage.from('consultation-audio').remove([upData.path]).catch(() => {});
-    throw new Error(`[Passo 2/3] URL assinada falhou: ${sigErr.message} — verifique política SELECT no bucket`);
-  }
-
-  // 3. Pede ao servidor para transcrever via Whisper
-  let transcript = '';
-  try {
-    let res: Response;
-    try {
-      res = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioUrl: sigData.signedUrl, mimeType: blob.type }),
-      });
-    } catch (netErr: any) {
-      throw new Error(`[Passo 3/3] Falha de rede ao chamar /api/transcribe: ${netErr.message}`);
-    }
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(`[Passo 3/3] ${err?.error || `Transcrição falhou (HTTP ${res.status})`}`);
-    }
-    transcript = (await res.json()).text as string;
-  } finally {
-    // 4. Deleta o arquivo independente de sucesso ou erro (LGPD)
-    await supabase.storage.from('consultation-audio').remove([upData.path]).catch(() => {});
-  }
-
-  return transcript;
+  return (await res.json()).text as string;
 }
 
-// ── Prompts (usados no fallback dev) ─────────────────────────────────────────
+// ── GPT-4o: transcrição → prontuário estruturado ─────────────────────────────
 const STRUCTURE_SYSTEM_PROMPT = `Você é um assistente de prontuário pediátrico brasileiro. Analise a transcrição da consulta e retorne APENAS um JSON com exatamente estes campos:
 
 {
@@ -113,6 +52,41 @@ REGRAS:
 - Se um campo não for mencionado, use string vazia ou array vazio
 - Conforme CFM 2.454/2026: você é apoio à decisão, o médico revisará e validará`;
 
+export async function structureSummary(transcript: string): Promise<StructuredSummary> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: STRUCTURE_SYSTEM_PROMPT },
+        { role: 'user', content: `Transcrição da consulta:\n\n${transcript}` },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `GPT-4o ${res.status}`);
+  }
+  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, unknown>;
+
+  return {
+    queixa_principal:    String(raw.queixa_principal    ?? ''),
+    hda:                 String(raw.hda                 ?? ''),
+    exame_fisico:        String(raw.exame_fisico         ?? ''),
+    hipoteses:           Array.isArray(raw.hipoteses)          ? raw.hipoteses.map(String)          : [],
+    conduta:             String(raw.conduta              ?? ''),
+    retorno:             String(raw.retorno              ?? ''),
+    peso:                String(raw.peso                 ?? ''),
+    altura:              String(raw.altura               ?? ''),
+    perimetro_cefalico:  String(raw.perimetro_cefalico   ?? ''),
+    vacinas_mencionadas: Array.isArray(raw.vacinas_mencionadas) ? raw.vacinas_mencionadas.map(String) : [],
+  };
+}
+
+// ── GPT-4o: consulta → prontuário escaneável ─────────────────────────────────
 const SCANNABLE_SYSTEM_PROMPT = `Você é um assistente de prontuário pediátrico brasileiro. Analise os dados da consulta e retorne APENAS um JSON no formato abaixo, sem markdown e sem texto adicional.
 
 {
@@ -148,69 +122,12 @@ REGRAS:
 - alerts: sinais de alerta, pontos de atenção ou seguimento; se nenhum: ["Nenhum sinal de alerta identificado"]
 - Conforme CFM 2.454/2026: este resumo é apoio à decisão, o médico revisará e validará`;
 
-async function gptJson(systemPrompt: string, userContent: string): Promise<Record<string, any>> {
-  if (!IS_DEV || !DEV_KEY) throw new Error('gptJson só deve ser chamado no modo dev com VITE_OPENAI_API_KEY definido');
-
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${DEV_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      response_format: { type: 'json_object' },
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `GPT-4o ${res.status}`);
-  }
-  return JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
-}
-
-// ── GPT-4o: transcrição → prontuário estruturado ─────────────────────────────
-export async function structureSummary(transcript: string): Promise<StructuredSummary> {
-  let raw: Record<string, unknown>;
-
-  if (IS_DEV && DEV_KEY) {
-    raw = await gptJson(STRUCTURE_SYSTEM_PROMPT, `Transcrição da consulta:\n\n${transcript}`);
-  } else {
-    const res = await fetch('/api/structure', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || `Estruturação falhou (${res.status})`);
-    }
-    raw = await res.json();
-  }
-
-  return {
-    queixa_principal:    String(raw.queixa_principal    ?? ''),
-    hda:                 String(raw.hda                 ?? ''),
-    exame_fisico:        String(raw.exame_fisico         ?? ''),
-    hipoteses:           Array.isArray(raw.hipoteses)          ? raw.hipoteses.map(String)          : [],
-    conduta:             String(raw.conduta              ?? ''),
-    retorno:             String(raw.retorno              ?? ''),
-    peso:                String(raw.peso                 ?? ''),
-    altura:              String(raw.altura               ?? ''),
-    perimetro_cefalico:  String(raw.perimetro_cefalico   ?? ''),
-    vacinas_mencionadas: Array.isArray(raw.vacinas_mencionadas) ? raw.vacinas_mencionadas.map(String) : [],
-  };
-}
-
-// ── GPT-4o: consulta → prontuário escaneável ─────────────────────────────────
 export async function generateScannableSummary(data: {
   queixa_principal: string; anamnesis: string; physical_exam: string;
   hipoteses: string[]; plan: string; peso: string; altura: string;
   perimetro_cefalico: string; vacinas_mencionadas: string[]; retorno: string;
 }): Promise<ScannableSummary> {
-  const userContent = `
+  const input = `
 Queixa principal: ${data.queixa_principal || 'Não informada'}
 Anamnese: ${data.anamnesis || 'Não informada'}
 Exame físico: ${data.physical_exam || 'Não informado'}
@@ -223,22 +140,24 @@ Vacinas mencionadas: ${data.vacinas_mencionadas.join(', ') || 'Nenhuma'}
 Retorno: ${data.retorno || 'Não informado'}
   `.trim();
 
-  let raw: Record<string, any>;
-
-  if (IS_DEV && DEV_KEY) {
-    raw = await gptJson(SCANNABLE_SYSTEM_PROMPT, userContent);
-  } else {
-    const res = await fetch('/api/scannable', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || `Resumo escaneável falhou (${res.status})`);
-    }
-    raw = await res.json();
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: SCANNABLE_SYSTEM_PROMPT },
+        { role: 'user', content: input },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `GPT-4o ${res.status}`);
   }
+  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
 
   return {
     quick_summary:       Array.isArray(raw.quick_summary)       ? raw.quick_summary.map(String)       : [],
