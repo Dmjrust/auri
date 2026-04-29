@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/transcribe.ts": {
+      "maxDuration": 60
+    },
+    "api/structure.ts": {
+      "maxDuration": 30
+    },
+    "api/scannable.ts": {
+      "maxDuration": 30
+    }
+  }
+}
