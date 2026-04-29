@@ -3426,8 +3426,8 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, con
         <Card style={{ marginBottom: 16 }}>
           <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
             <FileText size={15} color={P} />
-            <span style={{ fontWeight: 600, fontSize: 15 }}>Resumo estruturado — edite se necessário</span>
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: WARN, fontWeight: 500 }}>Clique para editar</span>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>Resumo estruturado</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: MU }}>Todos os campos são editáveis</span>
           </div>
           {([
             { label: 'Queixa principal', value: queixaPrincipal, onChange: setQueixaPrincipal, rows: 2 },
