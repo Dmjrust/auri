@@ -1,5 +1,14 @@
 // Vercel Serverless Function — proxy para OpenAI Whisper
+// Recebe multipart/form-data diretamente do cliente (sem base64).
 // A chave OPENAI_API_KEY fica server-side, nunca exposta no bundle do cliente.
+
+// Desabilita o body parser padrão do Vercel para receber o stream bruto.
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -11,23 +20,21 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { audio, mimeType } = req.body as { audio: string; mimeType: string };
-    if (!audio) return res.status(400).json({ error: 'Campo "audio" ausente no corpo da requisição.' });
+    // Coleta o body bruto (multipart/form-data com o áudio)
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const body = Buffer.concat(chunks);
 
-    // Decodifica base64 → Buffer
-    const audioBuffer = Buffer.from(audio, 'base64');
-    const ext = mimeType?.includes('mp4') ? 'mp4' : mimeType?.includes('mp3') ? 'mp3' : 'webm';
-
-    // Constrói FormData para o Whisper (Node 18+ tem FormData nativo)
-    const form = new FormData();
-    form.append('file', new Blob([audioBuffer], { type: mimeType || 'audio/webm' }), `consulta.${ext}`);
-    form.append('model', 'whisper-1');
-    form.append('language', 'pt');
-
+    // Repassa o FormData diretamente ao Whisper (sem decodificar/recodificar)
     const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: form,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': req.headers['content-type'], // mantém o boundary multipart
+      },
+      body,
     });
 
     if (!whisperRes.ok) {

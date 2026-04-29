@@ -3,6 +3,7 @@ import type { StructuredSummary, ScannableSummary } from '../data/mock';
 // ─────────────────────────────────────────────────────────────────────────────
 // PRODUÇÃO (Vercel): todas as chamadas passam por /api/* (serverless proxy).
 //   → OPENAI_API_KEY fica server-side, nunca no bundle do cliente.
+//   → Áudio enviado como multipart/form-data (sem base64 — evita 413).
 //
 // DESENVOLVIMENTO LOCAL (vite dev): o Vite não serve /api/*, então o fallback
 //   chama a OpenAI diretamente usando VITE_OPENAI_API_KEY do .env.local.
@@ -12,27 +13,22 @@ import type { StructuredSummary, ScannableSummary } from '../data/mock';
 const IS_DEV = import.meta.env.DEV;
 const DEV_KEY = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
 
-// Converte ArrayBuffer → base64 em chunks (evita stack overflow em áudios grandes)
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000; // 32 KB
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...(bytes.subarray(i, i + chunkSize) as unknown as number[]));
-  }
-  return btoa(binary);
+// Monta FormData de áudio para Whisper (reutilizado em dev e prod)
+function buildWhisperForm(blob: Blob): FormData {
+  const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
+  const form = new FormData();
+  form.append('file', blob, `consulta.${ext}`);
+  form.append('model', 'whisper-1');
+  form.append('language', 'pt');
+  return form;
 }
 
 // ── Whisper: áudio → transcrição ─────────────────────────────────────────────
 export async function transcribeAudio(blob: Blob): Promise<string> {
+  const form = buildWhisperForm(blob);
+
   // Desenvolvimento local: chama Whisper diretamente
   if (IS_DEV && DEV_KEY) {
-    const form = new FormData();
-    const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
-    form.append('file', blob, `consulta.${ext}`);
-    form.append('model', 'whisper-1');
-    form.append('language', 'pt');
-
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${DEV_KEY}` },
@@ -45,14 +41,10 @@ export async function transcribeAudio(blob: Blob): Promise<string> {
     return (await res.json()).text as string;
   }
 
-  // Produção: usa proxy server-side
-  const arrayBuffer = await blob.arrayBuffer();
-  const base64 = arrayBufferToBase64(arrayBuffer);
-
+  // Produção: proxy server-side via multipart (sem conversão base64 — evita 413)
   const res = await fetch('/api/transcribe', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ audio: base64, mimeType: blob.type }),
+    body: form, // browser define Content-Type com boundary automaticamente
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
