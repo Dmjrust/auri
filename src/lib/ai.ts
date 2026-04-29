@@ -1,34 +1,29 @@
+import { supabase } from './supabase';
 import type { StructuredSummary, ScannableSummary } from '../data/mock';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PRODUÇÃO (Vercel): todas as chamadas passam por /api/* (serverless proxy).
+// PRODUÇÃO (Vercel): áudio vai direto do browser → Supabase Storage (sem limite
+//   de tamanho). O servidor recebe apenas a URL assinada (JSON tiny) e a repassa
+//   ao Whisper. Arquivo deletado após transcrição (LGPD).
 //   → OPENAI_API_KEY fica server-side, nunca no bundle do cliente.
-//   → Áudio enviado como multipart/form-data (sem base64 — evita 413).
 //
-// DESENVOLVIMENTO LOCAL (vite dev): o Vite não serve /api/*, então o fallback
-//   chama a OpenAI diretamente usando VITE_OPENAI_API_KEY do .env.local.
-//   Esse arquivo está em .gitignore — nunca vai para o repositório.
+// DESENVOLVIMENTO LOCAL (vite dev): chama Whisper diretamente via
+//   VITE_OPENAI_API_KEY no .env.local (gitignored, nunca vai ao repositório).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const IS_DEV = import.meta.env.DEV;
 const DEV_KEY = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
 
-// Monta FormData de áudio para Whisper (reutilizado em dev e prod)
-function buildWhisperForm(blob: Blob): FormData {
-  const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
-  const form = new FormData();
-  form.append('file', blob, `consulta.${ext}`);
-  form.append('model', 'whisper-1');
-  form.append('language', 'pt');
-  return form;
-}
-
 // ── Whisper: áudio → transcrição ─────────────────────────────────────────────
 export async function transcribeAudio(blob: Blob): Promise<string> {
-  const form = buildWhisperForm(blob);
+  const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
 
-  // Desenvolvimento local: chama Whisper diretamente
+  // Desenvolvimento local: chama Whisper diretamente (blob → FormData)
   if (IS_DEV && DEV_KEY) {
+    const form = new FormData();
+    form.append('file', blob, `consulta.${ext}`);
+    form.append('model', 'whisper-1');
+    form.append('language', 'pt');
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${DEV_KEY}` },
@@ -41,16 +36,51 @@ export async function transcribeAudio(blob: Blob): Promise<string> {
     return (await res.json()).text as string;
   }
 
-  // Produção: proxy server-side via multipart (sem conversão base64 — evita 413)
-  const res = await fetch('/api/transcribe', {
-    method: 'POST',
-    body: form, // browser define Content-Type com boundary automaticamente
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error || `Transcrição falhou (${res.status})`);
+  // ── Produção: upload para Supabase Storage → URL assinada → proxy server ──
+  //
+  // Por que este fluxo?
+  //   • O áudio de 60 min a 32 kbps é ~14 MB — muito acima do limite de 4,5 MB
+  //     do body das Vercel Serverless Functions.
+  //   • O upload vai direto do browser ao Supabase (sem passar pelo Vercel).
+  //   • O servidor recebe apenas um JSON com a URL temporária (~200 bytes).
+  //   • O arquivo é deletado após a transcrição (LGPD: dado sensível).
+
+  // 1. Faz upload para Supabase Storage (bucket: consultation-audio)
+  const path = `audio-${Date.now()}.${ext}`;
+  const { data: upData, error: upErr } = await supabase.storage
+    .from('consultation-audio')
+    .upload(path, blob, { contentType: blob.type, upsert: false });
+  if (upErr) throw new Error(`Upload do áudio falhou: ${upErr.message}`);
+
+  // 2. Cria URL assinada com validade de 2 horas
+  const { data: sigData, error: sigErr } = await supabase.storage
+    .from('consultation-audio')
+    .createSignedUrl(upData.path, 7200);
+  if (sigErr) {
+    // Limpa o arquivo antes de lançar o erro
+    await supabase.storage.from('consultation-audio').remove([upData.path]).catch(() => {});
+    throw new Error(`Falha ao gerar URL assinada: ${sigErr.message}`);
   }
-  return (await res.json()).text as string;
+
+  // 3. Pede ao servidor para transcrever via Whisper
+  let transcript = '';
+  try {
+    const res = await fetch('/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioUrl: sigData.signedUrl, mimeType: blob.type }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || `Transcrição falhou (${res.status})`);
+    }
+    transcript = (await res.json()).text as string;
+  } finally {
+    // 4. Deleta o arquivo independente de sucesso ou erro (LGPD)
+    await supabase.storage.from('consultation-audio').remove([upData.path]).catch(() => {});
+  }
+
+  return transcript;
 }
 
 // ── Prompts (usados no fallback dev) ─────────────────────────────────────────
@@ -111,13 +141,9 @@ REGRAS:
 - Conforme CFM 2.454/2026: este resumo é apoio à decisão, o médico revisará e validará`;
 
 async function gptJson(systemPrompt: string, userContent: string): Promise<Record<string, any>> {
-  const url = IS_DEV && DEV_KEY
-    ? 'https://api.openai.com/v1/chat/completions'
-    : null; // produção: não usa esse caminho
+  if (!IS_DEV || !DEV_KEY) throw new Error('gptJson só deve ser chamado no modo dev com VITE_OPENAI_API_KEY definido');
 
-  if (!url || !DEV_KEY) throw new Error('gptJson só deve ser chamado no modo dev com VITE_OPENAI_API_KEY definido');
-
-  const res = await fetch(url, {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${DEV_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({

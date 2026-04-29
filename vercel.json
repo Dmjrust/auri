@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/transcribe.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/structure.ts": {
       "maxDuration": 30
