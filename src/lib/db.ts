@@ -188,7 +188,7 @@ export async function saveDraftConsultation(
   return data.id;
 }
 
-// ── Confirm draft → completed (saves growth records too) ─────────────────────
+// ── Confirm draft → completed (saves edited summary + growth records) ─────────
 export async function confirmDraftConsultation(
   draftId: string,
   patientId: string,
@@ -196,9 +196,28 @@ export async function confirmDraftConsultation(
   durationSeconds: number,
   birthDate: string,
 ): Promise<void> {
+  // Persiste o resumo editado pelo médico junto com a confirmação
   const { error } = await supabase
     .from('consultations')
-    .update({ status: 'completed', duration_minutes: Math.max(1, Math.round(durationSeconds / 60)) })
+    .update({
+      status: 'completed',
+      duration_minutes: Math.max(1, Math.round(durationSeconds / 60)),
+      chief_complaint:          summary.queixa_principal,
+      diagnosis:                summary.hipoteses[0] || '',
+      plan:                     summary.conduta,
+      anamnesis:                summary.hda,
+      physical_exam:            summary.exame_fisico,
+      sum_queixa_principal:     summary.queixa_principal,
+      sum_hda:                  summary.hda,
+      sum_exame_fisico:         summary.exame_fisico,
+      sum_hipoteses:            summary.hipoteses,
+      sum_conduta:              summary.conduta,
+      sum_retorno:              summary.retorno,
+      sum_peso:                 summary.peso,
+      sum_altura:               summary.altura,
+      sum_perimetro_cefalico:   summary.perimetro_cefalico,
+      sum_vacinas_mencionadas:  summary.vacinas_mencionadas,
+    })
     .eq('id', draftId);
   if (error) throw error;
 

@@ -3237,7 +3237,7 @@ function RecordingScreen({ time, patient, onFinish }: { time: number; patient: P
   );
 }
 
-function ProcessingScreen({ audioBlob, onDone }: { audioBlob: Blob | null; onDone: (summary: StructuredSummary, transcript: string) => void }) {
+function ProcessingScreen({ audioBlob, onDone, onRetry }: { audioBlob: Blob | null; onDone: (summary: StructuredSummary, transcript: string) => void; onRetry: () => void }) {
   const [step, setStep]   = useState(0);
   const [error, setError] = useState('');
   const steps = ['Enviando áudio para transcrição…', 'Whisper transcrevendo consulta…', 'GPT-4o estruturando prontuário…', 'Finalizando resumo clínico…'];
@@ -3277,9 +3277,17 @@ function ProcessingScreen({ audioBlob, onDone }: { audioBlob: Blob | null; onDon
         <h2 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 500 }}>Processando consulta</h2>
         <p style={{ color: MU, fontSize: 14, marginBottom: 28 }}>Aguarde enquanto a IA estrutura o prontuário…</p>
         {error ? (
-          <div style={{ background: DESL, color: DES, borderRadius: 10, padding: 20, fontSize: 13, lineHeight: 1.6 }}>
-            <Warning size={20} style={{ marginBottom: 8 }} /><br />
-            <strong>Erro ao processar</strong><br />{error}
+          <div style={{ background: DESL, borderRadius: 10, padding: 20, fontSize: 13, lineHeight: 1.6, textAlign: 'left' as const }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 16 }}>
+              <Warning size={20} color={DES} style={{ flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <strong style={{ color: DES }}>Erro ao processar</strong><br />
+                <span style={{ color: DES }}>{error}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Btn size="sm" onClick={onRetry} style={{ flex: 1 }}>Tentar novamente</Btn>
+            </div>
           </div>
         ) : (
           <Card style={{ padding: 20, textAlign: 'left' as const }}>
@@ -4794,7 +4802,7 @@ export default function App() {
 
   if (flow === 'consent')    return <ConsentScreen onOk={() => setFlow('recording')} onCancel={() => setFlow(null)} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} />;
-  if (flow === 'processing') return <ProcessingScreen audioBlob={audioBlob} onDone={(summary, transcript) => {
+  if (flow === 'processing') return <ProcessingScreen audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript) => {
     setRealSummary(summary); setRealTranscript(transcript); setFlow('done');
     if (activePatient) {
       db.saveDraftConsultation(activePatient.id, summary, recTime, consultType)
