@@ -22,9 +22,9 @@ import {
 import './index.css';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-const TODAY = '2026-04-21';
+const TODAY = new Date().toISOString().slice(0, 10);
 function calcAge(bd: string) {
-  const b = new Date(bd), n = new Date(TODAY);
+  const b = new Date(bd), n = new Date();
   let y = n.getFullYear() - b.getFullYear(), m = n.getMonth() - b.getMonth();
   if (m < 0) { y--; m += 12; }
   if (n.getDate() < b.getDate()) m = Math.max(0, m - 1);
@@ -2450,7 +2450,7 @@ function ScannableConsultationDetail({ consult, onBack }: { consult: Consultatio
 }
 
 // ─── PATIENT DETAIL ───────────────────────────────────────────────────────────
-function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: { patient: Patient; go: (s: string) => void; onStartConsult: () => void; refetchTrigger?: number }) {
+function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; refetchTrigger?: number }) {
   const [tab, setTab] = useState('Resumo');
   const [selectedConsult, setSelectedConsult] = useState<Consultation | null>(null);
   const [consultations, setConsultations] = useState<Consultation[]>([]);
@@ -2540,12 +2540,12 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
             <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
               <Btn variant="secondary" onClick={() => window.print()}><DownloadSimple size={15} /> Imprimir</Btn>
               <Btn variant="secondary"><User size={15} /> Compartilhar</Btn>
-              <Btn onClick={onStartConsult}><Stethoscope size={15} /> Iniciar consulta</Btn>
+              <Btn onClick={() => onStartConsult(consultations.length === 0 ? 'primeira vez' : 'retorno')}><Stethoscope size={15} /> Iniciar consulta</Btn>
             </div>
           )}
         </div>
         {isMobile && (
-          <Btn onClick={onStartConsult} style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
+          <Btn onClick={() => onStartConsult(consultations.length === 0 ? 'primeira vez' : 'retorno')} style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
             <Stethoscope size={15} /> Iniciar consulta
           </Btn>
         )}
@@ -2843,7 +2843,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                   {pastConsults.length === 0 ? (
                     <div style={{ padding: '28px 20px', textAlign: 'center' as const }}>
                       <p style={{ margin: '0 0 12px', fontSize: 13, color: MU }}>Nenhuma consulta registrada.</p>
-                      <Btn size="sm" onClick={onStartConsult}><Plus size={14} /> Iniciar primeira consulta</Btn>
+                      <Btn size="sm" onClick={() => onStartConsult('primeira vez')}><Plus size={14} /> Iniciar primeira consulta</Btn>
                     </div>
                   ) : pastConsults.slice(0, 3).map((c, i) => {
                     const dd = consultDaysDiff(c);
@@ -3062,7 +3062,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
             : (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-                  <Btn size="sm" onClick={onStartConsult}><Plus size={14} /> Nova consulta</Btn>
+                  <Btn size="sm" onClick={() => onStartConsult('retorno')}><Plus size={14} /> Nova consulta</Btn>
                 </div>
 
                 {/* Drafts section */}
@@ -3296,36 +3296,76 @@ function ProcessingScreen({ audioBlob, onDone }: { audioBlob: Blob | null; onDon
   );
 }
 
-function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, onSave }: {
+function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, consultType, onSave }: {
   patient: Patient | null; recTime: number;
   summary: StructuredSummary; transcript: string;
   draftId: string | null;
+  consultType: 'retorno' | 'primeira vez';
   onSave: () => void;
 }) {
   const [showTranscript, setShowTranscript] = useState(false);
   const [saving, setSaving] = useState(false);
-  const s = summary;
+  const [saveError, setSaveError] = useState('');
+
+  // Editable state — initialised from AI output so doctor can correct before saving
+  const [queixaPrincipal, setQueixaPrincipal] = useState(summary.queixa_principal);
+  const [hda, setHda] = useState(summary.hda);
+  const [exameFisico, setExameFisico] = useState(summary.exame_fisico);
+  const [hipoteses, setHipoteses] = useState(summary.hipoteses.join('\n'));
+  const [conduta, setConduta] = useState(summary.conduta);
+  const [retorno, setRetorno] = useState(summary.retorno);
+
+  function buildEdited(): StructuredSummary {
+    return {
+      ...summary,
+      queixa_principal: queixaPrincipal,
+      hda,
+      exame_fisico: exameFisico,
+      hipoteses: hipoteses.split('\n').map(h => h.trim()).filter(Boolean),
+      conduta,
+      retorno,
+    };
+  }
 
   async function handleSave() {
     if (!patient) { onSave(); return; }
     setSaving(true);
+    setSaveError('');
+    const edited = buildEdited();
     try {
       if (draftId) {
-        await db.confirmDraftConsultation(draftId, patient.id, s, recTime, patient.birth_date);
+        await db.confirmDraftConsultation(draftId, patient.id, edited, recTime, patient.birth_date);
       } else {
-        await db.saveConsultation(patient.id, s, recTime, patient.birth_date);
+        await db.saveConsultation(patient.id, edited, recTime, patient.birth_date, consultType);
       }
-    } catch (e) { console.error(e); }
-    finally { setSaving(false); onSave(); }
+      onSave();
+    } catch (e: any) {
+      setSaveError(e?.message || 'Erro ao salvar consulta. Tente novamente.');
+    } finally {
+      setSaving(false);
+    }
   }
+
+  const taStyle: React.CSSProperties = {
+    width: '100%', fontSize: 14, lineHeight: 1.6,
+    padding: '8px 10px', border: `1px solid ${BO}`, borderRadius: 6,
+    fontFamily: 'inherit', background: '#fff', color: INK,
+    resize: 'vertical' as const, boxSizing: 'border-box' as const,
+    outline: 'none',
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: BG }}>
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '40px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
-          <div style={{ width: 44, height: 44, borderRadius: '50%', background: SUCL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CheckCircle size={22} color={SUC} /></div>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+          <div style={{ width: 44, height: 44, borderRadius: '50%', background: SUCL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CheckCircle size={22} color={SUC} />
+          </div>
           <div>
             <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500 }}>Consulta processada</h2>
-            <p style={{ margin: '4px 0 0', color: MU, fontSize: 14 }}>Revise o resumo e confirme para salvar no histórico.</p>
+            <p style={{ margin: '4px 0 0', color: MU, fontSize: 14 }}>Revise e edite o resumo antes de confirmar.</p>
           </div>
           {draftId && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: SUC, background: SUCL, padding: '6px 12px', borderRadius: 99 }}>
@@ -3334,45 +3374,71 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, onS
             </div>
           )}
         </div>
+
+        {/* CFM disclaimer */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: WARNL, border: `1px solid ${WARN}40`, borderRadius: 8, marginBottom: 20, fontSize: 13, color: WARN }}>
+          <Warning size={16} style={{ flexShrink: 0, marginTop: 1 } as React.CSSProperties} />
+          <span>Revise e corrija os campos gerados pela IA antes de confirmar. Você é responsável pela validade clínica do prontuário (CFM 2.454/2026).</span>
+        </div>
+
+        {/* Metrics strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
           {[
-            { l: 'Peso extraído', v: s.peso, icon: Heartbeat },
-            { l: 'Altura extraída', v: s.altura, icon: TrendUp },
-            { l: 'Vacinas identificadas', v: `${s.vacinas_mencionadas.length} menção`, icon: Syringe },
+            { l: 'Peso extraído', v: summary.peso || '—', icon: Heartbeat },
+            { l: 'Altura extraída', v: summary.altura || '—', icon: TrendUp },
+            { l: 'Vacinas identificadas', v: `${summary.vacinas_mencionadas.length} menção`, icon: Syringe },
           ].map(({ l, v, icon: Icon }) => (
             <Card key={l} style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}><Icon size={14} color={P} /><span style={{ fontSize: 12, color: MU }}>{l}</span></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <Icon size={14} color={P} /><span style={{ fontSize: 12, color: MU }}>{l}</span>
+              </div>
               <div style={{ fontSize: 18, fontWeight: 700 }}>{v}</div>
             </Card>
           ))}
         </div>
-        {s.vacinas_mencionadas.length > 0 && (
+
+        {/* Vaccines */}
+        {summary.vacinas_mencionadas.length > 0 && (
           <Card style={{ marginBottom: 16, background: SUCL }}>
             <div style={{ padding: '12px 16px' }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: SUC, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}><Syringe size={13} />Vacinas identificadas no áudio → serão adicionadas à aba Vacinas</div>
-              {s.vacinas_mencionadas.map(v => <div key={v} style={{ fontSize: 13 }}>{v}</div>)}
+              <div style={{ fontWeight: 600, fontSize: 13, color: SUC, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Syringe size={13} /> Vacinas identificadas no áudio — serão adicionadas à aba Vacinas
+              </div>
+              {summary.vacinas_mencionadas.map(v => <div key={v} style={{ fontSize: 13 }}>{v}</div>)}
             </div>
           </Card>
         )}
+
+        {/* Editable SOAP fields */}
         <Card style={{ marginBottom: 16 }}>
           <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FileText size={15} color={P} /><span style={{ fontWeight: 600, fontSize: 15 }}>Resumo estruturado gerado pela IA</span>
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: WARN, fontWeight: 500 }}>Revise antes de salvar</span>
+            <FileText size={15} color={P} />
+            <span style={{ fontWeight: 600, fontSize: 15 }}>Resumo estruturado — edite se necessário</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: WARN, fontWeight: 500 }}>Clique para editar</span>
           </div>
-          {[
-            { label: 'Queixa principal', val: s.queixa_principal },
-            { label: 'HDA', val: s.hda },
-            { label: 'Exame físico', val: s.exame_fisico },
-            { label: 'Pontos de atenção', val: <>{s.hipoteses.map((h,i) => <div key={i}>• {h}</div>)}</> },
-            { label: 'Conduta', val: s.conduta },
-            { label: 'Retorno', val: s.retorno },
-          ].map(({ label, val }) => (
-            <div key={label} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: MU }}>{label}</span>
-              <span style={{ fontSize: 14, lineHeight: 1.6 }}>{val}</span>
+          {([
+            { label: 'Queixa principal', value: queixaPrincipal, onChange: setQueixaPrincipal, rows: 2 },
+            { label: 'HDA', value: hda, onChange: setHda, rows: 5 },
+            { label: 'Exame físico', value: exameFisico, onChange: setExameFisico, rows: 4 },
+            { label: 'Hipóteses (uma por linha)', value: hipoteses, onChange: setHipoteses, rows: 3 },
+            { label: 'Conduta', value: conduta, onChange: setConduta, rows: 4 },
+            { label: 'Retorno', value: retorno, onChange: setRetorno, rows: 1 },
+          ] as { label: string; value: string; onChange: (v: string) => void; rows: number }[]).map(({ label, value, onChange, rows }) => (
+            <div key={label} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: MU, paddingTop: 10 }}>{label}</span>
+              <textarea
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                rows={rows}
+                style={taStyle}
+                onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = P; }}
+                onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = BO; }}
+              />
             </div>
           ))}
         </Card>
+
+        {/* Transcript */}
         <Card style={{ marginBottom: 24 }}>
           <button onClick={() => setShowTranscript(v => !v)}
             style={{ width: '100%', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 14 }}>
@@ -3385,10 +3451,23 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, onS
             </div>
           )}
         </Card>
+
+        {/* Save error */}
+        {saveError && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: DESL, border: `1px solid ${DES}40`, borderRadius: 8, marginBottom: 16, fontSize: 13, color: DES }}>
+            <Warning size={16} style={{ flexShrink: 0 } as React.CSSProperties} />
+            {saveError}
+          </div>
+        )}
+
+        {/* Actions */}
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
           <Btn variant="secondary" size="lg"><DownloadSimple size={16} /> Exportar PDF</Btn>
-          <Btn size="lg" onClick={handleSave} disabled={saving}>{saving ? 'Confirmando…' : <><CheckCircle size={16} /> {draftId ? 'Confirmar prontuário' : 'Salvar no histórico'}</>}</Btn>
+          <Btn size="lg" onClick={handleSave} disabled={saving}>
+            {saving ? 'Confirmando…' : <><CheckCircle size={16} /> {draftId ? 'Confirmar prontuário' : 'Salvar no histórico'}</>}
+          </Btn>
         </div>
+
       </div>
     </div>
   );
@@ -4611,6 +4690,7 @@ export default function App() {
   const [screen, setScreen] = useState('dashboard');
   const [activePatient, setActivePatient] = useState<Patient | null>(null);
   const [flow, setFlow] = useState<'consent'|'recording'|'processing'|'done'|null>(null);
+  const [consultType, setConsultType] = useState<'retorno' | 'primeira vez'>('retorno');
   const [recTime, setRecTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [realSummary, setRealSummary] = useState<StructuredSummary | null>(null);
@@ -4712,12 +4792,12 @@ export default function App() {
   if (flow === 'processing') return <ProcessingScreen audioBlob={audioBlob} onDone={(summary, transcript) => {
     setRealSummary(summary); setRealTranscript(transcript); setFlow('done');
     if (activePatient) {
-      db.saveDraftConsultation(activePatient.id, summary, recTime)
+      db.saveDraftConsultation(activePatient.id, summary, recTime, consultType)
         .then(id => setDraftConsultationId(id))
         .catch(err => console.error('Auto-save draft failed:', err));
     }
   }} />;
-  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} onSave={() => { setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
+  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} onSave={() => { setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
 
   const breadcrumbs: Record<string, string[]> = {
     dashboard:        ['Início', 'Dashboard'],
@@ -4734,7 +4814,7 @@ export default function App() {
         <Layout screen={screen} go={go} breadcrumb={breadcrumbs[screen]} onBack={screen === 'patient-detail' ? () => go('patients') : undefined} doctorName={doctorName} notifications={notifications} onNotificationClick={(patientId) => { const p = (activePatient?.id === patientId ? activePatient : null); if (patientId) { db.fetchPatients().then(ps => { const found = ps.find(x => x.id === patientId); if (found) { setActivePatient(found); go('patient-detail'); } }); } }} onClearNotifications={() => setNotifications([])}>
           {screen === 'dashboard' && <DashboardPage go={go} setActivePatient={setActivePatient} user={user} doctorName={doctorName} />}
           {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
-          {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={() => setFlow('consent')} refetchTrigger={refetchTrigger} />}
+          {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} refetchTrigger={refetchTrigger} />}
           {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} />}
           {screen === 'painel'   && <PainelPage go={go} setActivePatient={setActivePatient} />}
           {screen === 'settings' && <SettingsPage user={user} />}

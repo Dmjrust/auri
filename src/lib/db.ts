@@ -100,6 +100,7 @@ export async function saveConsultation(
   summary: StructuredSummary,
   durationSeconds: number,
   birthDate: string,
+  consultType: 'retorno' | 'primeira vez' = 'retorno',
 ): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Não autenticado');
@@ -111,7 +112,7 @@ export async function saveConsultation(
     doctor_id: user.id,
     scheduled_at: now.toISOString(),
     status: 'completed',
-    type: 'retorno',
+    type: consultType,
     duration_minutes: Math.max(1, Math.round(durationSeconds / 60)),
     chief_complaint: summary.queixa_principal,
     diagnosis: summary.hipoteses[0] || '',
@@ -154,6 +155,7 @@ export async function saveDraftConsultation(
   patientId: string,
   summary: StructuredSummary,
   durationSeconds: number,
+  consultType: 'retorno' | 'primeira vez' = 'retorno',
 ): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Não autenticado');
@@ -163,7 +165,7 @@ export async function saveDraftConsultation(
     doctor_id: user.id,
     scheduled_at: now.toISOString(),
     status: 'draft',
-    type: 'retorno',
+    type: consultType,
     duration_minutes: Math.max(1, Math.round(durationSeconds / 60)),
     chief_complaint: summary.queixa_principal,
     diagnosis: summary.hipoteses[0] || '',
