@@ -3164,12 +3164,7 @@ function RecordingScreen({ time, patient, onFinish }: { time: number; patient: P
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then(stream => {
         streamRef.current = stream;
-        // 32 kbps é suficiente para voz; mantém consultas de 20+ min abaixo do limite do servidor
-        const recOpts: MediaRecorderOptions = { audioBitsPerSecond: 32_000 };
-        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-          recOpts.mimeType = 'audio/webm;codecs=opus';
-        }
-        const recorder = new MediaRecorder(stream, recOpts);
+        const recorder = new MediaRecorder(stream);
         recorderRef.current = recorder;
         recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
         recorder.start(1000);

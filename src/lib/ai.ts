@@ -12,6 +12,10 @@ const KEY = () => import.meta.env.VITE_OPENAI_API_KEY as string;
 
 // ── Whisper: áudio → transcrição ─────────────────────────────────────────────
 export async function transcribeAudio(blob: Blob): Promise<string> {
+  const key = KEY();
+  if (!key || key === 'undefined') throw new Error('VITE_OPENAI_API_KEY não configurada. Adicione nas variáveis de ambiente do Vercel e faça redeploy.');
+  if (blob.size === 0) throw new Error('O áudio gravado está vazio. Tente gravar novamente.');
+
   const form = new FormData();
   const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
   form.append('file', blob, `consulta.${ext}`);
@@ -20,7 +24,7 @@ export async function transcribeAudio(blob: Blob): Promise<string> {
 
   const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${KEY()}` },
+    headers: { Authorization: `Bearer ${key}` },
     body: form,
   });
   if (!res.ok) {
