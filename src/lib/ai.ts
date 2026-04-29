@@ -37,42 +37,50 @@ export async function transcribeAudio(blob: Blob): Promise<string> {
   }
 
   // ── Produção: upload para Supabase Storage → URL assinada → proxy server ──
-  //
-  // Por que este fluxo?
-  //   • O áudio de 60 min a 32 kbps é ~14 MB — muito acima do limite de 4,5 MB
-  //     do body das Vercel Serverless Functions.
-  //   • O upload vai direto do browser ao Supabase (sem passar pelo Vercel).
-  //   • O servidor recebe apenas um JSON com a URL temporária (~200 bytes).
-  //   • O arquivo é deletado após a transcrição (LGPD: dado sensível).
+  // O áudio de 60 min a 32 kbps é ~14 MB — acima do limite de 4,5 MB do Vercel.
+  // Upload vai direto do browser ao Supabase; servidor recebe só a URL (~200 bytes).
+  // Arquivo deletado após transcrição (LGPD).
 
   // 1. Faz upload para Supabase Storage (bucket: consultation-audio)
   const path = `audio-${Date.now()}.${ext}`;
   const { data: upData, error: upErr } = await supabase.storage
     .from('consultation-audio')
     .upload(path, blob, { contentType: blob.type, upsert: false });
-  if (upErr) throw new Error(`Upload do áudio falhou: ${upErr.message}`);
+  if (upErr) {
+    // Mensagem detalhada para facilitar diagnóstico
+    const hint = upErr.message.includes('not found') || upErr.message.includes('Bucket')
+      ? ' — verifique se o bucket "consultation-audio" foi criado no Supabase Storage'
+      : upErr.message.includes('policy') || upErr.message.includes('403') || upErr.message.includes('Unauthorized')
+        ? ' — verifique as políticas RLS do bucket (INSERT para authenticated)'
+        : '';
+    throw new Error(`[Passo 1/3] Upload do áudio falhou: ${upErr.message}${hint}`);
+  }
 
   // 2. Cria URL assinada com validade de 2 horas
   const { data: sigData, error: sigErr } = await supabase.storage
     .from('consultation-audio')
     .createSignedUrl(upData.path, 7200);
   if (sigErr) {
-    // Limpa o arquivo antes de lançar o erro
     await supabase.storage.from('consultation-audio').remove([upData.path]).catch(() => {});
-    throw new Error(`Falha ao gerar URL assinada: ${sigErr.message}`);
+    throw new Error(`[Passo 2/3] URL assinada falhou: ${sigErr.message} — verifique política SELECT no bucket`);
   }
 
   // 3. Pede ao servidor para transcrever via Whisper
   let transcript = '';
   try {
-    const res = await fetch('/api/transcribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audioUrl: sigData.signedUrl, mimeType: blob.type }),
-    });
+    let res: Response;
+    try {
+      res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioUrl: sigData.signedUrl, mimeType: blob.type }),
+      });
+    } catch (netErr: any) {
+      throw new Error(`[Passo 3/3] Falha de rede ao chamar /api/transcribe: ${netErr.message}`);
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || `Transcrição falhou (${res.status})`);
+      throw new Error(`[Passo 3/3] ${err?.error || `Transcrição falhou (HTTP ${res.status})`}`);
     }
     transcript = (await res.json()).text as string;
   } finally {
