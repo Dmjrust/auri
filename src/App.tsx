@@ -3123,11 +3123,44 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
 }
 
 // ─── CONSULTATION FLOW ────────────────────────────────────────────────────────
-function ConsentScreen({ onOk, onCancel }: { onOk: () => void; onCancel: () => void }) {
+
+// Badge visual para tipo de consulta — aparece em todas as telas do fluxo
+function ConsultTypeBadge({ type }: { type: 'retorno' | 'primeira vez' }) {
+  const isPrimeira = type === 'primeira vez';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600,
+      background: isPrimeira ? '#DBEAFE' : SEC,
+      color: isPrimeira ? '#1D4ED8' : MU,
+      border: `1px solid ${isPrimeira ? '#BFDBFE' : BO}`,
+    }}>
+      {isPrimeira
+        ? <Star size={12} weight="fill" />
+        : <ArrowCounterClockwise size={12} />}
+      {isPrimeira ? 'Primeira consulta' : 'Retorno'}
+    </span>
+  );
+}
+
+// Stub: será implementado no próximo prompt com formulário completo de puericultura
+function AnamnesePrimeiraConsulta({ summary }: { summary: StructuredSummary }) {
+  return null; // conteúdo inserido no próximo passo
+}
+
+// Retorno usa o SummaryDoneScreen atual — este alias deixa o roteamento explícito
+function AnamnesesRetorno(_props: { summary: StructuredSummary }) {
+  return null; // usado apenas como marcador de tipo — renderização feita em SummaryDoneScreen
+}
+
+function ConsentScreen({ onOk, onCancel, consultType }: { onOk: () => void; onCancel: () => void; consultType: 'retorno' | 'primeira vez' }) {
   const [agreed, setAgreed] = useState(false);
   return (
     <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <Card style={{ maxWidth: 520, width: '90%', padding: 40 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <ConsultTypeBadge type={consultType} />
+        </div>
         <div style={{ textAlign: 'center' as const, marginBottom: 28 }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: PL, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}><Microphone size={24} color={P} /></div>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500 }}>Consentimento para gravação</h2>
@@ -3153,7 +3186,7 @@ function ConsentScreen({ onOk, onCancel }: { onOk: () => void; onCancel: () => v
   );
 }
 
-function RecordingScreen({ time, patient, onFinish }: { time: number; patient: Patient | null; onFinish: (blob: Blob) => void }) {
+function RecordingScreen({ time, patient, consultType, onFinish }: { time: number; patient: Patient | null; consultType: 'retorno' | 'primeira vez'; onFinish: (blob: Blob) => void }) {
   const [paused, setPaused] = useState(false);
   const [micError, setMicError] = useState('');
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -3199,7 +3232,10 @@ function RecordingScreen({ time, patient, onFinish }: { time: number; patient: P
           <span style={{ color: BO }}>|</span>
           <span style={{ fontSize: 14, color: MU }}>Em consulta — {patient?.full_name}</span>
         </div>
-        <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 18, fontWeight: 600, color: P, letterSpacing: 2 }}>{fmtTimer(time)}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <ConsultTypeBadge type={consultType} />
+          <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 18, fontWeight: 600, color: P, letterSpacing: 2 }}>{fmtTimer(time)}</div>
+        </div>
       </div>
       <div style={{ maxWidth: 640, margin: '0 auto', padding: '60px 24px', textAlign: 'center' as const }}>
         {micError ? (
@@ -3232,7 +3268,7 @@ function RecordingScreen({ time, patient, onFinish }: { time: number; patient: P
   );
 }
 
-function ProcessingScreen({ audioBlob, onDone, onRetry }: { audioBlob: Blob | null; onDone: (summary: StructuredSummary, transcript: string) => void; onRetry: () => void }) {
+function ProcessingScreen({ audioBlob, onDone, onRetry, consultType }: { audioBlob: Blob | null; onDone: (summary: StructuredSummary, transcript: string) => void; onRetry: () => void; consultType: 'retorno' | 'primeira vez' }) {
   const [step, setStep]   = useState(0);
   const [error, setError] = useState('');
   const steps = ['Enviando áudio para transcrição…', 'Whisper transcrevendo consulta…', 'GPT-4o estruturando prontuário…', 'Finalizando resumo clínico…'];
@@ -3266,6 +3302,9 @@ function ProcessingScreen({ audioBlob, onDone, onRetry }: { audioBlob: Blob | nu
   return (
     <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' as const, maxWidth: 420 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+          <ConsultTypeBadge type={consultType} />
+        </div>
         <div style={{ width: 64, height: 64, borderRadius: '50%', background: PL, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
           <Heartbeat size={28} color={P} />
         </div>
@@ -3746,7 +3785,7 @@ function AppointmentDetailModal({
   );
 }
 
-function AgendaPage({ go, setActivePatient }: { go: (s: string) => void; setActivePatient: (p: Patient) => void }) {
+function AgendaPage({ go, setActivePatient, onApptStart }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onApptStart?: (type: 'retorno' | 'primeira vez') => void }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState(todayIso); // mobile only
@@ -3809,6 +3848,9 @@ function AgendaPage({ go, setActivePatient }: { go: (s: string) => void; setActi
   }
 
   function handleStartConsult(appt: any) {
+    // Propagate appointment type so the consultation flow shows the correct badge/form
+    const apptType: 'retorno' | 'primeira vez' = appt.type === 'primeira vez' ? 'primeira vez' : 'retorno';
+    onApptStart?.(apptType);
     // Find patient and navigate
     db.fetchPatients().then(patients => {
       const p = patients.find(p => p.id === appt.patient_id);
@@ -4699,6 +4741,8 @@ export default function App() {
   const [activePatient, setActivePatient] = useState<Patient | null>(null);
   const [flow, setFlow] = useState<'consent'|'recording'|'processing'|'done'|null>(null);
   const [consultType, setConsultType] = useState<'retorno' | 'primeira vez'>('retorno');
+  // Type set by AgendaPage when starting consult from an appointment — takes precedence over PatientDetail heuristic
+  const [activeApptType, setActiveApptType] = useState<'retorno' | 'primeira vez' | null>(null);
   const [recTime, setRecTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [realSummary, setRealSummary] = useState<StructuredSummary | null>(null);
@@ -4795,9 +4839,9 @@ export default function App() {
     ? <LoginScreen onBack={() => setShowLogin(false)} />
     : <LandingPage onEnter={() => setShowLogin(true)} />;
 
-  if (flow === 'consent')    return <ConsentScreen onOk={() => setFlow('recording')} onCancel={() => setFlow(null)} />;
-  if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} />;
-  if (flow === 'processing') return <ProcessingScreen audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript) => {
+  if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => setFlow(null)} />;
+  if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} />;
+  if (flow === 'processing') return <ProcessingScreen consultType={consultType} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript) => {
     setRealSummary(summary); setRealTranscript(transcript); setFlow('done');
     if (activePatient) {
       db.saveDraftConsultation(activePatient.id, summary, recTime, consultType)
@@ -4822,8 +4866,8 @@ export default function App() {
         <Layout screen={screen} go={go} breadcrumb={breadcrumbs[screen]} onBack={screen === 'patient-detail' ? () => go('patients') : undefined} doctorName={doctorName} notifications={notifications} onNotificationClick={(patientId) => { const p = (activePatient?.id === patientId ? activePatient : null); if (patientId) { db.fetchPatients().then(ps => { const found = ps.find(x => x.id === patientId); if (found) { setActivePatient(found); go('patient-detail'); } }); } }} onClearNotifications={() => setNotifications([])}>
           {screen === 'dashboard' && <DashboardPage go={go} setActivePatient={setActivePatient} user={user} doctorName={doctorName} />}
           {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
-          {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} refetchTrigger={refetchTrigger} />}
-          {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} />}
+          {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(activeApptType ?? type); setActiveApptType(null); setFlow('consent'); }} refetchTrigger={refetchTrigger} />}
+          {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onApptStart={(t) => setActiveApptType(t)} />}
           {screen === 'painel'   && <PainelPage go={go} setActivePatient={setActivePatient} />}
           {screen === 'settings' && <SettingsPage user={user} />}
         </Layout>
