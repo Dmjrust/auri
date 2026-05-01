@@ -1,5 +1,64 @@
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 export interface Guardian { name: string; relationship: string; phone: string; email: string | null; is_primary: boolean; }
+
+// ─── ANAMNESE PRIMEIRA CONSULTA ───────────────────────────────────────────────
+export interface AnamnesePrimeiraConsultaData {
+  // 1. História atual
+  motivo_consulta: string;
+  queixa_principal_duracao: string;
+  sintomas_associados: string;
+  // 2. História pregressa
+  internacoes: boolean | null;
+  internacoes_desc: string;
+  cirurgias: boolean | null;
+  cirurgias_desc: string;
+  alergias_medicamentos: string;
+  alergias_alimentos: string;
+  alergias_outras: string;
+  historico_vacinal: string;
+  // 3. História gestacional
+  gestacoes_gpa: string;
+  idade_gestacional_semanas: string;
+  intercorrencias_gestacao: boolean | null;
+  intercorrencias_gestacao_desc: string;
+  tipo_parto: string;
+  local_parto: string;
+  apgar_1: string;
+  apgar_5: string;
+  // 4. Triagens neonatais
+  teste_pezinho: string;
+  teste_orelhinha: string;
+  teste_olhinho: string;
+  teste_coracaozinho: string;
+  // 5. História familiar
+  doencas_familia: string;
+  alergia_familia: boolean | null;
+  alergia_familia_desc: string;
+  outras_condicoes_familia: string;
+  // 6. História socioeconômica
+  profissao_responsaveis: string;
+  renda_familiar: string;
+  tabagismo_passivo: boolean | null;
+  animal_domestico: boolean | null;
+  animal_domestico_qual: string;
+  agua_saneamento: boolean | null;
+}
+
+export function defaultAnamnesePrimeiraConsulta(): AnamnesePrimeiraConsultaData {
+  return {
+    motivo_consulta: '', queixa_principal_duracao: '', sintomas_associados: '',
+    internacoes: null, internacoes_desc: '',
+    cirurgias: null, cirurgias_desc: '',
+    alergias_medicamentos: '', alergias_alimentos: '', alergias_outras: '', historico_vacinal: '',
+    gestacoes_gpa: '', idade_gestacional_semanas: '',
+    intercorrencias_gestacao: null, intercorrencias_gestacao_desc: '',
+    tipo_parto: '', local_parto: '', apgar_1: '', apgar_5: '',
+    teste_pezinho: '', teste_orelhinha: '', teste_olhinho: '', teste_coracaozinho: '',
+    doencas_familia: '', alergia_familia: null, alergia_familia_desc: '', outras_condicoes_familia: '',
+    profissao_responsaveis: '', renda_familiar: '',
+    tabagismo_passivo: null, animal_domestico: null, animal_domestico_qual: '', agua_saneamento: null,
+  };
+}
 export interface Patient {
   id: string; full_name: string; birth_date: string; gender: 'M' | 'F';
   blood_type: string | null; delivery_type: string; gestational_age_weeks: number;

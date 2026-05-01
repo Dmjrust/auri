@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { Patient, Consultation, StructuredSummary } from '../data/mock';
+import type { Patient, Consultation, StructuredSummary, AnamnesePrimeiraConsultaData } from '../data/mock';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const signUp = (email: string, password: string, fullName: string) =>
@@ -101,13 +101,13 @@ export async function saveConsultation(
   durationSeconds: number,
   birthDate: string,
   consultType: 'retorno' | 'primeira vez' = 'retorno',
-): Promise<void> {
+): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Não autenticado');
 
   const now = new Date();
 
-  const { error } = await supabase.from('consultations').insert({
+  const { data: saved, error } = await supabase.from('consultations').insert({
     patient_id: patientId,
     doctor_id: user.id,
     scheduled_at: now.toISOString(),
@@ -130,7 +130,7 @@ export async function saveConsultation(
     sum_altura: summary.altura,
     sum_perimetro_cefalico: summary.perimetro_cefalico,
     sum_vacinas_mencionadas: summary.vacinas_mencionadas,
-  });
+  }).select('id').single();
   if (error) throw error;
 
   // Grava em growth_records se houver alguma medida
@@ -148,6 +148,7 @@ export async function saveConsultation(
       head_circumference_cm: hcCm,
     });
   }
+  return saved.id as string;
 }
 
 // ── Save draft consultation (auto-saved on processing complete) ───────────────
@@ -587,6 +588,36 @@ const PNI_SCHEDULE_NAMES = [
   { name: 'Hepatite B', dose: '2ª dose', age_months: 6 },
   { name: 'Influenza', dose: 'Anual', age_months: 6 },
 ];
+
+// ── Anamnese Primeira Consulta ────────────────────────────────────────────────
+export async function saveAnamnesePrimeiraConsulta(
+  consultaId: string,
+  patientId: string,
+  data: AnamnesePrimeiraConsultaData,
+): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Não autenticado');
+  const { data: saved, error } = await supabase
+    .from('anamnese_primeira_consulta')
+    .insert({ consulta_id: consultaId, patient_id: patientId, doctor_id: user.id, ...data })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return saved.id as string;
+}
+
+export async function fetchAnamnesePrimeiraConsulta(
+  consultaId: string,
+): Promise<AnamnesePrimeiraConsultaData | null> {
+  const { data, error } = await supabase
+    .from('anamnese_primeira_consulta')
+    .select('*')
+    .eq('consulta_id', consultaId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return data as AnamnesePrimeiraConsultaData;
+}
 
 // ── Growth Records ────────────────────────────────────────────────────────────
 export async function fetchGrowthRecords(patientId: string) {

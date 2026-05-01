@@ -1,4 +1,4 @@
-import type { StructuredSummary, ScannableSummary } from '../data/mock';
+import type { StructuredSummary, ScannableSummary, AnamnesePrimeiraConsultaData } from '../data/mock';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VALIDAÇÃO CLÍNICA: chama OpenAI diretamente do browser via VITE_OPENAI_API_KEY.
@@ -186,5 +186,113 @@ Retorno: ${data.retorno || 'Não informado'}
       return_plan:     String(raw.plan?.return_plan ?? ''),
     },
     alerts: Array.isArray(raw.alerts) ? raw.alerts.map(String) : ['Nenhum sinal de alerta identificado'],
+  };
+}
+
+// ── GPT-4o: transcrição primeira consulta → ficha de anamnese completa ────────
+const ANAMNESE_SYSTEM_PROMPT = `Você é um assistente de prontuário pediátrico brasileiro. Analise a transcrição de uma PRIMEIRA CONSULTA de puericultura e extraia todas as informações históricas mencionadas explicitamente. Retorne APENAS um JSON com exatamente estes campos:
+
+{
+  "motivo_consulta": "",
+  "queixa_principal_duracao": "",
+  "sintomas_associados": "",
+  "internacoes": null,
+  "internacoes_desc": "",
+  "cirurgias": null,
+  "cirurgias_desc": "",
+  "alergias_medicamentos": "",
+  "alergias_alimentos": "",
+  "alergias_outras": "",
+  "historico_vacinal": "",
+  "gestacoes_gpa": "",
+  "idade_gestacional_semanas": "",
+  "intercorrencias_gestacao": null,
+  "intercorrencias_gestacao_desc": "",
+  "tipo_parto": "",
+  "local_parto": "",
+  "apgar_1": "",
+  "apgar_5": "",
+  "teste_pezinho": "",
+  "teste_orelhinha": "",
+  "teste_olhinho": "",
+  "teste_coracaozinho": "",
+  "doencas_familia": "",
+  "alergia_familia": null,
+  "alergia_familia_desc": "",
+  "outras_condicoes_familia": "",
+  "profissao_responsaveis": "",
+  "renda_familiar": "",
+  "tabagismo_passivo": null,
+  "animal_domestico": null,
+  "animal_domestico_qual": "",
+  "agua_saneamento": null
+}
+
+REGRAS:
+- Responda APENAS com o JSON, sem markdown ou texto adicional
+- Use null para booleanos não mencionados — não assuma sim nem não
+- Use "" para texto não mencionado — não invente
+- tipo_parto: use exatamente "vaginal" ou "cesárea" ou "" se não mencionado
+- teste_pezinho: "realizado" | "não realizado" | "aguardando resultado" | ""
+- teste_orelhinha/olhinho/coracaozinho: "passou" | "falhou" | "não realizado" | ""
+- gestacoes_gpa: formato "G2P1A0" se informado, senão ""
+- Conforme CFM 2.454/2026: extração de apoio à decisão, médico revisará`;
+
+export async function extractAnamnesePrimeiraConsulta(transcript: string): Promise<AnamnesePrimeiraConsultaData> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: ANAMNESE_SYSTEM_PROMPT },
+        { role: 'user', content: `Transcrição da primeira consulta:\n\n${transcript}` },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `GPT-4o anamnese ${res.status}`);
+  }
+  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
+  const str = (k: string) => String(raw[k] ?? '');
+  const bl = (k: string): boolean | null => raw[k] === true ? true : raw[k] === false ? false : null;
+
+  return {
+    motivo_consulta: str('motivo_consulta'),
+    queixa_principal_duracao: str('queixa_principal_duracao'),
+    sintomas_associados: str('sintomas_associados'),
+    internacoes: bl('internacoes'),
+    internacoes_desc: str('internacoes_desc'),
+    cirurgias: bl('cirurgias'),
+    cirurgias_desc: str('cirurgias_desc'),
+    alergias_medicamentos: str('alergias_medicamentos'),
+    alergias_alimentos: str('alergias_alimentos'),
+    alergias_outras: str('alergias_outras'),
+    historico_vacinal: str('historico_vacinal'),
+    gestacoes_gpa: str('gestacoes_gpa'),
+    idade_gestacional_semanas: str('idade_gestacional_semanas'),
+    intercorrencias_gestacao: bl('intercorrencias_gestacao'),
+    intercorrencias_gestacao_desc: str('intercorrencias_gestacao_desc'),
+    tipo_parto: str('tipo_parto'),
+    local_parto: str('local_parto'),
+    apgar_1: str('apgar_1'),
+    apgar_5: str('apgar_5'),
+    teste_pezinho: str('teste_pezinho'),
+    teste_orelhinha: str('teste_orelhinha'),
+    teste_olhinho: str('teste_olhinho'),
+    teste_coracaozinho: str('teste_coracaozinho'),
+    doencas_familia: str('doencas_familia'),
+    alergia_familia: bl('alergia_familia'),
+    alergia_familia_desc: str('alergia_familia_desc'),
+    outras_condicoes_familia: str('outras_condicoes_familia'),
+    profissao_responsaveis: str('profissao_responsaveis'),
+    renda_familiar: str('renda_familiar'),
+    tabagismo_passivo: bl('tabagismo_passivo'),
+    animal_domestico: bl('animal_domestico'),
+    animal_domestico_qual: str('animal_domestico_qual'),
+    agua_saneamento: bl('agua_saneamento'),
   };
 }

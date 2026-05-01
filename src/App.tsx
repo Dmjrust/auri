@@ -10,6 +10,7 @@ import {
   Baby, Heartbeat, Syringe, CaretDown, CaretUp, CaretLeft,
   FloppyDisk, Buildings, Brain, ShieldCheck, PlayCircle, PencilSimple, Trash,
   ChartBar, ArrowUp, ArrowDown, ArrowRight, Lightbulb, Check,
+  Star, ArrowCounterClockwise, House,
 } from '@phosphor-icons/react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -18,6 +19,7 @@ import {
   CONSULTATIONS, GROWTH_DATA, VACCINES, INSIGHTS,
   OMS_WEIGHT_BOY, OMS_HEIGHT_BOY, OMS_WEIGHT_GIRL, OMS_HEIGHT_GIRL,
   type Patient, type Consultation, type StructuredSummary, type ScannableSummary,
+  type AnamnesePrimeiraConsultaData, defaultAnamnesePrimeiraConsulta,
 } from './data/mock';
 import './index.css';
 
@@ -3122,6 +3124,57 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
   );
 }
 
+// ─── ANAMNESE SUB-COMPONENTS (defined outside to prevent remount on re-render) ──
+
+function AnamBoolSeg({ value, onChange }: {
+  value: boolean | null;
+  onChange: (v: boolean | null) => void;
+}) {
+  const opts: { v: boolean | null; l: string }[] = [
+    { v: true, l: 'Sim' }, { v: false, l: 'Não' }, { v: null, l: 'N/I' }
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {opts.map(({ v, l }) => {
+        const active = value === v;
+        let bg = '#fff', color = MU, border = BO;
+        if (active) { bg = SEC; color = INK; border = BO; }
+        if (active && v === true)  { bg = SUCL;  color = SUC; border = SUC; }
+        if (active && v === false) { bg = DESL;  color = DES; border = DES; }
+        return (
+          <button key={l} type="button" onClick={() => onChange(v)} style={{
+            padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: active ? 600 : 400,
+            background: bg, color, border: `1px solid ${border}`,
+            cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1.4,
+          }}>{l}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+function AnamSelect({ value, onChange, options, aiField }: {
+  value: string; onChange: (v: string) => void; options: string[]; aiField?: boolean;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        width: '100%', fontSize: 13, padding: '7px 10px', borderRadius: 6,
+        border: `1px solid ${BO}`, fontFamily: 'inherit', outline: 'none',
+        cursor: 'pointer', boxSizing: 'border-box' as const,
+        background: aiField && value ? '#EBF5F8' : '#fff',
+        borderLeft: aiField && value ? `3px solid ${P}` : undefined,
+        color: value ? INK : MU,
+      }}
+    >
+      <option value="">Não informado</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
+
 // ─── CONSULTATION FLOW ────────────────────────────────────────────────────────
 
 // Badge visual para tipo de consulta — aparece em todas as telas do fluxo
@@ -3143,14 +3196,260 @@ function ConsultTypeBadge({ type }: { type: 'retorno' | 'primeira vez' }) {
   );
 }
 
-// Stub: será implementado no próximo prompt com formulário completo de puericultura
-function AnamnesePrimeiraConsulta({ summary }: { summary: StructuredSummary }) {
-  return null; // conteúdo inserido no próximo passo
-}
+// ─── ANAMNESE PRIMEIRA CONSULTA — ficha completa de puericultura ─────────────
+function AnamnesePrimeiraConsulta({ data, onChange }: {
+  data: AnamnesePrimeiraConsultaData;
+  onChange: (d: AnamnesePrimeiraConsultaData) => void;
+}) {
+  const ALL_SECS = ['atual', 'pregressa', 'gestacional', 'triagens', 'familiar', 'socioeconomica'] as const;
+  type SecId = typeof ALL_SECS[number];
 
-// Retorno usa o SummaryDoneScreen atual — este alias deixa o roteamento explícito
-function AnamnesesRetorno(_props: { summary: StructuredSummary }) {
-  return null; // usado apenas como marcador de tipo — renderização feita em SummaryDoneScreen
+  const [openSecs, setOpenSecs] = useState<Set<SecId>>(new Set(ALL_SECS));
+
+  // Fields pre-filled by AI on initial render — tracked for visual highlighting
+  const [aiFields] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    const mark = (k: string, v: any) => { if (v !== null && v !== undefined && v !== '') s.add(k); };
+    Object.keys(data).forEach(k => mark(k, (data as any)[k]));
+    return s;
+  });
+
+  const set = <K extends keyof AnamnesePrimeiraConsultaData>(k: K, v: AnamnesePrimeiraConsultaData[K]) =>
+    onChange({ ...data, [k]: v });
+
+  const toggleSec = (id: SecId) => setOpenSecs(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+
+  const allOpen = openSecs.size === ALL_SECS.length;
+  const toggleAll = () => setOpenSecs(allOpen ? new Set() : new Set(ALL_SECS));
+
+  // Helper: AI-highlight style for a field
+  const aiBorder = (k: string): React.CSSProperties =>
+    aiFields.has(k) ? { background: '#EBF5F8', borderLeft: `3px solid ${P}` } : {};
+
+  const inputBase: React.CSSProperties = {
+    width: '100%', fontSize: 13, lineHeight: 1.6, padding: '7px 10px',
+    border: `1px solid ${BO}`, borderRadius: 6, fontFamily: 'inherit', color: INK,
+    resize: 'vertical' as const, boxSizing: 'border-box' as const, outline: 'none',
+    background: '#fff',
+  };
+
+  function Lbl({ text, k }: { text: string; k?: string }) {
+    return (
+      <div style={{ fontSize: 12, fontWeight: 600, color: MU, marginBottom: 5, display: 'flex', gap: 5, alignItems: 'center' }}>
+        {text}
+        {k && aiFields.has(k) && (
+          <span style={{ fontSize: 10, background: PL, color: P, padding: '1px 6px', borderRadius: 99 }}>✦ IA</span>
+        )}
+      </div>
+    );
+  }
+
+  function Ta({ k, rows = 2 }: { k: keyof AnamnesePrimeiraConsultaData; rows?: number }) {
+    return (
+      <textarea rows={rows} value={data[k] as string} onChange={e => set(k, e.target.value as any)}
+        style={{ ...inputBase, ...aiBorder(k) }}
+        onFocus={e => { e.target.style.borderColor = P; }} onBlur={e => { e.target.style.borderColor = BO; }} />
+    );
+  }
+
+  function Inp({ k }: { k: keyof AnamnesePrimeiraConsultaData }) {
+    return (
+      <input type="text" value={data[k] as string} onChange={e => set(k, e.target.value as any)}
+        style={{ ...inputBase, resize: 'none', ...aiBorder(k), paddingTop: 7, paddingBottom: 7 }}
+        onFocus={e => { e.target.style.borderColor = P; }} onBlur={e => { e.target.style.borderColor = BO; }} />
+    );
+  }
+
+  function SectionHeader({ id, icon: Icon, title }: { id: SecId; icon: any; title: string }) {
+    const isOpen = openSecs.has(id);
+    const secFieldMap: Record<SecId, string[]> = {
+      atual:         ['motivo_consulta','queixa_principal_duracao','sintomas_associados'],
+      pregressa:     ['internacoes','internacoes_desc','cirurgias','cirurgias_desc','alergias_medicamentos','alergias_alimentos','alergias_outras','historico_vacinal'],
+      gestacional:   ['gestacoes_gpa','idade_gestacional_semanas','intercorrencias_gestacao','intercorrencias_gestacao_desc','tipo_parto','local_parto','apgar_1','apgar_5'],
+      triagens:      ['teste_pezinho','teste_orelhinha','teste_olhinho','teste_coracaozinho'],
+      familiar:      ['doencas_familia','alergia_familia','alergia_familia_desc','outras_condicoes_familia'],
+      socioeconomica:['profissao_responsaveis','renda_familiar','tabagismo_passivo','animal_domestico','animal_domestico_qual','agua_saneamento'],
+    };
+    const aiCount = secFieldMap[id].filter(f => aiFields.has(f)).length;
+    return (
+      <button onClick={() => toggleSec(id)} style={{
+        width: '100%', padding: '13px 20px', display: 'flex', alignItems: 'center', gap: 10,
+        background: isOpen ? '#fff' : BG, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+        borderBottom: isOpen ? `1px solid ${BO}` : 'none',
+      }}>
+        <span style={{ width: 28, height: 28, borderRadius: 7, background: PL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={14} color={P} />
+        </span>
+        <span style={{ fontWeight: 600, fontSize: 14, color: INK, flex: 1, textAlign: 'left' as const }}>{title}</span>
+        {aiCount > 0 && (
+          <span style={{ fontSize: 11, background: PL, color: P, padding: '2px 8px', borderRadius: 99 }}>
+            {aiCount} campo{aiCount !== 1 ? 's' : ''} preenchido{aiCount !== 1 ? 's' : ''} pela IA
+          </span>
+        )}
+        {isOpen ? <CaretUp size={15} color={MU} /> : <CaretDown size={15} color={MU} />}
+      </button>
+    );
+  }
+
+  const g2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 };
+  const full: React.CSSProperties = { gridColumn: '1 / -1' };
+  const col: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 14 };
+  const pad: React.CSSProperties = { padding: '16px 20px' };
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FileText size={16} color={P} />
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Ficha de anamnese — primeira consulta</span>
+        </div>
+        <button onClick={toggleAll} style={{
+          background: 'none', border: `1px solid ${BO}`, borderRadius: 6, padding: '5px 12px',
+          fontSize: 12, color: MU, cursor: 'pointer', fontFamily: 'inherit',
+        }}>
+          {allOpen ? 'Recolher tudo' : 'Expandir tudo'}
+        </button>
+      </div>
+
+      {/* 1 — História atual */}
+      <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
+        <SectionHeader id="atual" icon={Heartbeat} title="1. História atual" />
+        {openSecs.has('atual') && (
+          <div style={{ ...pad, ...g2 }}>
+            <div><Lbl text="Motivo da consulta" k="motivo_consulta" /><Inp k="motivo_consulta" /></div>
+            <div><Lbl text="Queixa principal e duração" k="queixa_principal_duracao" /><Inp k="queixa_principal_duracao" /></div>
+            <div style={full}><Lbl text="Sintomas associados" k="sintomas_associados" /><Ta k="sintomas_associados" rows={3} /></div>
+          </div>
+        )}
+      </Card>
+
+      {/* 2 — História pregressa */}
+      <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
+        <SectionHeader id="pregressa" icon={FileText} title="2. História pregressa" />
+        {openSecs.has('pregressa') && (
+          <div style={{ ...pad, ...g2 }}>
+            <div style={col}>
+              <div>
+                <Lbl text="Internações anteriores" k="internacoes" />
+                <AnamBoolSeg value={data.internacoes} onChange={v => set('internacoes', v)} />
+                {data.internacoes === true && <div style={{ marginTop: 8 }}><Lbl text="Descreva" k="internacoes_desc" /><Ta k="internacoes_desc" /></div>}
+              </div>
+              <div>
+                <Lbl text="Cirurgias anteriores" k="cirurgias" />
+                <AnamBoolSeg value={data.cirurgias} onChange={v => set('cirurgias', v)} />
+                {data.cirurgias === true && <div style={{ marginTop: 8 }}><Lbl text="Descreva" k="cirurgias_desc" /><Ta k="cirurgias_desc" /></div>}
+              </div>
+            </div>
+            <div style={col}>
+              <div><Lbl text="Alergias a medicamentos" k="alergias_medicamentos" /><Ta k="alergias_medicamentos" /></div>
+              <div><Lbl text="Alergias alimentares" k="alergias_alimentos" /><Ta k="alergias_alimentos" /></div>
+              <div><Lbl text="Outras alergias" k="alergias_outras" /><Inp k="alergias_outras" /></div>
+              <div><Lbl text="Histórico vacinal prévio" k="historico_vacinal" /><Ta k="historico_vacinal" rows={3} /></div>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* 3 — História gestacional */}
+      <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
+        <SectionHeader id="gestacional" icon={Baby} title="3. História gestacional" />
+        {openSecs.has('gestacional') && (
+          <div style={{ ...pad, ...g2 }}>
+            <div><Lbl text="Gestações (G_P_A)" k="gestacoes_gpa" /><Inp k="gestacoes_gpa" /></div>
+            <div><Lbl text="Semanas de gestação ao nascer" k="idade_gestacional_semanas" /><Inp k="idade_gestacional_semanas" /></div>
+            <div>
+              <Lbl text="Tipo de parto" k="tipo_parto" />
+              <AnamSelect value={data.tipo_parto} onChange={v => set('tipo_parto', v)} options={['vaginal', 'cesárea']} aiField={aiFields.has('tipo_parto')} />
+            </div>
+            <div><Lbl text="Local do parto (maternidade)" k="local_parto" /><Inp k="local_parto" /></div>
+            <div style={{ ...full }}>
+              <Lbl text="Intercorrências na gestação" k="intercorrencias_gestacao" />
+              <AnamBoolSeg value={data.intercorrencias_gestacao} onChange={v => set('intercorrencias_gestacao', v)} />
+              {data.intercorrencias_gestacao === true && (
+                <div style={{ marginTop: 8 }}><Lbl text="Descreva" k="intercorrencias_gestacao_desc" /><Ta k="intercorrencias_gestacao_desc" /></div>
+              )}
+            </div>
+            <div>
+              <Lbl text="Apgar 1º minuto" k="apgar_1" /><Inp k="apgar_1" />
+            </div>
+            <div>
+              <Lbl text="Apgar 5º minuto" k="apgar_5" /><Inp k="apgar_5" />
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* 4 — Triagens neonatais */}
+      <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
+        <SectionHeader id="triagens" icon={Syringe} title="4. Triagens neonatais" />
+        {openSecs.has('triagens') && (
+          <div style={{ ...pad, ...g2 }}>
+            <div>
+              <Lbl text="Teste do pezinho" k="teste_pezinho" />
+              <AnamSelect value={data.teste_pezinho} onChange={v => set('teste_pezinho', v)} options={['realizado', 'não realizado', 'aguardando resultado']} aiField={aiFields.has('teste_pezinho')} />
+            </div>
+            <div>
+              <Lbl text="Teste da orelhinha" k="teste_orelhinha" />
+              <AnamSelect value={data.teste_orelhinha} onChange={v => set('teste_orelhinha', v)} options={['passou', 'falhou', 'não realizado']} aiField={aiFields.has('teste_orelhinha')} />
+            </div>
+            <div>
+              <Lbl text="Teste do olhinho" k="teste_olhinho" />
+              <AnamSelect value={data.teste_olhinho} onChange={v => set('teste_olhinho', v)} options={['passou', 'falhou', 'não realizado']} aiField={aiFields.has('teste_olhinho')} />
+            </div>
+            <div>
+              <Lbl text="Teste do coraçãozinho (oximetria)" k="teste_coracaozinho" />
+              <AnamSelect value={data.teste_coracaozinho} onChange={v => set('teste_coracaozinho', v)} options={['passou', 'falhou', 'não realizado']} aiField={aiFields.has('teste_coracaozinho')} />
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* 5 — História familiar */}
+      <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
+        <SectionHeader id="familiar" icon={Users} title="5. História familiar" />
+        {openSecs.has('familiar') && (
+          <div style={{ ...pad, ...g2 }}>
+            <div><Lbl text="Doenças crônicas na família (por parente)" k="doencas_familia" /><Ta k="doencas_familia" rows={4} /></div>
+            <div style={col}>
+              <div>
+                <Lbl text="Histórico de alergias na família" k="alergia_familia" />
+                <AnamBoolSeg value={data.alergia_familia} onChange={v => set('alergia_familia', v)} />
+                {data.alergia_familia === true && <div style={{ marginTop: 8 }}><Lbl text="Descreva" k="alergia_familia_desc" /><Ta k="alergia_familia_desc" /></div>}
+              </div>
+              <div><Lbl text="Outras condições relevantes" k="outras_condicoes_familia" /><Ta k="outras_condicoes_familia" rows={3} /></div>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* 6 — História socioeconômica */}
+      <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
+        <SectionHeader id="socioeconomica" icon={House} title="6. História socioeconômica" />
+        {openSecs.has('socioeconomica') && (
+          <div style={{ ...pad, ...g2 }}>
+            <div><Lbl text="Profissão dos responsáveis" k="profissao_responsaveis" /><Inp k="profissao_responsaveis" /></div>
+            <div><Lbl text="Renda familiar aproximada (opcional)" k="renda_familiar" /><Inp k="renda_familiar" /></div>
+            <div>
+              <Lbl text="Tabagismo passivo em casa" k="tabagismo_passivo" />
+              <AnamBoolSeg value={data.tabagismo_passivo} onChange={v => set('tabagismo_passivo', v)} />
+            </div>
+            <div>
+              <Lbl text="Animal doméstico em casa" k="animal_domestico" />
+              <AnamBoolSeg value={data.animal_domestico} onChange={v => set('animal_domestico', v)} />
+              {data.animal_domestico === true && <div style={{ marginTop: 8 }}><Lbl text="Qual animal" k="animal_domestico_qual" /><Inp k="animal_domestico_qual" /></div>}
+            </div>
+            <div style={full}>
+              <Lbl text="Acesso a água encanada e saneamento básico" k="agua_saneamento" />
+              <AnamBoolSeg value={data.agua_saneamento} onChange={v => set('agua_saneamento', v)} />
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
 }
 
 function ConsentScreen({ onOk, onCancel, consultType }: { onOk: () => void; onCancel: () => void; consultType: 'retorno' | 'primeira vez' }) {
@@ -3268,10 +3567,18 @@ function RecordingScreen({ time, patient, consultType, onFinish }: { time: numbe
   );
 }
 
-function ProcessingScreen({ audioBlob, onDone, onRetry, consultType }: { audioBlob: Blob | null; onDone: (summary: StructuredSummary, transcript: string) => void; onRetry: () => void; consultType: 'retorno' | 'primeira vez' }) {
+function ProcessingScreen({ audioBlob, onDone, onRetry, consultType }: {
+  audioBlob: Blob | null;
+  onDone: (summary: StructuredSummary, transcript: string, anamnese?: AnamnesePrimeiraConsultaData) => void;
+  onRetry: () => void;
+  consultType: 'retorno' | 'primeira vez';
+}) {
   const [step, setStep]   = useState(0);
   const [error, setError] = useState('');
-  const steps = ['Enviando áudio para transcrição…', 'Whisper transcrevendo consulta…', 'GPT-4o estruturando prontuário…', 'Finalizando resumo clínico…'];
+  const isPrimeira = consultType === 'primeira vez';
+  const steps = isPrimeira
+    ? ['Enviando áudio para transcrição…', 'Whisper transcrevendo consulta…', 'GPT-4o estruturando prontuário…', 'Preenchendo ficha de puericultura…', 'Finalizando resumo clínico…']
+    : ['Enviando áudio para transcrição…', 'Whisper transcrevendo consulta…', 'GPT-4o estruturando prontuário…', 'Finalizando resumo clínico…'];
 
   useEffect(() => {
     let cancelled = false;
@@ -3287,10 +3594,21 @@ function ProcessingScreen({ audioBlob, onDone, onRetry, consultType }: { audioBl
         const summary = await ai.structureSummary(transcript);
 
         if (cancelled) return;
-        setStep(3);
-        await new Promise(r => setTimeout(r, 400));
 
-        if (!cancelled) onDone(summary, transcript);
+        if (isPrimeira) {
+          setStep(3); // "Preenchendo ficha de puericultura…"
+          // Graceful — if extraction fails, open form with empty fields for manual entry
+          const anamnese = await ai.extractAnamnesePrimeiraConsulta(transcript)
+            .catch(() => defaultAnamnesePrimeiraConsulta());
+          if (cancelled) return;
+          setStep(4);
+          await new Promise(r => setTimeout(r, 400));
+          if (!cancelled) onDone(summary, transcript, anamnese);
+        } else {
+          setStep(3);
+          await new Promise(r => setTimeout(r, 400));
+          if (!cancelled) onDone(summary, transcript);
+        }
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Erro ao processar consulta.');
       }
@@ -3343,18 +3661,20 @@ function ProcessingScreen({ audioBlob, onDone, onRetry, consultType }: { audioBl
   );
 }
 
-function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, consultType, onSave }: {
+function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, consultType, anamnese, onSave }: {
   patient: Patient | null; recTime: number;
   summary: StructuredSummary; transcript: string;
   draftId: string | null;
   consultType: 'retorno' | 'primeira vez';
+  anamnese: AnamnesePrimeiraConsultaData | null;
   onSave: () => void;
 }) {
+  const isPrimeira = consultType === 'primeira vez';
   const [showTranscript, setShowTranscript] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
-  // Editable state — initialised from AI output so doctor can correct before saving
+  // Editable SOAP state — always used (retorno = full SOAP, primeira vez = condensed)
   const [queixaPrincipal, setQueixaPrincipal] = useState(summary.queixa_principal);
   const [hda, setHda] = useState(summary.hda);
   const [exameFisico, setExameFisico] = useState(summary.exame_fisico);
@@ -3362,11 +3682,16 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, con
   const [conduta, setConduta] = useState(summary.conduta);
   const [retorno, setRetorno] = useState(summary.retorno);
 
+  // Editable anamnese state — only for 'primeira vez'
+  const [editedAnamnese, setEditedAnamnese] = useState<AnamnesePrimeiraConsultaData>(
+    () => anamnese ?? defaultAnamnesePrimeiraConsulta()
+  );
+
   function buildEdited(): StructuredSummary {
     return {
       ...summary,
-      queixa_principal: queixaPrincipal,
-      hda,
+      queixa_principal: isPrimeira ? (editedAnamnese.motivo_consulta || queixaPrincipal) : queixaPrincipal,
+      hda: isPrimeira ? (editedAnamnese.sintomas_associados || hda) : hda,
       exame_fisico: exameFisico,
       hipoteses: hipoteses.split('\n').map(h => h.trim()).filter(Boolean),
       conduta,
@@ -3380,10 +3705,17 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, con
     setSaveError('');
     const edited = buildEdited();
     try {
+      let consultId: string;
       if (draftId) {
         await db.confirmDraftConsultation(draftId, patient.id, edited, recTime, patient.birth_date);
+        consultId = draftId;
       } else {
-        await db.saveConsultation(patient.id, edited, recTime, patient.birth_date, consultType);
+        consultId = await db.saveConsultation(patient.id, edited, recTime, patient.birth_date, consultType);
+      }
+      // Save anamnese for primeira consulta
+      if (isPrimeira) {
+        await db.saveAnamnesePrimeiraConsulta(consultId, patient.id, editedAnamnese)
+          .catch(e => console.error('Anamnese save failed (non-critical):', e));
       }
       onSave();
     } catch (e: any) {
@@ -3456,34 +3788,61 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, con
           </Card>
         )}
 
-        {/* Editable SOAP fields */}
-        <Card style={{ marginBottom: 16 }}>
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FileText size={15} color={P} />
-            <span style={{ fontWeight: 600, fontSize: 15 }}>Resumo estruturado</span>
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: MU }}>Todos os campos são editáveis</span>
+        {/* Main form — branches on consultation type */}
+        {isPrimeira ? (
+          /* ── Primeira consulta: ficha de anamnese completa ── */
+          <div style={{ marginBottom: 16 }}>
+            <AnamnesePrimeiraConsulta data={editedAnamnese} onChange={setEditedAnamnese} />
           </div>
-          {([
-            { label: 'Queixa principal', value: queixaPrincipal, onChange: setQueixaPrincipal, rows: 2 },
-            { label: 'HDA', value: hda, onChange: setHda, rows: 5 },
-            { label: 'Exame físico', value: exameFisico, onChange: setExameFisico, rows: 4 },
-            { label: 'Hipóteses (uma por linha)', value: hipoteses, onChange: setHipoteses, rows: 3 },
-            { label: 'Conduta', value: conduta, onChange: setConduta, rows: 4 },
-            { label: 'Retorno', value: retorno, onChange: setRetorno, rows: 1 },
-          ] as { label: string; value: string; onChange: (v: string) => void; rows: number }[]).map(({ label, value, onChange, rows }) => (
-            <div key={label} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: MU, paddingTop: 10 }}>{label}</span>
-              <textarea
-                value={value}
-                onChange={e => onChange(e.target.value)}
-                rows={rows}
-                style={taStyle}
-                onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = P; }}
-                onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = BO; }}
-              />
+        ) : (
+          /* ── Retorno: SOAP padrão ── */
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FileText size={15} color={P} />
+              <span style={{ fontWeight: 600, fontSize: 15 }}>Resumo estruturado</span>
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: MU }}>Todos os campos são editáveis</span>
             </div>
-          ))}
-        </Card>
+            {([
+              { label: 'Queixa principal', value: queixaPrincipal, onChange: setQueixaPrincipal, rows: 2 },
+              { label: 'HDA', value: hda, onChange: setHda, rows: 5 },
+              { label: 'Exame físico', value: exameFisico, onChange: setExameFisico, rows: 4 },
+              { label: 'Hipóteses (uma por linha)', value: hipoteses, onChange: setHipoteses, rows: 3 },
+              { label: 'Conduta', value: conduta, onChange: setConduta, rows: 4 },
+              { label: 'Retorno', value: retorno, onChange: setRetorno, rows: 1 },
+            ] as { label: string; value: string; onChange: (v: string) => void; rows: number }[]).map(({ label, value, onChange, rows }) => (
+              <div key={label} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: MU, paddingTop: 10 }}>{label}</span>
+                <textarea value={value} onChange={e => onChange(e.target.value)} rows={rows} style={taStyle}
+                  onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = P; }}
+                  onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = BO; }} />
+              </div>
+            ))}
+          </Card>
+        )}
+
+        {/* Conduta e plano — always shown; for primeira vez it's a condensed card */}
+        {isPrimeira && (
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Stethoscope size={15} color={P} />
+              <span style={{ fontWeight: 600, fontSize: 15 }}>Exame físico, conduta e retorno</span>
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: MU }}>Todos os campos são editáveis</span>
+            </div>
+            {([
+              { label: 'Exame físico', value: exameFisico, onChange: setExameFisico, rows: 4 },
+              { label: 'Hipóteses (uma por linha)', value: hipoteses, onChange: setHipoteses, rows: 2 },
+              { label: 'Conduta', value: conduta, onChange: setConduta, rows: 4 },
+              { label: 'Retorno', value: retorno, onChange: setRetorno, rows: 1 },
+            ] as { label: string; value: string; onChange: (v: string) => void; rows: number }[]).map(({ label, value, onChange, rows }) => (
+              <div key={label} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: MU, paddingTop: 10 }}>{label}</span>
+                <textarea value={value} onChange={e => onChange(e.target.value)} rows={rows} style={taStyle}
+                  onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = P; }}
+                  onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = BO; }} />
+              </div>
+            ))}
+          </Card>
+        )}
 
         {/* Transcript */}
         <Card style={{ marginBottom: 24 }}>
@@ -4747,6 +5106,7 @@ export default function App() {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [realSummary, setRealSummary] = useState<StructuredSummary | null>(null);
   const [realTranscript, setRealTranscript] = useState('');
+  const [realAnamnese, setRealAnamnese] = useState<AnamnesePrimeiraConsultaData | null>(null);
   const [draftConsultationId, setDraftConsultationId] = useState<string | null>(null);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -4841,15 +5201,15 @@ export default function App() {
 
   if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => setFlow(null)} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} />;
-  if (flow === 'processing') return <ProcessingScreen consultType={consultType} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript) => {
-    setRealSummary(summary); setRealTranscript(transcript); setFlow('done');
+  if (flow === 'processing') return <ProcessingScreen consultType={consultType} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese) => {
+    setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setFlow('done');
     if (activePatient) {
       db.saveDraftConsultation(activePatient.id, summary, recTime, consultType)
         .then(id => setDraftConsultationId(id))
         .catch(err => console.error('Auto-save draft failed:', err));
     }
   }} />;
-  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} onSave={() => { setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
+  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} anamnese={realAnamnese} onSave={() => { setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRealAnamnese(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
 
   const breadcrumbs: Record<string, string[]> = {
     dashboard:        ['Início', 'Dashboard'],
