@@ -346,6 +346,131 @@ export const OMS_HEIGHT_GIRL: OmsPoint[] = [
   { month: 48, p3: 92.1, p15: 95.0, p50: 99.4, p85: 103.8, p97: 107.8 },
 ];
 
+// ─── WHO LMS TABLES (para cálculo de Z-escore) ───────────────────────────────
+// Fonte: WHO Child Growth Standards (2006) — wganthro data
+// Fórmula: Z = ((x/M)^L − 1) / (L × S) ; se L≈0 → Z = ln(x/M) / S
+export interface LmsPoint { month: number; L: number; M: number; S: number; }
+
+// Peso por idade — Meninos
+export const LMS_WEIGHT_BOY: LmsPoint[] = [
+  { month:  0, L: 0.3487, M:  3.3464, S: 0.1460 },
+  { month:  2, L: 0.1860, M:  5.5745, S: 0.1296 },
+  { month:  4, L: 0.0300, M:  6.9262, S: 0.1256 },
+  { month:  6, L:-0.0850, M:  7.9346, S: 0.1239 },
+  { month:  9, L:-0.1855, M:  9.1862, S: 0.1222 },
+  { month: 12, L:-0.2720, M: 10.2092, S: 0.1214 },
+  { month: 18, L:-0.3600, M: 11.4848, S: 0.1215 },
+  { month: 24, L:-0.4023, M: 12.2273, S: 0.1189 },
+  { month: 36, L:-0.4250, M: 14.2453, S: 0.1226 },
+  { month: 48, L:-0.4347, M: 16.2688, S: 0.1262 },
+  { month: 60, L:-0.4349, M: 18.2528, S: 0.1296 },
+];
+
+// Peso por idade — Meninas
+export const LMS_WEIGHT_GIRL: LmsPoint[] = [
+  { month:  0, L: 0.3809, M:  3.2322, S: 0.1460 },
+  { month:  2, L: 0.1349, M:  5.1042, S: 0.1304 },
+  { month:  4, L:-0.0475, M:  6.4246, S: 0.1240 },
+  { month:  6, L:-0.1689, M:  7.2976, S: 0.1218 },
+  { month:  9, L:-0.3120, M:  8.4819, S: 0.1208 },
+  { month: 12, L:-0.3795, M:  9.4915, S: 0.1209 },
+  { month: 18, L:-0.4344, M: 10.7839, S: 0.1230 },
+  { month: 24, L:-0.4650, M: 11.5174, S: 0.1256 },
+  { month: 36, L:-0.4675, M: 13.8973, S: 0.1301 },
+  { month: 48, L:-0.4684, M: 15.9619, S: 0.1340 },
+  { month: 60, L:-0.4645, M: 18.2082, S: 0.1367 },
+];
+
+// Comprimento/Altura por idade — Meninos
+export const LMS_HEIGHT_BOY: LmsPoint[] = [
+  { month:  0, L: 1.0, M:  49.8842, S: 0.03795 },
+  { month:  2, L: 1.0, M:  58.4249, S: 0.03781 },
+  { month:  4, L: 1.0, M:  63.8860, S: 0.03816 },
+  { month:  6, L: 1.0, M:  67.6236, S: 0.03870 },
+  { month:  9, L: 1.0, M:  72.7193, S: 0.03998 },
+  { month: 12, L: 1.0, M:  75.7576, S: 0.04057 },
+  { month: 18, L: 1.0, M:  82.3241, S: 0.04100 },
+  { month: 24, L: 1.0, M:  87.1174, S: 0.03825 },
+  { month: 36, L: 1.0, M:  95.0978, S: 0.03718 },
+  { month: 48, L: 1.0, M: 102.9553, S: 0.03671 },
+  { month: 60, L: 1.0, M: 110.0204, S: 0.03645 },
+];
+
+// Comprimento/Altura por idade — Meninas
+export const LMS_HEIGHT_GIRL: LmsPoint[] = [
+  { month:  0, L: 1.0, M:  49.1477, S: 0.03790 },
+  { month:  2, L: 1.0, M:  57.0673, S: 0.03892 },
+  { month:  4, L: 1.0, M:  62.2099, S: 0.03920 },
+  { month:  6, L: 1.0, M:  65.7311, S: 0.03933 },
+  { month:  9, L: 1.0, M:  70.1435, S: 0.03956 },
+  { month: 12, L: 1.0, M:  74.0150, S: 0.04049 },
+  { month: 18, L: 1.0, M:  80.2060, S: 0.04120 },
+  { month: 24, L: 1.0, M:  85.7153, S: 0.03868 },
+  { month: 36, L: 1.0, M:  93.9727, S: 0.03790 },
+  { month: 48, L: 1.0, M: 101.9752, S: 0.03780 },
+  { month: 60, L: 1.0, M: 109.4055, S: 0.03773 },
+];
+
+// Perímetro cefálico por idade — Meninos
+export const LMS_HC_BOY: LmsPoint[] = [
+  { month:  0, L: 1.0, M: 34.4618, S: 0.03631 },
+  { month:  2, L: 1.0, M: 39.1285, S: 0.03121 },
+  { month:  4, L: 1.0, M: 41.1718, S: 0.03054 },
+  { month:  6, L: 1.0, M: 43.2660, S: 0.02920 },
+  { month:  9, L: 1.0, M: 45.1155, S: 0.02747 },
+  { month: 12, L: 1.0, M: 46.3160, S: 0.02622 },
+  { month: 18, L: 1.0, M: 47.5756, S: 0.02555 },
+  { month: 24, L: 1.0, M: 48.3174, S: 0.02513 },
+  { month: 36, L: 1.0, M: 49.5059, S: 0.02510 },
+  { month: 48, L: 1.0, M: 50.3922, S: 0.02503 },
+  { month: 60, L: 1.0, M: 50.9832, S: 0.02489 },
+];
+
+// Perímetro cefálico por idade — Meninas
+export const LMS_HC_GIRL: LmsPoint[] = [
+  { month:  0, L: 1.0, M: 33.8787, S: 0.03569 },
+  { month:  2, L: 1.0, M: 38.2766, S: 0.03066 },
+  { month:  4, L: 1.0, M: 40.1842, S: 0.03046 },
+  { month:  6, L: 1.0, M: 42.0981, S: 0.02915 },
+  { month:  9, L: 1.0, M: 43.9613, S: 0.02739 },
+  { month: 12, L: 1.0, M: 45.0843, S: 0.02616 },
+  { month: 18, L: 1.0, M: 46.4381, S: 0.02538 },
+  { month: 24, L: 1.0, M: 47.1854, S: 0.02484 },
+  { month: 36, L: 1.0, M: 48.3784, S: 0.02490 },
+  { month: 48, L: 1.0, M: 49.2726, S: 0.02503 },
+  { month: 60, L: 1.0, M: 49.9094, S: 0.02498 },
+];
+
+// IMC por idade — Meninos
+export const LMS_BMI_BOY: LmsPoint[] = [
+  { month:  0, L:-0.3012, M: 13.4065, S: 0.09838 },
+  { month:  2, L:-0.6390, M: 16.1748, S: 0.08824 },
+  { month:  4, L:-0.8375, M: 17.1421, S: 0.08335 },
+  { month:  6, L:-0.8896, M: 17.3543, S: 0.07929 },
+  { month:  9, L:-0.7894, M: 17.0124, S: 0.07739 },
+  { month: 12, L:-0.6854, M: 16.6386, S: 0.07890 },
+  { month: 18, L:-0.4849, M: 15.9986, S: 0.08095 },
+  { month: 24, L:-0.3062, M: 15.7018, S: 0.08397 },
+  { month: 36, L:-0.0656, M: 15.5578, S: 0.08362 },
+  { month: 48, L: 0.1406, M: 15.3164, S: 0.08124 },
+  { month: 60, L: 0.2993, M: 15.2608, S: 0.07989 },
+];
+
+// IMC por idade — Meninas
+export const LMS_BMI_GIRL: LmsPoint[] = [
+  { month:  0, L:-0.0631, M: 13.3363, S: 0.09883 },
+  { month:  2, L:-0.4697, M: 15.7999, S: 0.08987 },
+  { month:  4, L:-0.6999, M: 16.5477, S: 0.08648 },
+  { month:  6, L:-0.7920, M: 16.6773, S: 0.08516 },
+  { month:  9, L:-0.7234, M: 16.2810, S: 0.08381 },
+  { month: 12, L:-0.6360, M: 15.9052, S: 0.08271 },
+  { month: 18, L:-0.4680, M: 15.3991, S: 0.08381 },
+  { month: 24, L:-0.2899, M: 15.2127, S: 0.08444 },
+  { month: 36, L:-0.0833, M: 15.2037, S: 0.08407 },
+  { month: 48, L: 0.0830, M: 14.8978, S: 0.08162 },
+  { month: 60, L: 0.2285, M: 14.9353, S: 0.08067 },
+];
+
 // ─── VACCINES ─────────────────────────────────────────────────────────────────
 export const VACCINES: Record<string, VaccineRecord[]> = {
   p1: [
