@@ -189,53 +189,81 @@ Retorno: ${data.retorno || 'Não informado'}
   };
 }
 
-// ── GPT-4o: transcrição primeira consulta → ficha de anamnese completa ────────
-const ANAMNESE_SYSTEM_PROMPT = `Você é um assistente de prontuário pediátrico brasileiro. Analise a transcrição de uma PRIMEIRA CONSULTA de puericultura e extraia todas as informações históricas mencionadas explicitamente. Retorne APENAS um JSON com exatamente estes campos:
+// ── GPT-4o: transcrição primeira consulta → ficha de anamnese por seções ───────
+//
+// Prompt específico para tipo_consulta === 'primeira_vez'.
+// Retorna JSON aninhado por seção (historia_atual, historia_pregressa, …)
+// que é mapeado para o tipo plano AnamnesePrimeiraConsultaData pelo parser abaixo.
+//
+const ANAMNESE_PRIMEIRA_VEZ_SYSTEM_PROMPT = `Você é um assistente médico especializado em puericultura. Analise a transcrição da consulta e extraia as informações, classificando cada dado na seção correta:
 
+1. HISTÓRIA ATUAL: motivo da consulta, queixa principal, sintomas e duração.
+2. HISTÓRIA PREGRESSA: internações, cirurgias, alergias, histórico vacinal.
+3. HISTÓRIA GESTACIONAL: número de gestações (G_P_A), semanas ao nascimento, intercorrências, tipo de parto, local, Apgar.
+4. TRIAGENS NEONATAIS: teste do pezinho, orelhinha, olhinho, coraçãozinho.
+5. HISTÓRIA FAMILIAR: doenças crônicas, alergias, condições relevantes por grau de parentesco.
+6. HISTÓRIA SOCIOECONÔMICA: profissão dos responsáveis, tabagismo passivo, animais em casa, saneamento.
+
+Retorne um JSON com as chaves: historia_atual, historia_pregressa, historia_gestacional, triagens_neonatais, historia_familiar, historia_socioeconomica. Cada chave contém os subcampos identificados.
+Campos não mencionados na consulta retornar como null.
+Nunca invente dados não mencionados pelo médico ou responsável.
+
+Use exatamente esta estrutura de subcampos:
 {
-  "motivo_consulta": "",
-  "queixa_principal_duracao": "",
-  "sintomas_associados": "",
-  "internacoes": null,
-  "internacoes_desc": "",
-  "cirurgias": null,
-  "cirurgias_desc": "",
-  "alergias_medicamentos": "",
-  "alergias_alimentos": "",
-  "alergias_outras": "",
-  "historico_vacinal": "",
-  "gestacoes_gpa": "",
-  "idade_gestacional_semanas": "",
-  "intercorrencias_gestacao": null,
-  "intercorrencias_gestacao_desc": "",
-  "tipo_parto": "",
-  "local_parto": "",
-  "apgar_1": "",
-  "apgar_5": "",
-  "teste_pezinho": "",
-  "teste_orelhinha": "",
-  "teste_olhinho": "",
-  "teste_coracaozinho": "",
-  "doencas_familia": "",
-  "alergia_familia": null,
-  "alergia_familia_desc": "",
-  "outras_condicoes_familia": "",
-  "profissao_responsaveis": "",
-  "renda_familiar": "",
-  "tabagismo_passivo": null,
-  "animal_domestico": null,
-  "animal_domestico_qual": "",
-  "agua_saneamento": null
+  "historia_atual": {
+    "motivo_consulta": null,
+    "queixa_principal_duracao": null,
+    "sintomas_associados": null
+  },
+  "historia_pregressa": {
+    "internacoes": null,
+    "internacoes_desc": null,
+    "cirurgias": null,
+    "cirurgias_desc": null,
+    "alergias_medicamentos": null,
+    "alergias_alimentos": null,
+    "alergias_outras": null,
+    "historico_vacinal": null
+  },
+  "historia_gestacional": {
+    "gestacoes_gpa": null,
+    "idade_gestacional_semanas": null,
+    "intercorrencias": null,
+    "intercorrencias_desc": null,
+    "tipo_parto": null,
+    "local_parto": null,
+    "apgar_1": null,
+    "apgar_5": null
+  },
+  "triagens_neonatais": {
+    "pezinho": null,
+    "orelhinha": null,
+    "olhinho": null,
+    "coracaozinho": null
+  },
+  "historia_familiar": {
+    "doencas_cronicas": null,
+    "alergias_familia": null,
+    "alergias_familia_desc": null,
+    "outras_condicoes": null
+  },
+  "historia_socioeconomica": {
+    "profissao_responsaveis": null,
+    "renda_familiar": null,
+    "tabagismo_passivo": null,
+    "animais": null,
+    "animais_qual": null,
+    "saneamento": null
+  }
 }
 
-REGRAS:
-- Responda APENAS com o JSON, sem markdown ou texto adicional
-- Use null para booleanos não mencionados — não assuma sim nem não
-- Use "" para texto não mencionado — não invente
-- tipo_parto: use exatamente "vaginal" ou "cesárea" ou "" se não mencionado
-- teste_pezinho: "realizado" | "não realizado" | "aguardando resultado" | ""
-- teste_orelhinha/olhinho/coracaozinho: "passou" | "falhou" | "não realizado" | ""
-- gestacoes_gpa: formato "G2P1A0" se informado, senão ""
+Tipos obrigatórios por campo:
+- internacoes / cirurgias / intercorrencias / tabagismo_passivo / animais / alergias_familia: true | false | null
+- tipo_parto: "vaginal" | "cesárea" | null
+- pezinho: "realizado" | "não realizado" | "aguardando resultado" | null
+- orelhinha / olhinho / coracaozinho: "passou" | "falhou" | "não realizado" | null
+- Demais campos de texto: string | null
+- gestacoes_gpa: formato "G2P1A0" se informado, senão null
 - Conforme CFM 2.454/2026: extração de apoio à decisão, médico revisará`;
 
 export async function extractAnamnesePrimeiraConsulta(transcript: string): Promise<AnamnesePrimeiraConsultaData> {
@@ -247,7 +275,7 @@ export async function extractAnamnesePrimeiraConsulta(transcript: string): Promi
       response_format: { type: 'json_object' },
       temperature: 0.1,
       messages: [
-        { role: 'system', content: ANAMNESE_SYSTEM_PROMPT },
+        { role: 'system', content: ANAMNESE_PRIMEIRA_VEZ_SYSTEM_PROMPT },
         { role: 'user', content: `Transcrição da primeira consulta:\n\n${transcript}` },
       ],
     }),
@@ -256,38 +284,60 @@ export async function extractAnamnesePrimeiraConsulta(transcript: string): Promi
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.error?.message || `GPT-4o anamnese ${res.status}`);
   }
-  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
-  const str = (k: string) => String(raw[k] ?? '');
-  const bl = (k: string): boolean | null => raw[k] === true ? true : raw[k] === false ? false : null;
+  const root = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
+
+  // Destructure the six section objects (default to empty obj if section absent)
+  const ha = root.historia_atual          ?? {};
+  const hp = root.historia_pregressa      ?? {};
+  const hg = root.historia_gestacional    ?? {};
+  const tn = root.triagens_neonatais      ?? {};
+  const hf = root.historia_familiar       ?? {};
+  const hs = root.historia_socioeconomica ?? {};
+
+  // Helpers: coerce null → '' for text, keep null for booleans
+  const str = (v: any) => (v !== null && v !== undefined) ? String(v) : '';
+  const bl  = (v: any): boolean | null => v === true ? true : v === false ? false : null;
 
   return {
-    motivo_consulta: str('motivo_consulta'),
-    queixa_principal_duracao: str('queixa_principal_duracao'),
-    sintomas_associados: str('sintomas_associados'),
-    internacoes: bl('internacoes'),
-    internacoes_desc: str('internacoes_desc'),
-    cirurgias: bl('cirurgias'),
-    cirurgias_desc: str('cirurgias_desc'),
-    alergias_medicamentos: str('alergias_medicamentos'),
-    alergias_alimentos: str('alergias_alimentos'),
-    alergias_outras: str('alergias_outras'),
-    historico_vacinal: str('historico_vacinal'),
-    gestacoes_gpa: str('gestacoes_gpa'),
-    idade_gestacional_semanas: str('idade_gestacional_semanas'),
-    intercorrencias_gestacao: bl('intercorrencias_gestacao'),
-    intercorrencias_gestacao_desc: str('intercorrencias_gestacao_desc'),
-    tipo_parto: str('tipo_parto'),
-    local_parto: str('local_parto'),
-    apgar_1: str('apgar_1'),
-    apgar_5: str('apgar_5'),
-    teste_pezinho: str('teste_pezinho'),
-    teste_orelhinha: str('teste_orelhinha'),
-    teste_olhinho: str('teste_olhinho'),
-    teste_coracaozinho: str('teste_coracaozinho'),
-    doencas_familia: str('doencas_familia'),
-    alergia_familia: bl('alergia_familia'),
-    alergia_familia_desc: str('alergia_familia_desc'),
-    outras_condicoes_familia: str('outras_condicoes_familia'),
+    // ── História atual ──────────────────────────────────────────────────────
+    motivo_consulta:              str(ha.motivo_consulta),
+    queixa_principal_duracao:     str(ha.queixa_principal_duracao),
+    sintomas_associados:          str(ha.sintomas_associados),
+    // ── História pregressa ──────────────────────────────────────────────────
+    internacoes:                  bl(hp.internacoes),
+    internacoes_desc:             str(hp.internacoes_desc),
+    cirurgias:                    bl(hp.cirurgias),
+    cirurgias_desc:               str(hp.cirurgias_desc),
+    alergias_medicamentos:        str(hp.alergias_medicamentos),
+    alergias_alimentos:           str(hp.alergias_alimentos),
+    alergias_outras:              str(hp.alergias_outras),
+    historico_vacinal:            str(hp.historico_vacinal),
+    // ── História gestacional ────────────────────────────────────────────────
+    gestacoes_gpa:                str(hg.gestacoes_gpa),
+    idade_gestacional_semanas:    str(hg.idade_gestacional_semanas),
+    intercorrencias_gestacao:     bl(hg.intercorrencias),
+    intercorrencias_gestacao_desc: str(hg.intercorrencias_desc),
+    tipo_parto:                   str(hg.tipo_parto),
+    local_parto:                  str(hg.local_parto),
+    apgar_1:                      str(hg.apgar_1),
+    apgar_5:                      str(hg.apgar_5),
+    // ── Triagens neonatais ──────────────────────────────────────────────────
+    teste_pezinho:                str(tn.pezinho),
+    teste_orelhinha:              str(tn.orelhinha),
+    teste_olhinho:                str(tn.olhinho),
+    teste_coracaozinho:           str(tn.coracaozinho),
+    // ── História familiar ───────────────────────────────────────────────────
+    doencas_familia:              str(hf.doencas_cronicas),
+    alergia_familia:              bl(hf.alergias_familia),
+    alergia_familia_desc:         str(hf.alergias_familia_desc),
+    outras_condicoes_familia:     str(hf.outras_condicoes),
+    // ── História socioeconômica ─────────────────────────────────────────────
+    profissao_responsaveis:       str(hs.profissao_responsaveis),
+    renda_familiar:               str(hs.renda_familiar),
+    tabagismo_passivo:            bl(hs.tabagismo_passivo),
+    animal_domestico:             bl(hs.animais),
+    animal_domestico_qual:        str(hs.animais_qual),
+    agua_saneamento:              bl(hs.saneamento),
     profissao_responsaveis: str('profissao_responsaveis'),
     renda_familiar: str('renda_familiar'),
     tabagismo_passivo: bl('tabagismo_passivo'),
