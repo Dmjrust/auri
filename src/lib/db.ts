@@ -619,6 +619,22 @@ export async function fetchAnamnesePrimeiraConsulta(
   return data as AnamnesePrimeiraConsultaData;
 }
 
+// Busca a anamnese de primeira consulta pelo patient_id (mais recente se houver mais de uma)
+export async function fetchAnamnesePrimeiraConsultaByPatient(
+  patientId: string,
+): Promise<(AnamnesePrimeiraConsultaData & { consulta_id: string; created_at: string }) | null> {
+  const { data, error } = await supabase
+    .from('anamnese_primeira_consulta')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return data as AnamnesePrimeiraConsultaData & { consulta_id: string; created_at: string };
+}
+
 // ── Growth Records ────────────────────────────────────────────────────────────
 export async function fetchGrowthRecords(patientId: string) {
   const { data, error } = await supabase

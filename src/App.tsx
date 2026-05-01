@@ -2451,6 +2451,239 @@ function ScannableConsultationDetail({ consult, onBack }: { consult: Consultatio
   );
 }
 
+// ─── PRIMEIRA CONSULTA — card + modal ────────────────────────────────────────
+
+function PrimeiraConsultaModal({
+  data, consultaDate, onClose,
+}: {
+  data: AnamnesePrimeiraConsultaData & { created_at: string };
+  consultaDate: string;
+  onClose: () => void;
+}) {
+  const bool = (v: boolean | null, sim = 'Sim', nao = 'Não') =>
+    v === true ? sim : v === false ? nao : '—';
+
+  function Row({ label, value }: { label: string; value: string }) {
+    if (!value || value === '—') return null;
+    return (
+      <div style={{ padding: '10px 0', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 12 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: MU }}>{label}</span>
+        <span style={{ fontSize: 13, color: INK, lineHeight: 1.5 }}>{value}</span>
+      </div>
+    );
+  }
+
+  function Section({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
+    return (
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', borderBottom: `2px solid ${BO}`, marginBottom: 4 }}>
+          <span style={{ width: 26, height: 26, borderRadius: 6, background: PL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon size={13} color={P} />
+          </span>
+          <span style={{ fontWeight: 700, fontSize: 13, color: P, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{title}</span>
+        </div>
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 660, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
+        {/* Header */}
+        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <span style={{ width: 28, height: 28, borderRadius: 6, background: '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Star size={14} color="#1D4ED8" weight="fill" />
+              </span>
+              <span style={{ fontWeight: 700, fontSize: 16, color: INK }}>Anamnese — Primeira Consulta</span>
+            </div>
+            <span style={{ fontSize: 12, color: MU }}>{fmtDate(consultaDate)}</span>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 6 }}>
+            <X size={20} color={MU} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '20px 24px' }}>
+
+          <Section title="História atual" icon={Heartbeat}>
+            <Row label="Motivo da consulta" value={data.motivo_consulta} />
+            <Row label="Queixa / duração" value={data.queixa_principal_duracao} />
+            <Row label="Sintomas associados" value={data.sintomas_associados} />
+          </Section>
+
+          <Section title="História pregressa" icon={FileText}>
+            <Row label="Internações" value={bool(data.internacoes)} />
+            {data.internacoes === true && <Row label="Descrição" value={data.internacoes_desc} />}
+            <Row label="Cirurgias" value={bool(data.cirurgias)} />
+            {data.cirurgias === true && <Row label="Descrição" value={data.cirurgias_desc} />}
+            <Row label="Alergias — medicamentos" value={data.alergias_medicamentos} />
+            <Row label="Alergias — alimentos" value={data.alergias_alimentos} />
+            <Row label="Outras alergias" value={data.alergias_outras} />
+            <Row label="Histórico vacinal prévio" value={data.historico_vacinal} />
+          </Section>
+
+          <Section title="História gestacional" icon={Baby}>
+            <Row label="Gestações (G_P_A)" value={data.gestacoes_gpa} />
+            <Row label="Idade gestacional" value={data.idade_gestacional_semanas ? `${data.idade_gestacional_semanas} semanas` : ''} />
+            <Row label="Tipo de parto" value={data.tipo_parto} />
+            <Row label="Local do parto" value={data.local_parto} />
+            <Row label="Intercorrências" value={bool(data.intercorrencias_gestacao)} />
+            {data.intercorrencias_gestacao === true && <Row label="Descrição" value={data.intercorrencias_gestacao_desc} />}
+            <Row label="Apgar 1º / 5º min" value={[data.apgar_1, data.apgar_5].filter(Boolean).join(' / ')} />
+          </Section>
+
+          <Section title="Triagens neonatais" icon={Syringe}>
+            <Row label="Teste do pezinho" value={data.teste_pezinho} />
+            <Row label="Teste da orelhinha" value={data.teste_orelhinha} />
+            <Row label="Teste do olhinho" value={data.teste_olhinho} />
+            <Row label="Teste do coraçãozinho" value={data.teste_coracaozinho} />
+          </Section>
+
+          <Section title="História familiar" icon={Users}>
+            <Row label="Doenças crônicas" value={data.doencas_familia} />
+            <Row label="Alergias na família" value={bool(data.alergia_familia)} />
+            {data.alergia_familia === true && <Row label="Descrição" value={data.alergia_familia_desc} />}
+            <Row label="Outras condições" value={data.outras_condicoes_familia} />
+          </Section>
+
+          <Section title="História socioeconômica" icon={House}>
+            <Row label="Profissão dos responsáveis" value={data.profissao_responsaveis} />
+            <Row label="Renda familiar" value={data.renda_familiar} />
+            <Row label="Tabagismo passivo" value={bool(data.tabagismo_passivo)} />
+            <Row label="Animal doméstico" value={data.animal_domestico === true ? `Sim — ${data.animal_domestico_qual || 'não especificado'}` : bool(data.animal_domestico)} />
+            <Row label="Água e saneamento" value={bool(data.agua_saneamento, 'Com acesso', 'Sem acesso')} />
+          </Section>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrimeiraConsultaCard({ patientId, refetchTrigger = 0 }: { patientId: string; refetchTrigger?: number }) {
+  type AnamWithMeta = AnamnesePrimeiraConsultaData & { consulta_id: string; created_at: string };
+  const [anam, setAnam] = useState<AnamWithMeta | null | 'loading'>('loading');
+  const [modalOpen, setModalOpen] = useState(false);
+
+  useEffect(() => {
+    db.fetchAnamnesePrimeiraConsultaByPatient(patientId)
+      .then(d => setAnam(d ?? null))
+      .catch(() => setAnam(null));
+  }, [patientId, refetchTrigger]);
+
+  if (anam === 'loading') return null;
+
+  // ── No record ─────────────────────────────────────────────────────────────
+  if (anam === null) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: BG, border: `1px solid ${BO}`, borderRadius: 10, marginBottom: 16, fontSize: 13, color: MU }}>
+        <Info size={15} color={MU} />
+        Nenhuma primeira consulta registrada ainda.
+      </div>
+    );
+  }
+
+  // ── Summary helpers ────────────────────────────────────────────────────────
+  const allergies = [anam.alergias_medicamentos, anam.alergias_alimentos, anam.alergias_outras].filter(Boolean);
+
+  // Triagem status: all filled / partial / none
+  const triagemFields = [anam.teste_pezinho, anam.teste_orelhinha, anam.teste_olhinho, anam.teste_coracaozinho];
+  const triagemDone  = triagemFields.filter(v => v && v !== 'não realizado').length;
+  const triagemTotal = 4;
+  const triagemPending = triagemFields.filter(v => v === 'não realizado' || v === 'falhou' || v === 'aguardando resultado').length;
+
+  const gestInfo = [
+    anam.tipo_parto && `Parto ${anam.tipo_parto}`,
+    anam.idade_gestacional_semanas && `${anam.idade_gestacional_semanas} sem.`,
+    anam.gestacoes_gpa && anam.gestacoes_gpa,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <>
+      {modalOpen && <PrimeiraConsultaModal data={anam} consultaDate={anam.created_at.slice(0, 10)} onClose={() => setModalOpen(false)} />}
+
+      <div style={{ border: `1.5px solid #BFDBFE`, borderRadius: 12, background: '#F8FBFF', marginBottom: 20, overflow: 'hidden' }}>
+        {/* Header strip */}
+        <div style={{ padding: '12px 18px', background: '#EFF6FF', borderBottom: `1px solid #BFDBFE`, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 26, height: 26, borderRadius: 6, background: '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Star size={13} color="#1D4ED8" weight="fill" />
+          </span>
+          <span style={{ fontWeight: 700, fontSize: 13, color: '#1D4ED8' }}>Primeira Consulta</span>
+          <span style={{ fontSize: 12, color: MU, marginLeft: 4 }}>— {fmtDate(anam.created_at.slice(0, 10))}</span>
+          <button onClick={() => setModalOpen(true)} style={{
+            marginLeft: 'auto', background: 'none', border: `1px solid #BFDBFE`, borderRadius: 6,
+            padding: '4px 12px', fontSize: 12, color: '#1D4ED8', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+          }}>Ver anamnese completa</button>
+        </div>
+
+        {/* Content grid */}
+        <div style={{ padding: '14px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+
+          {/* Gestacional */}
+          {gestInfo && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 5 }}>Gestação &amp; parto</div>
+              <div style={{ fontSize: 13, color: INK }}>{gestInfo}</div>
+              {anam.intercorrencias_gestacao === true && (
+                <div style={{ marginTop: 3, fontSize: 12, color: WARN }}>⚠ Intercorrência gestacional</div>
+              )}
+            </div>
+          )}
+
+          {/* Triagens */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 5 }}>Triagens neonatais</div>
+            {triagemFields.every(v => !v) ? (
+              <div style={{ fontSize: 12, color: MU }}>Não informado</div>
+            ) : triagemPending > 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: WARN }}>
+                <Warning size={13} color={WARN} />
+                {triagemPending} pendência{triagemPending > 1 ? 's' : ''}
+                <span style={{ color: MU, fontSize: 12 }}>({triagemDone}/{triagemTotal} realizadas)</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: SUC }}>
+                <CheckCircle size={13} color={SUC} weight="fill" />
+                Todas realizadas
+              </div>
+            )}
+          </div>
+
+          {/* Alergias */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 5 }}>Alergias conhecidas</div>
+            {allergies.length === 0 ? (
+              <div style={{ fontSize: 12, color: MU }}>Nenhuma registrada</div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 5 }}>
+                {allergies.map(a => (
+                  <span key={a} style={{ fontSize: 11, fontWeight: 600, background: DESL, color: DES, padding: '2px 8px', borderRadius: 99, border: `1px solid ${DES}30` }}>{a}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Familiar */}
+          {(anam.doencas_familia || anam.alergia_familia_desc) && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 5 }}>Histórico familiar</div>
+              <div style={{ fontSize: 13, color: INK, lineHeight: 1.5 }}>
+                {(anam.doencas_familia || anam.alergia_familia_desc || '').slice(0, 80)}
+                {(anam.doencas_familia || '').length > 80 ? '…' : ''}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── PATIENT DETAIL ───────────────────────────────────────────────────────────
 function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; refetchTrigger?: number }) {
   const [tab, setTab] = useState('Resumo');
@@ -3066,6 +3299,9 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
                   <Btn size="sm" onClick={() => onStartConsult('retorno')}><Plus size={14} /> Nova consulta</Btn>
                 </div>
+
+                {/* Primeira Consulta — bloco fixo no topo */}
+                <PrimeiraConsultaCard patientId={patient.id} refetchTrigger={refetchTrigger} />
 
                 {/* Drafts section */}
                 {draftConsultations.length > 0 && (
