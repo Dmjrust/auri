@@ -338,11 +338,5 @@ export async function extractAnamnesePrimeiraConsulta(transcript: string): Promi
     animal_domestico:             bl(hs.animais),
     animal_domestico_qual:        str(hs.animais_qual),
     agua_saneamento:              bl(hs.saneamento),
-    profissao_responsaveis: str('profissao_responsaveis'),
-    renda_familiar: str('renda_familiar'),
-    tabagismo_passivo: bl('tabagismo_passivo'),
-    animal_domestico: bl('animal_domestico'),
-    animal_domestico_qual: str('animal_domestico_qual'),
-    agua_saneamento: bl('agua_saneamento'),
   };
 }

@@ -1014,7 +1014,7 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
         const dbVs = await db.fetchVaccines(p.id).catch(() => []);
         const overdue = PNI_SCHEDULE.filter(pni => {
           const done = dbVs.find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
-          return !done && pni.age_months <= ageMonths;
+          return !done && pni.age_months < ageMonths; // strict: vacinas do mês atual ainda estão no prazo
         });
         if (overdue.length > 0) results.push({
           id: p.id,
@@ -1331,7 +1331,7 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                 <div style={{ fontSize: 13, color: MU, marginBottom: 20 }}>Sua agenda está livre.</div>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' as const }}>
                   <Btn variant="secondary" onClick={() => go('agenda')}><CalendarBlank size={14} /> Ver agenda da semana</Btn>
-                  <Btn onClick={() => { const p = patients[0]; if (p) { setActivePatient(p); go('patient-detail'); } }}><Stethoscope size={14} /> Iniciar nova consulta</Btn>
+                  <Btn onClick={() => go('patients')}><Stethoscope size={14} /> Iniciar nova consulta</Btn>
                 </div>
               </div>
             ) : todayAppts.map((a, i) => {
@@ -1666,6 +1666,8 @@ function PatientsPage({ go, setActivePatient }: { go: (s: string) => void; setAc
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [consultSummaries, setConsultSummaries] = useState<Record<string, { count: number; lastDate: string | null }>>({});
+  // Vacinas em atraso por paciente — calculadas do banco (substitui mock VACCINES[p.id])
+  const [vaccineOverdue, setVaccineOverdue] = useState<Record<string, number>>({});
   const isMobile = useIsMobile();
 
   const load = useCallback(async () => {
@@ -1674,6 +1676,21 @@ function PatientsPage({ go, setActivePatient }: { go: (s: string) => void; setAc
       const [ps, summaries] = await Promise.all([db.fetchPatients(), db.fetchConsultationSummaries()]);
       setPatients(ps);
       setConsultSummaries(summaries);
+      // Calcula atrasos vacinas em paralelo (um request por paciente)
+      const now = new Date();
+      const vaccResults = await Promise.all(ps.map(async (p: Patient) => {
+        const bd = new Date(p.birth_date);
+        const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
+        const dbVs = await db.fetchVaccines(p.id).catch(() => []);
+        const overdueCount = PNI_SCHEDULE.filter(pni => {
+          const done = (dbVs as any[]).find(v => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
+          return !done && pni.age_months < ageMonths;
+        }).length;
+        return { id: p.id, overdueCount };
+      }));
+      const vcMap: Record<string, number> = {};
+      vaccResults.forEach(({ id, overdueCount }) => { vcMap[id] = overdueCount; });
+      setVaccineOverdue(vcMap);
     } catch { /* ignore */ } finally { setLoading(false); }
   }, []);
 
@@ -1707,7 +1724,7 @@ function PatientsPage({ go, setActivePatient }: { go: (s: string) => void; setAc
         )}
         {filtered.map((p, i) => {
           const g = primaryGuardian(p);
-          const pend = (VACCINES[p.id] || []).filter(v => v.status !== 'done').length;
+          const pend = vaccineOverdue[p.id] ?? 0;
           return isMobile ? (
             <div key={p.id} onClick={() => { setActivePatient(p); go('patient-detail'); }}
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: i < filtered.length - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
@@ -2131,10 +2148,10 @@ function VaccinesTab({ patient }: { patient: Patient }) {
     if (applied) {
       status = 'done';
     } else if (pni.age_months < ageMonths) {
-      status = 'overdue';
-    } else if (pni.age_months === ageMonths) {
+      // Recomendada em mês anterior → em atraso
       status = 'overdue';
     } else {
+      // Recomendada este mês ou futura → pendente (no prazo)
       status = 'pending';
     }
     return {
@@ -2967,7 +2984,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
       .then(dbVs => {
         const count = PNI_SCHEDULE.filter(pni => {
           const done = dbVs.find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
-          return !done && pni.age_months <= ageMonths;
+          return !done && pni.age_months < ageMonths; // strict: vacinas do mês atual ainda estão no prazo
         }).length;
         setPendingVaccinesCount(count);
       })
@@ -5272,7 +5289,7 @@ function PainelPage({ go, setActivePatient }: { go: (s: string) => void; setActi
     const patVacc = (data?.allVaccines || []).filter(v => v.patient_id === p.id);
     const overdue = PNI_SCHEDULE.filter(pni => {
       const done = patVacc.find(v => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
-      return !done && pni.age_months <= ageMonths;
+      return !done && pni.age_months < ageMonths; // strict: vacinas do mês atual ainda estão no prazo
     });
     if (overdue.length > 0) overdueVaccPatients.push({ id: p.id, full_name: p.full_name });
     else vaccOkCount++;
