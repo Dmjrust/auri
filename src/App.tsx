@@ -31,6 +31,9 @@ import { PatientProvider, usePatients } from './contexts/PatientContext';
 import { GrowthChart } from './components/GrowthChart';
 import { VaccinesTab, PNI_SCHEDULE } from './components/VaccinesTab';
 import { Badge, Pill, ZBadge, StatusDot, Card, Btn, Tabs } from './components/auri-ui';
+import { RequireRole, useRequireRole } from './components/RequireRole';
+import { SecretaryDashboard } from './components/SecretaryDashboard';
+import { useAuthProfile } from './contexts/AuthProfileContext';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -43,12 +46,14 @@ type ProntuarioFormat = 'narrativo' | 'escaneavel';
 
 // ─── BOTTOM NAV (mobile) ─────────────────────────────────────────────────────
 function BottomNav({ screen, go }: { screen: string; go: (s: string) => void }) {
-  const navItems = [
-    { id: 'dashboard', label: 'Início',     icon: SquaresFour },
-    { id: 'patients',  label: 'Pacientes',  icon: Users },
-    { id: 'agenda',    label: 'Agenda',     icon: CalendarBlank },
-    { id: 'settings',  label: 'Config.',    icon: GearSix },
+  const { isDoctor } = useAuthProfile();
+  const allNavItems = [
+    { id: 'dashboard', label: 'Início',     icon: SquaresFour, doctorOnly: false },
+    { id: 'patients',  label: 'Pacientes',  icon: Users,        doctorOnly: false },
+    { id: 'agenda',    label: 'Agenda',     icon: CalendarBlank, doctorOnly: false },
+    { id: 'settings',  label: 'Config.',    icon: GearSix,      doctorOnly: true },
   ];
+  const navItems = allNavItems.filter(i => !i.doctorOnly || isDoctor);
   return (
     <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, background: '#fff', borderTop: `1px solid ${BO}`, display: 'flex', zIndex: 100 }}>
       {navItems.map(({ id, label, icon: Icon }) => {
@@ -70,13 +75,18 @@ function BottomNav({ screen, go }: { screen: string; go: (s: string) => void }) 
 
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) => void; doctorName: string }) {
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard',           icon: SquaresFour },
-    { id: 'patients',  label: 'Pacientes',            icon: Users },
-    { id: 'agenda',    label: 'Agenda',               icon: CalendarBlank },
-    { id: 'painel',    label: 'Painel do consultório', icon: ChartBar },
-    { id: 'settings',  label: 'Configurações',        icon: GearSix },
+  const { isDoctor, role, fullName } = useAuthProfile();
+  const allNavItems = [
+    { id: 'dashboard', label: 'Dashboard',            icon: SquaresFour,  doctorOnly: false },
+    { id: 'patients',  label: 'Pacientes',             icon: Users,         doctorOnly: false },
+    { id: 'agenda',    label: 'Agenda',                icon: CalendarBlank, doctorOnly: false },
+    { id: 'painel',    label: 'Painel do consultório', icon: ChartBar,      doctorOnly: true },
+    { id: 'settings',  label: 'Configurações',         icon: GearSix,       doctorOnly: true },
   ];
+  const navItems = allNavItems.filter(i => !i.doctorOnly || isDoctor);
+  // Nome exibido: fullName do perfil (médico ou secretaria)
+  const displayName = fullName || doctorName || 'Usuário';
+  const displayRole = role === 'secretaria' ? 'Secretaria' : 'Pediatra';
   return (
     <div style={{ width: 264, minHeight: '100vh', background: '#fff', borderRight: `1px solid ${BO}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       {/* Brand */}
@@ -99,11 +109,11 @@ function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) =
       {/* User */}
       <div style={{ padding: '10px', borderTop: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#E6D5B8', color: INK, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
-          {doctorName ? doctorName.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() : 'DR'}
+          {displayName.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || 'AU'}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{doctorName || 'Médico'}</div>
-          <div style={{ fontSize: 11, color: MU }}>Pediatra</div>
+          <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{displayName}</div>
+          <div style={{ fontSize: 11, color: MU }}>{displayRole}</div>
         </div>
         <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU, padding: 4, flexShrink: 0 }} onClick={() => db.signOut()} title="Sair">
           <SignOut size={16} />
@@ -2320,6 +2330,11 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
   const [growthRecords, setGrowthRecords] = useState<any[]>([]);
   const guardian = primaryGuardian(patient);
   const isMobile = useIsMobile();
+  const isDoctor = useRequireRole(['medico']);
+  // Tabs visíveis por role: secretaria só vê Resumo (sem dados clínicos) e Vacinas (admin)
+  const visibleTabs = isDoctor
+    ? ['Resumo', 'Consultas', 'Crescimento', 'Vacinas']
+    : ['Resumo', 'Vacinas'];
 
   useEffect(() => {
     setLoadingC(true);
@@ -2426,7 +2441,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
       </Card>
 
       <div style={{ overflowX: isMobile ? 'auto' as const : undefined }}>
-        <Tabs tabs={['Resumo', 'Consultas', 'Crescimento', 'Vacinas']} active={tab} onChange={t => { setTab(t); setSelectedConsult(null); }} />
+        <Tabs tabs={visibleTabs} active={visibleTabs.includes(tab) ? tab : 'Resumo'} onChange={t => { setTab(t); setSelectedConsult(null); }} />
       </div>
       <div style={{ paddingTop: isMobile ? 14 : 24 }}>
 
@@ -2919,7 +2934,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                   </div>
                 </div>
               )
-              : <ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} />
+              : <RequireRole roles={['medico']} onBack={() => setSelectedConsult(null)}><ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} /></RequireRole>
             : (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
@@ -2979,7 +2994,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
             )
         )}
 
-        {tab === 'Crescimento' && <GrowthChart patient={patient} consultations={consultations} />}
+        {tab === 'Crescimento' && <RequireRole roles={['medico']}><GrowthChart patient={patient} consultations={consultations} /></RequireRole>}
         {tab === 'Vacinas' && <VaccinesTab patient={patient} />}
       </div>
     </div>
@@ -3652,10 +3667,12 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, con
 
         {/* Main form — branches on consultation type */}
         {isPrimeira ? (
-          /* ── Primeira consulta: ficha de anamnese completa ── */
-          <div style={{ marginBottom: 16 }}>
-            <AnamnesePrimeiraConsulta data={editedAnamnese} onChange={setEditedAnamnese} />
-          </div>
+          /* ── Primeira consulta: ficha de anamnese completa — restrita ao médico ── */
+          <RequireRole roles={['medico']}>
+            <div style={{ marginBottom: 16 }}>
+              <AnamnesePrimeiraConsulta data={editedAnamnese} onChange={setEditedAnamnese} />
+            </div>
+          </RequireRole>
         ) : (
           /* ── Retorno: SOAP padrão ── */
           <Card style={{ marginBottom: 16 }}>
@@ -5091,12 +5108,18 @@ export default function App() {
       <PatientProvider>
         <ProntuarioFormatCtx.Provider value={{ format: prontuarioFormat, setFormat: setProntuarioFormat }}>
           <Layout screen={screen} go={go} breadcrumb={breadcrumbs[screen]} onBack={screen === 'patient-detail' ? () => go('patients') : undefined} doctorName={doctorName} notifications={notifications} onNotificationClick={(patientId) => { if (patientId) { db.fetchPatients().then(ps => { const found = ps.find(x => x.id === patientId); if (found) { setActivePatient(found); go('patient-detail'); } }); } }} onClearNotifications={() => setNotifications([])}>
-            {screen === 'dashboard' && <DashboardPage go={go} setActivePatient={setActivePatient} user={user} doctorName={doctorName} />}
+            {screen === 'dashboard' && (
+              <RequireRole roles={['medico']}
+                fallback={<SecretaryDashboard go={go} setActivePatient={setActivePatient} onNewPatient={() => go('patients')} />}
+              >
+                <DashboardPage go={go} setActivePatient={setActivePatient} user={user} doctorName={doctorName} />
+              </RequireRole>
+            )}
             {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
             {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(activeApptType ?? type); setActiveApptType(null); setFlow('consent'); }} refetchTrigger={refetchTrigger} />}
             {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onApptStart={(t) => setActiveApptType(t)} />}
-            {screen === 'painel'   && <PainelPage go={go} setActivePatient={setActivePatient} />}
-            {screen === 'settings' && <SettingsPage user={user} />}
+            {screen === 'painel'   && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><PainelPage go={go} setActivePatient={setActivePatient} /></RequireRole>}
+            {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} /></RequireRole>}
           </Layout>
         </ProntuarioFormatCtx.Provider>
       </PatientProvider>
