@@ -758,3 +758,19 @@ function mapConsultation(c: any): Consultation {
     },
   };
 }
+
+// Busca TODAS as vacinas de todos os pacientes do médico em uma única query
+// Retorna mapa: patient_id → lista de registros
+export async function fetchAllVaccinesForDoctor(): Promise<Record<string, any[]>> {
+  const { data, error } = await supabase
+    .from('patient_vaccines')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const grouped: Record<string, any[]> = {};
+  (data || []).forEach((v: any) => {
+    if (!grouped[v.patient_id]) grouped[v.patient_id] = [];
+    grouped[v.patient_id].push(v);
+  });
+  return grouped;
+}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react';
+import React, { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react';
 import { supabase } from './lib/supabase';
 import * as db from './lib/db';
 import * as ai from './lib/ai';
@@ -10,7 +10,7 @@ import {
   Baby, Heartbeat, Syringe, CaretDown, CaretUp, CaretLeft,
   FloppyDisk, Buildings, Brain, ShieldCheck, PlayCircle, PencilSimple, Trash,
   ChartBar, ArrowUp, ArrowDown, ArrowRight, Lightbulb, Check,
-  Star, ArrowCounterClockwise, House,
+  Star, ArrowCounterClockwise, House, WarningCircle, UserPlus,
 } from '@phosphor-icons/react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -18,174 +18,28 @@ import {
 import {
   CONSULTATIONS, GROWTH_DATA, VACCINES, INSIGHTS,
   OMS_WEIGHT_BOY, OMS_HEIGHT_BOY, OMS_WEIGHT_GIRL, OMS_HEIGHT_GIRL,
-  LMS_WEIGHT_BOY, LMS_WEIGHT_GIRL, LMS_HEIGHT_BOY, LMS_HEIGHT_GIRL,
-  LMS_HC_BOY, LMS_HC_GIRL, LMS_BMI_BOY, LMS_BMI_GIRL,
-  type LmsPoint,
   type Patient, type Consultation, type StructuredSummary, type ScannableSummary,
   type AnamnesePrimeiraConsultaData, defaultAnamnesePrimeiraConsulta,
 } from './data/mock';
 import './index.css';
+import { P, PL, ACCENT, ACCENTL, INK, FEMALE, FEMALEL, MU, BO, BG, SEC, SUC, SUCL, WARN, WARNL, DES, DESL } from './lib/design';
+import { calcAge, fmtDate, fmtDateTime, fmtTimer, primaryGuardian } from './lib/auri-utils';
+import { calcZScore, zToPercentile, _getLms } from './lib/zscore';
+import { MobileCtx, useIsMobile } from './contexts/MobileContext';
+import { ProntuarioFormatCtx } from './contexts/ProntuarioContext';
+import { PatientProvider, usePatients } from './contexts/PatientContext';
+import { GrowthChart } from './components/GrowthChart';
+import { VaccinesTab, PNI_SCHEDULE } from './components/VaccinesTab';
+import { Badge, Pill, ZBadge, StatusDot, Card, Btn, Tabs } from './components/auri-ui';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().slice(0, 10);
-function calcAge(bd: string) {
-  const b = new Date(bd), n = new Date();
-  let y = n.getFullYear() - b.getFullYear(), m = n.getMonth() - b.getMonth();
-  if (m < 0) { y--; m += 12; }
-  if (n.getDate() < b.getDate()) m = Math.max(0, m - 1);
-  if (y === 0) return `${m} ${m === 1 ? 'mês' : 'meses'}`;
-  if (y === 1) return m === 0 ? '1 ano' : `1 ano e ${m}m`;
-  return m === 0 ? `${y} anos` : `${y} anos e ${m}m`;
-}
-function fmtDate(iso: string | null) {
-  if (!iso) return '—';
-  // Parse date portion directly to avoid UTC-midnight → local-day-shift
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
-  return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
-}
-function fmtDateTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
-function fmtTimer(s: number) {
-  const m = Math.floor(s / 60), sec = s % 60;
-  return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
-}
-function primaryGuardian(p: Patient) {
-  return p.guardians.find(g => g.is_primary) || p.guardians[0];
-}
-
-// ─── Z-ESCORE OMS ─────────────────────────────────────────────────────────────
-// Interpola L, M, S entre os pontos mais próximos da tabela
-function _getLms(table: LmsPoint[], ageMonths: number): { L: number; M: number; S: number } | null {
-  if (!table || table.length === 0) return null;
-  const sorted = [...table].sort((a, b) => a.month - b.month);
-  if (ageMonths <= sorted[0].month) return sorted[0];
-  if (ageMonths >= sorted[sorted.length - 1].month) return sorted[sorted.length - 1];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const lo = sorted[i], hi = sorted[i + 1];
-    if (lo.month <= ageMonths && ageMonths <= hi.month) {
-      const t = (ageMonths - lo.month) / (hi.month - lo.month);
-      return { L: lo.L + t * (hi.L - lo.L), M: lo.M + t * (hi.M - lo.M), S: lo.S + t * (hi.S - lo.S) };
-    }
-  }
-  return null;
-}
-
-// Calcula Z-escore usando método Box-Cox da OMS
-function calcZScore(value: number, ageMonths: number, sex: 'M' | 'F', measure: 'weight' | 'height' | 'hc' | 'bmi'): number | null {
-  if (!value || value <= 0 || ageMonths < 0) return null;
-  const tableMap = {
-    weight: sex === 'M' ? LMS_WEIGHT_BOY : LMS_WEIGHT_GIRL,
-    height: sex === 'M' ? LMS_HEIGHT_BOY : LMS_HEIGHT_GIRL,
-    hc:     sex === 'M' ? LMS_HC_BOY     : LMS_HC_GIRL,
-    bmi:    sex === 'M' ? LMS_BMI_BOY    : LMS_BMI_GIRL,
-  };
-  const lms = _getLms(tableMap[measure], ageMonths);
-  if (!lms) return null;
-  const { L, M, S } = lms;
-  if (Math.abs(L) < 0.0001) return Math.log(value / M) / S;
-  return (Math.pow(value / M, L) - 1) / (L * S);
-}
-
-// Converte Z → percentil (approximação da CDF normal)
-function zToPercentile(z: number): number {
-  const abs = Math.abs(z);
-  const t = 1 / (1 + 0.2316419 * abs);
-  const d = 0.3989423 * Math.exp(-abs * abs / 2);
-  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.7814779 + t * (-1.8212560 + t * 1.3302744))));
-  return Math.round(z >= 0 ? (1 - p) * 100 : p * 100);
-}
 
 // ─── RESPONSIVE ──────────────────────────────────────────────────────────────
-const MobileCtx = createContext(false);
-const useIsMobile = () => useContext(MobileCtx);
 
 // ─── PRONTUÁRIO FORMAT CONTEXT ────────────────────────────────────────────────
+// (imported from ./contexts/ProntuarioContext)
 type ProntuarioFormat = 'narrativo' | 'escaneavel';
-const ProntuarioFormatCtx = createContext<{ format: ProntuarioFormat; setFormat: (f: ProntuarioFormat) => void }>({ format: 'narrativo', setFormat: () => {} });
-
-// ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
-const P = '#0F4C5C', PL = '#DCE9EC';
-const ACCENT = '#E8825B', ACCENTL = '#FDEEE8';
-const INK = '#1C2A2E';
-// Gender indicator colours (semantic product constants)
-const FEMALE = '#db2777', FEMALEL = '#fce7f3';
-const MU = '#6E7B80', BO = '#E2EBEC', BG = '#F7F3EC', SEC = '#EBE5D8';
-const SUC = '#3D7A5A', SUCL = '#EBF5EE', WARN = '#C47F2D', WARNL = '#FAF1E4';
-const DES = '#9A3A2A', DESL = '#F9ECEB';
-
-// ─── MICRO COMPONENTS ────────────────────────────────────────────────────────
-const Badge = ({ children, color = P, bg = PL }: { children: React.ReactNode; color?: string; bg?: string }) => (
-  <span style={{ background: bg, color, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, whiteSpace: 'nowrap' as const, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-    {children}
-  </span>
-);
-
-const Pill = ({ type }: { type: string }) => {
-  if (type === 'primeira vez') return <Badge color={DES} bg={DESL}>Primeira vez</Badge>;
-  return <Badge color={SUC} bg={SUCL}>Retorno</Badge>;
-};
-
-// Z-escore badge com cor por classificação OMS
-const ZBadge = ({ z }: { z: number | null }) => {
-  if (z === null || isNaN(z)) return null;
-  const abs = Math.abs(z);
-  const [col, bg, bord] = abs > 2
-    ? [DES,  '#FEF2F2', '#FECACA']
-    : abs > 1
-    ? [WARN, WARNL,     '#F3C07B']
-    : [SUC,  SUCL,      '#BBF7D0'];
-  const sign = z >= 0 ? '+' : '';
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 5px', borderRadius: 4, fontSize: 11, fontWeight: 700, color: col, background: bg, border: `1px solid ${bord}`, fontFamily: '"JetBrains Mono", "Fira Mono", monospace', fontFeatureSettings: '"tnum"', letterSpacing: '-0.01em' }}>
-      Z {sign}{z.toFixed(1)}
-    </span>
-  );
-};
-
-const StatusDot = ({ status }: { status: string }) => {
-  const map: Record<string, string> = { completed: SUC, in_progress: P, scheduled: MU };
-  return <span style={{ width: 8, height: 8, borderRadius: '50%', background: map[status] || MU, display: 'inline-block', flexShrink: 0 }} />;
-};
-
-const Card = ({ children, style = {}, onClick }: { children: React.ReactNode; style?: React.CSSProperties; onClick?: () => void }) => (
-  <div style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 10, boxShadow: '0 1px 2px rgba(15,76,92,0.05)', ...style }} onClick={onClick}>{children}</div>
-);
-
-const Btn = ({
-  children, onClick, variant = 'primary', size = 'md', disabled = false, style = {},
-}: {
-  children: React.ReactNode; onClick?: () => void; variant?: 'primary'|'secondary'|'ghost'|'danger';
-  size?: 'sm'|'md'|'lg'; disabled?: boolean; style?: React.CSSProperties;
-}) => {
-  const v: Record<string, React.CSSProperties> = {
-    primary:   { background: P, color: '#fff', border: `1px solid ${P}` },
-    secondary: { background: SEC, color: INK, border: `1px solid ${BO}` },
-    ghost:     { background: 'transparent', color: P, border: '1px solid transparent' },
-    danger:    { background: DES, color: '#fff', border: `1px solid ${DES}` },
-  };
-  const s: Record<string, React.CSSProperties> = {
-    sm: { fontSize: 12, padding: '5px 12px' },
-    md: { fontSize: 13, padding: '8px 16px' },
-    lg: { fontSize: 14, padding: '11px 22px' },
-  };
-  return (
-    <button onClick={onClick} disabled={disabled}
-      style={{ ...v[variant], ...s[size], borderRadius: 6, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', transition: 'filter 0.15s, opacity 0.15s', ...style }}
-    >{children}</button>
-  );
-};
-
-const Tabs = ({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (t: string) => void }) => (
-  <div style={{ display: 'flex', borderBottom: `1px solid ${BO}` }}>
-    {tabs.map(t => (
-      <button key={t} onClick={() => onChange(t)}
-        style={{ padding: '10px 18px', background: 'none', border: 'none', cursor: 'pointer', fontWeight: active === t ? 600 : 400, color: active === t ? P : MU, borderBottom: active === t ? `2px solid ${P}` : '2px solid transparent', fontSize: 13, fontFamily: 'inherit', transition: 'all 0.15s', letterSpacing: active === t ? 0 : '0.01em' }}
-      >{t}</button>
-    ))}
-  </div>
-);
 
 // ─── BOTTOM NAV (mobile) ─────────────────────────────────────────────────────
 function BottomNav({ screen, go }: { screen: string; go: (s: string) => void }) {
@@ -952,8 +806,19 @@ function LandingPage({ onEnter }: { onEnter: () => void }) {
 
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
+const SectionHeader = ({ icon: Icon, title, action, onAction }: { icon: any; title: string; action?: string; onAction?: () => void }) => (
+  <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <Icon size={16} color={P} />
+      <span style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>{title}</span>
+    </div>
+    {action && <Btn size="sm" variant="ghost" onClick={onAction}>{action}</Btn>}
+  </div>
+);
+
 function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; user: any; doctorName: string }) {
-  const [patients, setPatients] = useState<Patient[]>([]);
+  // patients come from shared PatientContext (no individual fetch needed here)
+  const { patients } = usePatients();
   const [todayAppts, setTodayAppts] = useState<any[]>([]);
   const [overdueAppts, setOverdueAppts] = useState<{ patient_id: string; patient_name: string; scheduled_at: string }[]>([]);
   const [overdueVaccPatients, setOverdueVaccPatients] = useState<{ id: string; full_name: string; overdueCount: number; overdueNames: string[] }[]>([]);
@@ -989,31 +854,41 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
     try { localStorage.removeItem('auri_dismissed_priorities'); } catch {}
   }
 
+  // Load dashboard-specific data (no patient fetch — comes from PatientContext)
   useEffect(() => {
     Promise.all([
-      db.fetchPatients(),
       db.fetchTodayAppointments(),
       db.fetchDashboardStats(),
       db.fetchRecentActivity(),
       db.fetchConsultationSummaries(),
-    ]).then(async ([ps, appts, stats, activity, summaries]) => {
-      setPatients(ps);
+    ]).then(([appts, stats, activity, summaries]) => {
       setTodayAppts(appts);
       setOverdueAppts(stats.overdueAppointments);
       setRecentActivity(activity);
       setConsultSummaries(summaries);
-      if (activity.length > 0) {
-        const lp = ps.find((p: Patient) => p.id === activity[0].patient_id);
-        if (lp) setLastPatient(lp);
-      }
-      // Vacinas em atraso por paciente — captura nomes das vacinas
+    }).catch(() => {});
+  }, []);
+
+  // Derive lastPatient once both recentActivity and patients are available
+  useEffect(() => {
+    if (recentActivity.length > 0 && patients.length > 0) {
+      const lp = patients.find((p: Patient) => p.id === recentActivity[0].patient_id);
+      if (lp) setLastPatient(lp);
+    }
+  }, [recentActivity, patients]);
+
+  // Batch vaccine overdue calc — single query replaces N+1 per-patient fetches
+  useEffect(() => {
+    if (patients.length === 0) return;
+    db.fetchAllVaccinesForDoctor().then(vaccMap => {
       const results: { id: string; full_name: string; overdueCount: number; overdueNames: string[] }[] = [];
-      await Promise.all(ps.map(async (p: Patient) => {
-        const bd = new Date(p.birth_date), now = new Date();
+      const now = new Date();
+      patients.forEach((p: Patient) => {
+        const bd = new Date(p.birth_date);
         const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
-        const dbVs = await db.fetchVaccines(p.id).catch(() => []);
+        const dbVs = vaccMap[p.id] || [];
         const overdue = PNI_SCHEDULE.filter(pni => {
-          const done = dbVs.find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
+          const done = (dbVs as any[]).find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
           return !done && pni.age_months < ageMonths; // strict: vacinas do mês atual ainda estão no prazo
         });
         if (overdue.length > 0) results.push({
@@ -1022,10 +897,10 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
           overdueCount: overdue.length,
           overdueNames: [...new Set(overdue.map(v => v.name))].slice(0, 3),
         });
-      }));
+      });
       setOverdueVaccPatients(results);
     }).catch(() => {});
-  }, []);
+  }, [patients]);
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? 'Bom dia' : now.getHours() < 18 ? 'Boa tarde' : 'Boa noite';
@@ -1071,16 +946,6 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
   if (firstTimePatients.length > 0) attentionPoints.push(`${firstTimePatients.length} paciente${firstTimePatients.length > 1 ? 's' : ''} ainda sem consulta registrada`);
 
   const lastConsultDate = lastPatient ? consultSummaries[lastPatient.id]?.lastDate : null;
-
-  const SectionHeader = ({ icon: Icon, title, action, onAction }: { icon: any; title: string; action?: string; onAction?: () => void }) => (
-    <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Icon size={16} color={P} />
-        <span style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>{title}</span>
-      </div>
-      {action && <Btn size="sm" variant="ghost" onClick={onAction}>{action}</Btn>}
-    </div>
-  );
 
   // Calculate next appointment and context
   const nextAppt = todayAppts.length > 0 ? todayAppts[0] : null;
@@ -1519,11 +1384,20 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
 }
 
 // ─── NEW PATIENT MODAL ────────────────────────────────────────────────────────
-function NewPatientModal({ onClose, onCreated }: { onClose: () => void; onCreated: (p: Patient) => void }) {
+// Form row wrapper — defined at module scope so React doesn't create a new component
+// type on every keystroke (which would unmount/remount the input and steal focus).
+function FRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated }: { onClose: () => void; onCreated: (p: Patient) => void }) {
   const [form, setForm] = useState({
     full_name: '', birth_date: '', gender: 'M' as 'M' | 'F',
-    blood_type: '', delivery_type: 'Vaginal', gestational_age_weeks: '',
-    birth_weight_g: '', notes: '',
     insurance_plan: '', insurance_card_number: '',
     guardian_name: '', guardian_relationship: 'Mãe', guardian_phone: '', guardian_email: '',
   });
@@ -1532,169 +1406,155 @@ function NewPatientModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   async function handleSubmit() {
-    if (!form.full_name || !form.birth_date || !form.guardian_name || !form.guardian_phone) {
-      setError('Preencha: nome, data de nascimento, responsável e telefone.'); return;
-    }
+    if (!form.full_name.trim()) { setError('Nome completo é obrigatório.'); return; }
+    if (!form.birth_date) { setError('Data de nascimento é obrigatória.'); return; }
+    if (!form.guardian_name.trim()) { setError('Nome do responsável é obrigatório.'); return; }
+    if (!form.guardian_phone.trim()) { setError('Telefone do responsável é obrigatório.'); return; }
     setLoading(true); setError('');
     try {
-      const p = await db.createPatient({
-        ...form,
-        gestational_age_weeks: form.gestational_age_weeks ? Number(form.gestational_age_weeks) : undefined,
-        birth_weight_g: form.birth_weight_g ? Number(form.birth_weight_g) : undefined,
-      });
+      const p = await db.createPatient(form);
       onCreated(p);
     } catch (e: any) {
-      setError(e?.message || 'Erro ao cadastrar paciente.');
+      setError(e?.message || 'Erro ao cadastrar paciente. Tente novamente.');
     } finally { setLoading(false); }
   }
 
-  const FRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>{label}</label>
-      {children}
-    </div>
-  );
-
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
-      <Card style={{ width: '100%', maxWidth: 600, maxHeight: '90vh', overflow: 'auto' }}>
-        <div style={{ padding: '18px 24px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontWeight: 700, fontSize: 16 }}>Novo paciente</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU }}><X size={18} /></button>
+      <Card style={{ width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto' }}>
+        {/* Header */}
+        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+          <div>
+            <span style={{ fontWeight: 700, fontSize: 16, color: INK }}>Novo paciente</span>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: MU }}>Dados clínicos detalhados serão coletados na 1ª consulta</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU, padding: 4, borderRadius: 4 }}><X size={18} /></button>
         </div>
-        <div style={{ padding: 24 }}>
-          <p style={{ margin: '0 0 16px', fontSize: 13, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Dados do paciente</p>
-          <FRow label="Nome completo *">
-            <input value={form.full_name} onChange={e => set('full_name', e.target.value)} placeholder="Nome completo da criança" style={inputStyle} />
-          </FRow>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <FRow label="Data de nascimento *">
-              <input type="date" value={form.birth_date} onChange={e => set('birth_date', e.target.value)} style={inputStyle} />
-            </FRow>
-            <FRow label="Sexo *">
-              <select value={form.gender} onChange={e => set('gender', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
-                <option value="M">Masculino</option>
-                <option value="F">Feminino</option>
-              </select>
-            </FRow>
-            <FRow label="Tipo sanguíneo">
-              <select value={form.blood_type} onChange={e => set('blood_type', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
-                <option value="">—</option>
-                {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </FRow>
-            <FRow label="Tipo de parto">
-              <select value={form.delivery_type} onChange={e => set('delivery_type', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
-                <option value="Vaginal">Vaginal</option>
-                <option value="Cesariana">Cesariana</option>
-              </select>
-            </FRow>
-            <FRow label="Ig. gestacional (semanas)">
-              <input type="number" value={form.gestational_age_weeks} onChange={e => set('gestational_age_weeks', e.target.value)} placeholder="Ex: 39" style={inputStyle} />
-            </FRow>
-            <FRow label="Peso ao nascer (g)">
-              <input type="number" value={form.birth_weight_g} onChange={e => set('birth_weight_g', e.target.value)} placeholder="Ex: 3280" style={inputStyle} />
-            </FRow>
-          </div>
-          <FRow label="Observações / Alergias">
-            <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Alergias, condições de base…" style={inputStyle} />
-          </FRow>
 
-          <p style={{ margin: '20px 0 16px', fontSize: 13, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Plano de saúde</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <FRow label="Operadora">
-              <select value={form.insurance_plan} onChange={e => set('insurance_plan', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
-                <option value="">Particular / Sem plano</option>
-                <option value="Unimed">Unimed</option>
-                <option value="Bradesco Saúde">Bradesco Saúde</option>
-                <option value="Amil">Amil</option>
-                <option value="SulAmérica">SulAmérica</option>
-                <option value="Hapvida">Hapvida</option>
-                <option value="NotreDame Intermédica">NotreDame Intermédica</option>
-                <option value="Porto Seguro Saúde">Porto Seguro Saúde</option>
-                <option value="Prevent Senior">Prevent Senior</option>
-                <option value="Golden Cross">Golden Cross</option>
-                <option value="Sompo Saúde">Sompo Saúde</option>
-                <option value="Mediservice">Mediservice</option>
-                <option value="Omint">Omint</option>
-                <option value="Cassi">Cassi</option>
-                <option value="Geap">Geap</option>
-                <option value="Postal Saúde">Postal Saúde</option>
-                <option value="Outro">Outro</option>
-              </select>
+        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {/* Dados do paciente */}
+          <section>
+            <p style={{ margin: '0 0 14px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>Dados do paciente</p>
+            <FRow label="Nome completo *">
+              <input
+                autoFocus
+                value={form.full_name}
+                onChange={e => set('full_name', e.target.value)}
+                placeholder="Nome completo da criança"
+                style={inputStyle}
+              />
             </FRow>
-            <FRow label="Nº da carteirinha">
-              <input value={form.insurance_card_number} onChange={e => set('insurance_card_number', e.target.value)} placeholder="Ex: 0012345678901" style={inputStyle} />
-            </FRow>
-          </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <FRow label="Data de nascimento *">
+                <input type="date" value={form.birth_date} onChange={e => set('birth_date', e.target.value)} style={inputStyle} />
+              </FRow>
+              <FRow label="Sexo *">
+                <select value={form.gender} onChange={e => set('gender', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+                  <option value="M">Masculino</option>
+                  <option value="F">Feminino</option>
+                </select>
+              </FRow>
+            </div>
+          </section>
 
-          <p style={{ margin: '20px 0 16px', fontSize: 13, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Responsável principal</p>
-          <FRow label="Nome do responsável *">
-            <input value={form.guardian_name} onChange={e => set('guardian_name', e.target.value)} placeholder="Nome completo" style={inputStyle} />
-          </FRow>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <FRow label="Parentesco">
-              <select value={form.guardian_relationship} onChange={e => set('guardian_relationship', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
-                {['Mãe','Pai','Avó','Avô','Tio(a)','Responsável legal'].map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </FRow>
-            <FRow label="Telefone *">
-              <input value={form.guardian_phone} onChange={e => set('guardian_phone', e.target.value)} placeholder="(11) 99999-9999" style={inputStyle} />
-            </FRow>
-          </div>
-          <FRow label="E-mail">
-            <input type="email" value={form.guardian_email} onChange={e => set('guardian_email', e.target.value)} placeholder="email@exemplo.com" style={inputStyle} />
-          </FRow>
+          {/* Plano de saúde */}
+          <section>
+            <p style={{ margin: '0 0 14px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>Plano de saúde</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <FRow label="Operadora">
+                <select value={form.insurance_plan} onChange={e => set('insurance_plan', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+                  <option value="">Particular / Sem plano</option>
+                  {['Unimed','Bradesco Saúde','Amil','SulAmérica','Hapvida','NotreDame Intermédica','Porto Seguro Saúde','Prevent Senior','Golden Cross','Sompo Saúde','Mediservice','Omint','Cassi','Geap','Postal Saúde','Outro'].map(o => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+              </FRow>
+              <FRow label="Nº da carteirinha">
+                <input value={form.insurance_card_number} onChange={e => set('insurance_card_number', e.target.value)} placeholder="Ex: 0012345678901" style={inputStyle} disabled={!form.insurance_plan} />
+              </FRow>
+            </div>
+          </section>
 
-          {error && <div style={{ background: DESL, color: DES, borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 4 }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+          {/* Responsável */}
+          <section>
+            <p style={{ margin: '0 0 14px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>Responsável principal</p>
+            <FRow label="Nome *">
+              <input value={form.guardian_name} onChange={e => set('guardian_name', e.target.value)} placeholder="Nome completo do responsável" style={inputStyle} />
+            </FRow>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <FRow label="Parentesco">
+                <select value={form.guardian_relationship} onChange={e => set('guardian_relationship', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+                  {['Mãe','Pai','Avó','Avô','Tio(a)','Responsável legal'].map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </FRow>
+              <FRow label="Telefone *">
+                <input value={form.guardian_phone} onChange={e => set('guardian_phone', e.target.value)} placeholder="(11) 99999-9999" style={inputStyle} />
+              </FRow>
+            </div>
+            <FRow label="E-mail">
+              <input type="email" value={form.guardian_email} onChange={e => set('guardian_email', e.target.value)} placeholder="email@exemplo.com" style={inputStyle} />
+            </FRow>
+          </section>
+
+          {/* Erro + ações */}
+          {error && (
+            <div style={{ background: DESL, color: DES, borderRadius: 8, padding: '10px 14px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <WarningCircle size={16} weight="fill" />{error}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 12 }}>
             <Btn variant="secondary" onClick={onClose} style={{ flex: 1, justifyContent: 'center' }}>Cancelar</Btn>
             <Btn onClick={handleSubmit} disabled={loading} style={{ flex: 1, justifyContent: 'center' }}>
-              {loading ? 'Cadastrando…' : <><Plus size={14} /> Cadastrar paciente</>}
+              {loading ? 'Cadastrando…' : <><UserPlus size={15} /> Cadastrar paciente</>}
             </Btn>
           </div>
         </div>
       </Card>
     </div>
   );
-}
+});
 
 // ─── PATIENTS ─────────────────────────────────────────────────────────────────
 function PatientsPage({ go, setActivePatient }: { go: (s: string) => void; setActivePatient: (p: Patient) => void }) {
   const [search, setSearch] = useState('');
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [loading, setLoading] = useState(true);
+  // patients come from shared PatientContext
+  const { patients, loading: patientsLoading, refetch: refetchPatients } = usePatients();
+  const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [consultSummaries, setConsultSummaries] = useState<Record<string, { count: number; lastDate: string | null }>>({});
-  // Vacinas em atraso por paciente — calculadas do banco (substitui mock VACCINES[p.id])
+  // Vacinas em atraso por paciente — batch query (substitui N+1 individual)
   const [vaccineOverdue, setVaccineOverdue] = useState<Record<string, number>>({});
   const isMobile = useIsMobile();
 
-  const load = useCallback(async () => {
+  // Fetch consultation summaries once
+  useEffect(() => {
+    db.fetchConsultationSummaries().then(setConsultSummaries).catch(() => {});
+  }, []);
+
+  // Batch vaccine overdue computation — fires once patients are available
+  useEffect(() => {
+    if (patients.length === 0) return;
     setLoading(true);
-    try {
-      const [ps, summaries] = await Promise.all([db.fetchPatients(), db.fetchConsultationSummaries()]);
-      setPatients(ps);
-      setConsultSummaries(summaries);
-      // Calcula atrasos vacinas em paralelo (um request por paciente)
+    db.fetchAllVaccinesForDoctor().then(vaccMap => {
       const now = new Date();
-      const vaccResults = await Promise.all(ps.map(async (p: Patient) => {
+      const vcMap: Record<string, number> = {};
+      patients.forEach((p: Patient) => {
         const bd = new Date(p.birth_date);
         const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
-        const dbVs = await db.fetchVaccines(p.id).catch(() => []);
-        const overdueCount = PNI_SCHEDULE.filter(pni => {
+        const dbVs = vaccMap[p.id] || [];
+        vcMap[p.id] = PNI_SCHEDULE.filter(pni => {
           const done = (dbVs as any[]).find(v => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
           return !done && pni.age_months < ageMonths;
         }).length;
-        return { id: p.id, overdueCount };
-      }));
-      const vcMap: Record<string, number> = {};
-      vaccResults.forEach(({ id, overdueCount }) => { vcMap[id] = overdueCount; });
+      });
       setVaccineOverdue(vcMap);
-    } catch { /* ignore */ } finally { setLoading(false); }
-  }, []);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [patients]);
 
-  useEffect(() => { load(); }, [load]);
+  const isLoading = patientsLoading || loading;
+
+  const handleCloseModal = useCallback(() => setShowModal(false), []);
+  const handlePatientCreated = useCallback(() => { setShowModal(false); refetchPatients(); }, [refetchPatients]);
 
   const filtered = patients.filter(p =>
     p.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -1703,7 +1563,7 @@ function PatientsPage({ go, setActivePatient }: { go: (s: string) => void; setAc
 
   return (
     <div>
-      {showModal && <NewPatientModal onClose={() => setShowModal(false)} onCreated={p => { setShowModal(false); setPatients(ps => [p, ...ps]); }} />}
+      {showModal && <NewPatientModal onClose={handleCloseModal} onCreated={handlePatientCreated} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isMobile ? 14 : 24 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 26, fontWeight: 500 }}>Pacientes</h1>
@@ -1768,512 +1628,11 @@ function PatientsPage({ go, setActivePatient }: { go: (s: string) => void; setAc
             </div>
           );
         })}
-        {loading && <div style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Carregando pacientes…</div>}
-        {!loading && filtered.length === 0 && (
+        {isLoading && <div style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Carregando pacientes…</div>}
+        {!isLoading && filtered.length === 0 && (
           <div style={{ padding: 40, textAlign: 'center' as const, color: MU }}>
             {patients.length === 0 ? 'Nenhum paciente cadastrado ainda.' : 'Nenhum paciente encontrado.'}
           </div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-// ─── GROWTH CHART ─────────────────────────────────────────────────────────────
-type GrowthMetric = 'weight' | 'height' | 'hc' | 'bmi';
-
-function GrowthChart({ patient, consultations = [] }: { patient: Patient; consultations?: Consultation[] }) {
-  const [metric, setMetric] = useState<GrowthMetric>('weight');
-  const [dbGrowth, setDbGrowth] = useState<{ month: number; weight?: number; height?: number; hc?: number; date: string }[]>([]);
-
-  useEffect(() => {
-    db.fetchGrowthRecords(patient.id)
-      .then(setDbGrowth)
-      .catch(() => setDbGrowth([]));
-  }, [patient.id]);
-
-  // Fallback: extrai medidas das consultas onde não há growth_record
-  function extractFromConsultations() {
-    const result: { month: number; weight?: number; height?: number; hc?: number; date: string }[] = [];
-    const dbMonths = new Set(dbGrowth.map(r => r.month));
-    consultations.forEach(c => {
-      const bd = new Date(patient.birth_date), cd = new Date(c.scheduled_at);
-      const ageMonths = Math.max(0, (cd.getFullYear() - bd.getFullYear()) * 12 + (cd.getMonth() - bd.getMonth()));
-      if (dbMonths.has(ageMonths)) return;
-      let weight: number | undefined, height: number | undefined, hc: number | undefined;
-      if (c.summary.peso) { const m = c.summary.peso.match(/[\d]+[.,]?[\d]*/); weight = m ? parseFloat(m[0].replace(',','.')) : undefined; }
-      if (c.summary.altura) { const m = c.summary.altura.match(/[\d]+[.,]?[\d]*/); height = m ? parseFloat(m[0].replace(',','.')) : undefined; }
-      if (c.summary.perimetro_cefalico) { const m = c.summary.perimetro_cefalico.match(/[\d]+[.,]?[\d]*/); hc = m ? parseFloat(m[0].replace(',','.')) : undefined; }
-      else if (c.summary.exame_fisico) {
-        const m = c.summary.exame_fisico.match(/[Pp][Cc][:\s]+(\d+[.,]?\d*)\s*cm/);
-        const m2 = !m ? c.summary.exame_fisico.match(/[Pp]er[íi]metro\s+[Cc]ef[áa]lico[:\s]+(\d+[.,]?\d*)\s*cm/) : null;
-        const matched = m || m2;
-        if (matched) hc = parseFloat(matched[1].replace(',','.'));
-      }
-      if (weight || height || hc) result.push({ month: ageMonths, weight, height, hc, date: c.scheduled_at.slice(0,10) });
-    });
-    return result;
-  }
-
-  const allMeasurements = [...dbGrowth, ...extractFromConsultations()];
-  const mockGrowth = GROWTH_DATA[patient.id] || [];
-  const seenMonths = new Set(allMeasurements.map(m => m.month));
-  mockGrowth.forEach(m => { if (!seenMonths.has(m.month)) allMeasurements.push({ month: m.month, weight: m.weight, height: m.height, hc: m.hc, date: '' }); });
-  const growth = allMeasurements.sort((a, b) => a.month - b.month);
-
-  const isM = patient.gender === 'M';
-  const sex = patient.gender;
-
-  // ── LMS lookup for current metric ────────────────────────────────────────────
-  const lmsTable = {
-    weight: isM ? LMS_WEIGHT_BOY : LMS_WEIGHT_GIRL,
-    height: isM ? LMS_HEIGHT_BOY : LMS_HEIGHT_GIRL,
-    hc:     isM ? LMS_HC_BOY    : LMS_HC_GIRL,
-    bmi:    isM ? LMS_BMI_BOY   : LMS_BMI_GIRL,
-  }[metric];
-
-  // Inverse LMS: measurement value at Z=z for given age
-  function inverseLmsAt(month: number, z: number): number | undefined {
-    const lms = _getLms(lmsTable, month);
-    if (!lms) return undefined;
-    const { L, M, S } = lms;
-    if (Math.abs(L) < 0.0001) return M * Math.exp(S * z);
-    const inner = 1 + L * S * z;
-    if (inner <= 0) return undefined;
-    return parseFloat((M * Math.pow(inner, 1 / L)).toFixed(2));
-  }
-
-  // Extract patient's value for current metric
-  function patientValueAt(g: typeof growth[0]): number | undefined {
-    if (metric === 'weight') return g.weight;
-    if (metric === 'height') return g.height;
-    if (metric === 'hc')     return g.hc;
-    if (metric === 'bmi' && g.weight && g.height && g.height > 0)
-      return parseFloat((g.weight / Math.pow(g.height / 100, 2)).toFixed(1));
-    return undefined;
-  }
-
-  // ── Build chart data ──────────────────────────────────────────────────────────
-  const grMap = Object.fromEntries(growth.map(g => [g.month, g]));
-  const patientMonths = growth.filter(g => patientValueAt(g) !== undefined).map(g => g.month);
-  const chartMonths = Array.from(new Set([...lmsTable.map(l => l.month), ...patientMonths])).sort((a, b) => a - b);
-
-  const chartData = chartMonths.map(month => {
-    const g = grMap[month];
-    const pv = g ? patientValueAt(g) : undefined;
-    return {
-      month,
-      label: `${month}m`,
-      'Z-3': inverseLmsAt(month, -3),
-      'Z-2': inverseLmsAt(month, -2),
-      'Z-1': inverseLmsAt(month, -1),
-      'Z0':  inverseLmsAt(month,  0),
-      'Z+1': inverseLmsAt(month, +1),
-      'Z+2': inverseLmsAt(month, +2),
-      'Z+3': inverseLmsAt(month, +3),
-      patient: pv,
-      _date:   g?.date || '',
-    };
-  });
-
-  // ── KPI summary (always from last overall measurement, not metric-specific) ──
-  const last = growth[growth.length - 1];
-  const lastWeightZ = last?.weight ? calcZScore(last.weight, last.month, sex, 'weight') : null;
-  const lastHeightZ = last?.height ? calcZScore(last.height, last.month, sex, 'height') : null;
-  const lastHcZ     = last?.hc     ? calcZScore(last.hc,     last.month, sex, 'hc')     : null;
-  const lastWeightP = lastWeightZ !== null ? zToPercentile(lastWeightZ) : null;
-  const lastHeightP = lastHeightZ !== null ? zToPercentile(lastHeightZ) : null;
-  const lastHcP     = lastHcZ     !== null ? zToPercentile(lastHcZ)     : null;
-
-  const unitLabel: Record<GrowthMetric, string> = { weight: 'kg', height: 'cm', hc: 'cm', bmi: 'kg/m²' };
-  const unit = unitLabel[metric];
-
-  // Reference line visual config
-  const zBands = [
-    { key: 'Z-3' as const, stroke: '#F87171', dash: '3 3', w: 1   },
-    { key: 'Z-2' as const, stroke: '#FCA351', dash: '4 4', w: 1   },
-    { key: 'Z-1' as const, stroke: '#6EBF8B', dash: '4 4', w: 1   },
-    { key: 'Z0'  as const, stroke: '#94A3B8', dash: '6 3', w: 1.5 },
-    { key: 'Z+1' as const, stroke: '#6EBF8B', dash: '4 4', w: 1   },
-    { key: 'Z+2' as const, stroke: '#FCA351', dash: '4 4', w: 1   },
-    { key: 'Z+3' as const, stroke: '#F87171', dash: '3 3', w: 1   },
-  ];
-
-  // Custom tooltip (only activates on patient data points)
-  const GrowthTooltip = ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    const row = payload[0]?.payload;
-    if (!row || row.patient == null) return null;
-    const z = calcZScore(row.patient, row.month, sex, metric);
-    const perc = z !== null ? zToPercentile(z) : null;
-    return (
-      <div style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 8, padding: '10px 14px', boxShadow: '0 4px 16px rgba(0,0,0,0.09)', minWidth: 160 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
-          {row._date && <span style={{ fontSize: 12, color: MU }}>{fmtDate(row._date)}</span>}
-          <span style={{ fontSize: 12, fontWeight: 600, color: MU }}>{row.label} de idade</span>
-        </div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: INK, fontFamily: '"JetBrains Mono", monospace', fontFeatureSettings: '"tnum"', marginBottom: 5 }}>
-          {typeof row.patient === 'number' ? row.patient.toFixed(1) : row.patient} {unit}
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' as const }}>
-          {perc !== null && (
-            <span style={{ fontSize: 11, background: '#F1F5F9', color: MU, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>P{perc}</span>
-          )}
-          {z !== null && <ZBadge z={z} />}
-        </div>
-      </div>
-    );
-  };
-
-  // Metric selector tabs
-  const metricTabs: { key: GrowthMetric; label: string; icon: React.ReactNode }[] = [
-    { key: 'weight', label: 'Peso',    icon: <Heartbeat size={12} /> },
-    { key: 'height', label: 'Altura',  icon: <TrendUp   size={12} /> },
-    { key: 'hc',     label: 'P. Cef.', icon: <Baby      size={12} /> },
-    { key: 'bmi',    label: 'IMC',     icon: <ChartBar  size={12} /> },
-  ];
-
-  return (
-    <div>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap' as const, gap: 10 }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>Curva de crescimento</h3>
-          <p style={{ margin: '3px 0 0', fontSize: 13, color: MU }}>Referência OMS — Z-escores ({isM ? 'meninos' : 'meninas'})</p>
-        </div>
-        {/* 4-metric pill selector */}
-        <div style={{ display: 'flex', gap: 2, background: '#F1F5F9', padding: 3, borderRadius: 8 }}>
-          {metricTabs.map(({ key, label, icon }) => (
-            <button key={key} onClick={() => setMetric(key)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 11px',
-                borderRadius: 6, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                fontWeight: 600, fontSize: 12, transition: 'all 0.15s',
-                background: metric === key ? '#fff'        : 'transparent',
-                color:      metric === key ? P             : MU,
-                boxShadow:  metric === key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-              }}
-            >
-              {icon}{label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── KPI summary cards (última medição) ─────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
-        {[
-          { label: 'Último peso',   val: last?.weight ? `${last.weight} kg` : '—', z: lastWeightZ, p: lastWeightP },
-          { label: 'Última altura', val: last?.height ? `${last.height} cm` : '—', z: lastHeightZ, p: lastHeightP },
-          { label: 'P. cefálico',   val: last?.hc     ? `${last.hc} cm`     : '—', z: lastHcZ,     p: lastHcP     },
-        ].map(({ label, val, z, p }) => (
-          <Card key={label} style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: 12, color: MU }}>{label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, marginTop: 4, fontFamily: '"JetBrains Mono", monospace', fontFeatureSettings: '"tnum"' }}>{val}</div>
-            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
-              {p !== null && <span style={{ fontSize: 11, color: MU, background: '#F3F4F6', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>P{p}</span>}
-              <ZBadge z={z} />
-              {z === null && <span style={{ fontSize: 11, color: MU }}>mês {last?.month}</span>}
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* ── Gráfico com Z-bands + trajetória do paciente ────────────────────── */}
-      <Card style={{ padding: 20 }}>
-        {growth.length === 0 ? (
-          <div style={{ height: 240, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: MU }}>
-            <TrendUp size={32} />
-            <span style={{ fontSize: 13 }}>Nenhuma medição registrada ainda.</span>
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={BO} vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: MU }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: MU }} unit={` ${unit}`} width={55} axisLine={false} tickLine={false} />
-              <Tooltip content={<GrowthTooltip />} />
-
-              {/* Z-score reference bands (fundo) */}
-              {zBands.map(({ key, stroke, dash, w }) => (
-                <Line key={key} dataKey={key} stroke={stroke} strokeWidth={w}
-                  strokeDasharray={dash} dot={false} isAnimationActive={false}
-                  legendType="none" connectNulls />
-              ))}
-
-              {/* Trajetória do paciente */}
-              <Line
-                dataKey="patient"
-                stroke={P}
-                strokeWidth={2.5}
-                dot={(props: any) => {
-                  if (props.payload?.patient == null) return <g key={`nd-${props.index}`} />;
-                  return (
-                    <circle key={`d-${props.index}`}
-                      cx={props.cx} cy={props.cy} r={5}
-                      fill={P} stroke="#fff" strokeWidth={2} />
-                  );
-                }}
-                activeDot={{ r: 7, fill: P, stroke: '#fff', strokeWidth: 2 }}
-                connectNulls
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
-
-        {/* Legenda */}
-        <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' as const, alignItems: 'center', paddingTop: 10, borderTop: `1px solid ${BO}` }}>
-          <span style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Faixas OMS:</span>
-          {[
-            { label: 'Z ±1 — adequado',           stroke: '#6EBF8B' },
-            { label: 'Z ±2 — atenção',             stroke: '#FCA351' },
-            { label: 'Z ±3 — fora do padrão',      stroke: '#F87171' },
-            { label: 'Z0 — mediana',               stroke: '#94A3B8' },
-          ].map(({ label, stroke }) => (
-            <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#64748B' }}>
-              <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={stroke} strokeWidth="2" strokeDasharray="4 2" /></svg>
-              {label}
-            </span>
-          ))}
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: P }}>
-            <svg width="20" height="8">
-              <line x1="0" y1="4" x2="20" y2="4" stroke={P} strokeWidth="2.5" />
-              <circle cx="10" cy="4" r="3.5" fill={P} stroke="#fff" strokeWidth="1.5" />
-            </svg>
-            Paciente
-          </span>
-        </div>
-      </Card>
-
-      {/* ── Histórico de medições com Z-escore ─────────────────────────────── */}
-      <Card style={{ marginTop: 16 }}>
-        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>
-          Histórico de medições
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr 1fr 1fr 1fr', padding: '7px 20px', borderBottom: `1px solid ${BO}`, fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>
-          <span>Mês</span><span>Peso</span><span>Altura</span><span>P. Cefálico</span><span>IMC</span>
-        </div>
-        {[...growth].reverse().map(g => {
-          const wZ  = g.weight ? calcZScore(g.weight, g.month, sex, 'weight') : null;
-          const hZ  = g.height ? calcZScore(g.height, g.month, sex, 'height') : null;
-          const hcZ = g.hc     ? calcZScore(g.hc,     g.month, sex, 'hc')     : null;
-          const bmi = (g.weight && g.height && g.height > 0) ? g.weight / Math.pow(g.height / 100, 2) : null;
-          const bmiZ = bmi ? calcZScore(bmi, g.month, sex, 'bmi') : null;
-
-          const Cell = ({ val, unit: u, z }: { val: number | undefined; unit: string; z: number | null }) => (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontSize: 13, fontFamily: '"JetBrains Mono", monospace', fontFeatureSettings: '"tnum"' }}>
-                {val ? `${val} ${u}` : '—'}
-              </span>
-              {z !== null && <ZBadge z={z} />}
-            </div>
-          );
-
-          return (
-            <div key={g.month} style={{ display: 'grid', gridTemplateColumns: '52px 1fr 1fr 1fr 1fr', padding: '10px 20px', borderBottom: `1px solid ${BO}`, alignItems: 'start' }}>
-              <span style={{ fontWeight: 600, fontSize: 13, paddingTop: 2 }}>{g.month}m</span>
-              <Cell val={g.weight}        unit="kg"    z={wZ}  />
-              <Cell val={g.height}        unit="cm"    z={hZ}  />
-              <Cell val={g.hc}            unit="cm"    z={hcZ} />
-              <Cell val={bmi ?? undefined} unit="kg/m²" z={bmiZ} />
-            </div>
-          );
-        })}
-        {growth.length === 0 && (
-          <div style={{ padding: '24px 20px', textAlign: 'center', color: MU, fontSize: 13 }}>Nenhuma medição registrada.</div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-// ─── PNI SCHEDULE (Calendário Vacinal SBP/MS 2024) ───────────────────────────
-const PNI_SCHEDULE = [
-  { name: 'BCG', dose: '1ª dose', age_months: 0, age_label: 'Ao nascer' },
-  { name: 'Hepatite B', dose: '1ª dose', age_months: 0, age_label: 'Ao nascer' },
-  { name: 'Penta (DTP+Hib+HepB)', dose: '1ª dose', age_months: 2, age_label: '2 meses' },
-  { name: 'VIP (Polio inativada)', dose: '1ª dose', age_months: 2, age_label: '2 meses' },
-  { name: 'Rotavírus Humano', dose: '1ª dose', age_months: 2, age_label: '2 meses' },
-  { name: 'Pneumocócica 10V', dose: '1ª dose', age_months: 2, age_label: '2 meses' },
-  { name: 'Meningocócica C', dose: '1ª dose', age_months: 3, age_label: '3 meses' },
-  { name: 'Penta (DTP+Hib+HepB)', dose: '2ª dose', age_months: 4, age_label: '4 meses' },
-  { name: 'VIP (Polio inativada)', dose: '2ª dose', age_months: 4, age_label: '4 meses' },
-  { name: 'Rotavírus Humano', dose: '2ª dose', age_months: 4, age_label: '4 meses' },
-  { name: 'Pneumocócica 10V', dose: '2ª dose', age_months: 4, age_label: '4 meses' },
-  { name: 'Meningocócica C', dose: '2ª dose', age_months: 5, age_label: '5 meses' },
-  { name: 'Penta (DTP+Hib+HepB)', dose: '3ª dose', age_months: 6, age_label: '6 meses' },
-  { name: 'VIP (Polio inativada)', dose: '3ª dose', age_months: 6, age_label: '6 meses' },
-  { name: 'Meningocócica ACWY', dose: '1ª dose', age_months: 12, age_label: '12 meses' },
-  { name: 'Febre Amarela', dose: '1ª dose', age_months: 12, age_label: '12 meses' },
-  { name: 'Tríplice Viral (SCR)', dose: '1ª dose', age_months: 12, age_label: '12 meses' },
-  { name: 'Varicela', dose: '1ª dose', age_months: 12, age_label: '12 meses' },
-  { name: 'Pneumocócica 10V', dose: 'Reforço', age_months: 12, age_label: '12 meses' },
-  { name: 'Meningocócica C', dose: 'Reforço', age_months: 12, age_label: '12 meses' },
-  { name: 'Hepatite A', dose: '1ª dose', age_months: 12, age_label: '12 meses' },
-  { name: 'DTP', dose: '1º Reforço', age_months: 15, age_label: '15 meses' },
-  { name: 'VOP (Polio oral)', dose: '1º Reforço', age_months: 15, age_label: '15 meses' },
-  { name: 'Tríplice Viral (SCR)', dose: '2ª dose', age_months: 15, age_label: '15 meses' },
-  { name: 'DTP', dose: '2º Reforço', age_months: 48, age_label: '4 anos' },
-  { name: 'VOP (Polio oral)', dose: '2º Reforço', age_months: 48, age_label: '4 anos' },
-  { name: 'Varicela', dose: '2ª dose', age_months: 48, age_label: '4 anos' },
-  { name: 'HPV', dose: '1ª dose', age_months: 108, age_label: '9 anos' },
-  { name: 'HPV', dose: '2ª dose', age_months: 114, age_label: '9a 6m' },
-  { name: 'Meningocócica ACWY', dose: 'Reforço', age_months: 120, age_label: '10 anos' },
-  { name: 'dT (Difteria + Tétano)', dose: 'Reforço', age_months: 132, age_label: '11 anos' },
-];
-
-// ─── VACCINES TAB ─────────────────────────────────────────────────────────────
-function VaccinesTab({ patient }: { patient: Patient }) {
-  const [dbVaccines, setDbVaccines] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [registeringId, setRegisteringId] = useState<string | null>(null);
-  const [registerDate, setRegisterDate] = useState(new Date().toISOString().split('T')[0]);
-  const isMobile = useIsMobile();
-
-  const ageMonths = (() => {
-    const bd = new Date(patient.birth_date), now = new Date();
-    return (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
-  })();
-
-  function refetch() {
-    db.fetchVaccines(patient.id).then(setDbVaccines).catch(() => {}).finally(() => setLoading(false));
-  }
-  useEffect(() => { refetch(); }, [patient.id]);
-
-  // Build merged list: PNI schedule + DB records
-  const vaccines = PNI_SCHEDULE.map((pni, idx) => {
-    const applied = dbVaccines.find(v => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
-    let status: 'done' | 'pending' | 'overdue';
-    if (applied) {
-      status = 'done';
-    } else if (pni.age_months < ageMonths) {
-      // Recomendada em mês anterior → em atraso
-      status = 'overdue';
-    } else {
-      // Recomendada este mês ou futura → pendente (no prazo)
-      status = 'pending';
-    }
-    return {
-      id: applied?.id || `pni-${idx}`,
-      name: pni.name,
-      dose: pni.dose,
-      age_label: pni.age_label,
-      age_months: pni.age_months,
-      status,
-      date: applied?.applied_at || null,
-      dbId: applied?.id || null,
-    };
-  });
-
-  const done = vaccines.filter(v => v.status === 'done');
-  const pending = vaccines.filter(v => v.status !== 'done');
-  const overdue = pending.filter(v => v.status === 'overdue');
-  const total = vaccines.length;
-  const coverage = total > 0 ? Math.round(done.length / total * 100) : 0;
-
-  async function handleRegister(v: typeof vaccines[0], date: string) {
-    try {
-      if (v.dbId) {
-        await db.updateVaccineStatus(v.dbId, 'done', date);
-      } else {
-        await db.createVaccine({
-          patient_id: patient.id, name: v.name, dose: v.dose,
-          status: 'done', age_label: v.age_label, applied_at: date,
-        });
-      }
-      setRegisteringId(null);
-      refetch();
-    } catch (e) { console.error(e); }
-  }
-
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Carregando vacinas…</div>;
-
-  return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
-        {[
-          { label: 'Doses aplicadas', value: done.length, color: SUC },
-          { label: 'Pendentes/Atrasadas', value: pending.length, color: overdue.length > 0 ? DES : WARN },
-          { label: 'Cobertura PNI', value: `${coverage}%`, color: P },
-        ].map(({ label, value, color }) => (
-          <Card key={label} style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: 12, color: MU, fontWeight: 500, marginBottom: 4 }}>{label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
-          </Card>
-        ))}
-      </div>
-      {overdue.length > 0 && (
-        <Card style={{ marginBottom: 16 }}>
-          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Warning size={15} color={DES} /><span style={{ fontWeight: 600, fontSize: 14 }}>Vacinas em atraso</span>
-            <Badge color={DES} bg={DESL}>{overdue.length}</Badge>
-          </div>
-          {overdue.map(v => (
-            <div key={v.id}>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 90px' : '1fr 120px 110px 130px', gap: 12, padding: '12px 20px', borderBottom: registeringId === v.id ? 'none' : `1px solid ${BO}`, alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{v.name}</div>
-                  <div style={{ fontSize: 12, color: MU }}>{v.dose} · {v.age_label}</div>
-                </div>
-                {!isMobile && <span style={{ fontSize: 13, color: MU }}>{v.age_label}</span>}
-                {!isMobile && <Badge color={DES} bg={DESL}>Atrasada</Badge>}
-                <Btn size="sm" onClick={() => setRegisteringId(registeringId === v.id ? null : v.id)}>
-                  <CheckCircle size={13} /> Registrar
-                </Btn>
-              </div>
-              {registeringId === v.id && (
-                <div style={{ padding: '10px 20px 14px', background: SUCL, borderBottom: `1px solid ${BO}`, display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, color: MU, flexShrink: 0 }}>Data de aplicação:</span>
-                  <input type="date" value={registerDate} onChange={e => setRegisterDate(e.target.value)}
-                    style={{ padding: '6px 10px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 13, fontFamily: 'inherit' }} />
-                  <Btn size="sm" onClick={() => handleRegister(v, registerDate)}><CheckCircle size={13} /> Confirmar</Btn>
-                  <Btn size="sm" variant="ghost" onClick={() => setRegisteringId(null)}><X size={13} /></Btn>
-                </div>
-              )}
-            </div>
-          ))}
-        </Card>
-      )}
-      {pending.filter(v => v.status === 'pending').length > 0 && (
-        <Card style={{ marginBottom: 16 }}>
-          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Clock size={15} color={WARN} /><span style={{ fontWeight: 600, fontSize: 14 }}>Próximas vacinas</span>
-          </div>
-          {pending.filter(v => v.status === 'pending').slice(0, 10).map(v => (
-            <div key={v.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 90px' : '1fr 120px 110px 130px', gap: 12, padding: '12px 20px', borderBottom: `1px solid ${BO}`, alignItems: 'center' }}>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{v.name}</div>
-                <div style={{ fontSize: 12, color: MU }}>{v.dose}</div>
-              </div>
-              {!isMobile && <span style={{ fontSize: 13, color: MU }}>{v.age_label}</span>}
-              {!isMobile && <Badge color={WARN} bg={WARNL}>Prevista</Badge>}
-              <Btn size="sm" variant="secondary" onClick={() => setRegisteringId(registeringId === v.id ? null : v.id)}>Antecipar</Btn>
-            </div>
-          ))}
-        </Card>
-      )}
-      <Card>
-        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>
-          Vacinas aplicadas
-        </div>
-        {done.length === 0 ? (
-          <div style={{ padding: '32px 20px', textAlign: 'center' as const, color: MU, fontSize: 13 }}>
-            Nenhuma vacina registrada ainda. Use o botão "Registrar" para marcar as vacinas aplicadas.
-          </div>
-        ) : (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 100px' : '1fr 120px 150px', padding: '8px 20px', borderBottom: `1px solid ${BO}`, fontSize: 11, fontWeight: 600, color: MU, textTransform: 'uppercase' as const }}>
-              <span>Vacina / Dose</span><span>Idade</span>{!isMobile && <span>Data aplicação</span>}
-            </div>
-            {[...done].sort((a, b) => b.age_months - a.age_months).map(v => (
-              <div key={v.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 100px' : '1fr 120px 150px', gap: 16, padding: '11px 20px', borderBottom: `1px solid ${BO}`, alignItems: 'center' }}>
-                <div><span style={{ fontWeight: 500, fontSize: 14 }}>{v.name}</span><span style={{ marginLeft: 8, fontSize: 12, color: MU }}>{v.dose}</span></div>
-                <span style={{ fontSize: 13, color: MU }}>{v.age_label}</span>
-                {!isMobile && <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><CheckCircle size={13} color={SUC} /><span style={{ fontSize: 13 }}>{v.date ? fmtDate(v.date) : '—'}</span></div>}
-              </div>
-            ))}
-          </>
         )}
       </Card>
     </div>
@@ -4397,7 +3756,7 @@ function getWeekDays(offset: number) {
 }
 
 function NewAppointmentModal({ onClose, onSaved, defaultDate }: { onClose: () => void; onSaved: () => void; defaultDate: string }) {
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const { patients } = usePatients();
   const [patientId, setPatientId] = useState('');
   const [date, setDate] = useState(defaultDate);
   const [time, setTime] = useState('09:00');
@@ -4405,8 +3764,6 @@ function NewAppointmentModal({ onClose, onSaved, defaultDate }: { onClose: () =>
   const [complaint, setComplaint] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => { db.fetchPatients().then(setPatients).catch(console.error); }, []);
 
   async function handleSave() {
     if (!patientId) { setError('Selecione um paciente.'); return; }
@@ -4648,6 +4005,7 @@ function AppointmentDetailModal({
 }
 
 function AgendaPage({ go, setActivePatient, onApptStart }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onApptStart?: (type: 'retorno' | 'primeira vez') => void }) {
+  const { patients: allPatients } = usePatients();
   const todayIso = new Date().toISOString().slice(0, 10);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState(todayIso); // mobile only
@@ -4713,11 +4071,9 @@ function AgendaPage({ go, setActivePatient, onApptStart }: { go: (s: string) => 
     // Propagate appointment type so the consultation flow shows the correct badge/form
     const apptType: 'retorno' | 'primeira vez' = appt.type === 'primeira vez' ? 'primeira vez' : 'retorno';
     onApptStart?.(apptType);
-    // Find patient and navigate
-    db.fetchPatients().then(patients => {
-      const p = patients.find(p => p.id === appt.patient_id);
-      if (p) { setActivePatient(p); go('patient-detail'); }
-    });
+    // Find patient and navigate (patients already in context — no extra fetch)
+    const p = allPatients.find(p => p.id === appt.patient_id);
+    if (p) { setActivePatient(p); go('patient-detail'); }
     setSelectedAppt(null);
   }
 
@@ -5218,6 +4574,26 @@ function SettingsPage({ user }: { user: any }) {
 }
 
 // ─── PAINEL DO CONSULTÓRIO ─────────────────────────────────────────────────────
+function MetricCard({ label, value, sub, subColor, footer }: { label: string; value: string | number; sub?: string; subColor?: string; footer?: React.ReactNode }) {
+  return (
+    <Card style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ fontSize: 12, color: MU, fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: INK, fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 13, color: subColor || MU, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>{sub}</div>}
+      {footer && <div style={{ marginTop: 4 }}>{footer}</div>}
+    </Card>
+  );
+}
+
+function BlockHeader({ icon: Icon, title }: { icon: any; title: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+      <Icon size={17} color={P} />
+      <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: INK, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>{title}</h2>
+    </div>
+  );
+}
+
 function PainelPage({ go, setActivePatient }: { go: (s: string) => void; setActivePatient: (p: Patient) => void }) {
   const [period, setPeriod] = useState(30);
   const [loading, setLoading] = useState(true);
@@ -5344,26 +4720,7 @@ function PainelPage({ go, setActivePatient }: { go: (s: string) => void; setActi
     return (goodIsPositive ? d >= 0 : d <= 0) ? SUC : DES;
   };
   const deltaIcon = (d: number | null) => d !== null && d >= 0 ? ArrowUp : ArrowDown;
-
-  function MetricCard({ label, value, sub, subColor, footer }: { label: string; value: string | number; sub?: string; subColor?: string; footer?: React.ReactNode }) {
-    return (
-      <Card style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ fontSize: 12, color: MU, fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>{label}</div>
-        <div style={{ fontSize: 28, fontWeight: 700, color: INK, fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.1 }}>{value}</div>
-        {sub && <div style={{ fontSize: 13, color: subColor || MU, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>{sub}</div>}
-        {footer && <div style={{ marginTop: 4 }}>{footer}</div>}
-      </Card>
-    );
-  }
-
-  function BlockHeader({ icon: Icon, title }: { icon: any; title: string }) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        <Icon size={17} color={P} />
-        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: INK, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>{title}</h2>
-      </div>
-    );
-  }
+  // MetricCard and BlockHeader are defined at module scope above PainelPage
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const periodOptions = [
@@ -5660,17 +5017,23 @@ export default function App() {
     if (!user) return;
     const load = async () => {
       const notifs: AppNotification[] = [];
-      const [ps, stats] = await Promise.all([db.fetchPatients(), db.fetchDashboardStats()]).catch(() => [[], { overdueAppointments: [] }] as any);
+      const [ps, stats, vaccMap] = await Promise.all([
+        db.fetchPatients(),
+        db.fetchDashboardStats(),
+        db.fetchAllVaccinesForDoctor(),
+      ]).catch(() => [[], { overdueAppointments: [] }, {}] as any);
       stats.overdueAppointments?.forEach((a: any) => {
         notifs.push({ type: 'appointment', title: `${a.patient_name} — consulta não realizada`, subtitle: `Agendada para ${a.scheduled_at?.slice(0,10)}`, patientId: a.patient_id });
       });
-      await Promise.all((ps || []).map(async (p: Patient) => {
-        const bd = new Date(p.birth_date), now = new Date();
+      // Batch vaccine check — single query replaces N+1
+      const now = new Date();
+      (ps || []).forEach((p: Patient) => {
+        const bd = new Date(p.birth_date);
         const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
-        const dbVs = await db.fetchVaccines(p.id).catch(() => []);
-        const overdue = PNI_SCHEDULE.filter(pni => !dbVs.find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done') && pni.age_months <= ageMonths).length;
+        const dbVs = (vaccMap as Record<string, any[]>)[p.id] || [];
+        const overdue = PNI_SCHEDULE.filter(pni => !dbVs.find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done') && pni.age_months < ageMonths).length;
         if (overdue > 0) notifs.push({ type: 'vaccine', title: `${p.full_name} — ${overdue} vacina${overdue > 1 ? 's' : ''} em atraso`, subtitle: 'Verificar calendário PNI', patientId: p.id });
-      }));
+      });
       setNotifications(notifs);
     };
     load();
@@ -5725,16 +5088,18 @@ export default function App() {
 
   return (
     <MobileCtx.Provider value={isMobile}>
-      <ProntuarioFormatCtx.Provider value={{ format: prontuarioFormat, setFormat: setProntuarioFormat }}>
-        <Layout screen={screen} go={go} breadcrumb={breadcrumbs[screen]} onBack={screen === 'patient-detail' ? () => go('patients') : undefined} doctorName={doctorName} notifications={notifications} onNotificationClick={(patientId) => { const p = (activePatient?.id === patientId ? activePatient : null); if (patientId) { db.fetchPatients().then(ps => { const found = ps.find(x => x.id === patientId); if (found) { setActivePatient(found); go('patient-detail'); } }); } }} onClearNotifications={() => setNotifications([])}>
-          {screen === 'dashboard' && <DashboardPage go={go} setActivePatient={setActivePatient} user={user} doctorName={doctorName} />}
-          {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
-          {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(activeApptType ?? type); setActiveApptType(null); setFlow('consent'); }} refetchTrigger={refetchTrigger} />}
-          {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onApptStart={(t) => setActiveApptType(t)} />}
-          {screen === 'painel'   && <PainelPage go={go} setActivePatient={setActivePatient} />}
-          {screen === 'settings' && <SettingsPage user={user} />}
-        </Layout>
-      </ProntuarioFormatCtx.Provider>
+      <PatientProvider>
+        <ProntuarioFormatCtx.Provider value={{ format: prontuarioFormat, setFormat: setProntuarioFormat }}>
+          <Layout screen={screen} go={go} breadcrumb={breadcrumbs[screen]} onBack={screen === 'patient-detail' ? () => go('patients') : undefined} doctorName={doctorName} notifications={notifications} onNotificationClick={(patientId) => { if (patientId) { db.fetchPatients().then(ps => { const found = ps.find(x => x.id === patientId); if (found) { setActivePatient(found); go('patient-detail'); } }); } }} onClearNotifications={() => setNotifications([])}>
+            {screen === 'dashboard' && <DashboardPage go={go} setActivePatient={setActivePatient} user={user} doctorName={doctorName} />}
+            {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
+            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(activeApptType ?? type); setActiveApptType(null); setFlow('consent'); }} refetchTrigger={refetchTrigger} />}
+            {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onApptStart={(t) => setActiveApptType(t)} />}
+            {screen === 'painel'   && <PainelPage go={go} setActivePatient={setActivePatient} />}
+            {screen === 'settings' && <SettingsPage user={user} />}
+          </Layout>
+        </ProntuarioFormatCtx.Provider>
+      </PatientProvider>
     </MobileCtx.Provider>
   );
 }
