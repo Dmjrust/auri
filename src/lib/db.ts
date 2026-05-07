@@ -320,7 +320,7 @@ export async function fetchTodayAppointments() {
   const today = new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('consultations')
-    .select('id, scheduled_at, status, type, patient_id, patients(full_name, birth_date, patient_guardians(name, is_primary))')
+    .select('id, scheduled_at, status, type, patient_id, patients(full_name, birth_date, patient_guardians(name, phone, is_primary))')
     .gte('scheduled_at', today + 'T00:00:00')
     .lte('scheduled_at', today + 'T23:59:59')
     .order('scheduled_at', { ascending: true });
@@ -333,7 +333,7 @@ export async function fetchTodayAppointments() {
     if (patient?.birth_date) {
       const bd = new Date(patient.birth_date), now = new Date();
       const months = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
-      age = months < 24 ? `${months}m` : `${Math.floor(months / 12)}a`;
+      age = months < 24 ? `${months}m` : `${Math.floor(months / 12)}a ${months % 12 > 0 ? (months % 12) + 'm' : ''}`.trim();
     }
     return {
       id: c.id,
@@ -345,8 +345,102 @@ export async function fetchTodayAppointments() {
       type: (c.type || 'retorno') as 'retorno' | 'primeira vez',
       status: (c.status || 'scheduled') as 'completed' | 'in_progress' | 'scheduled',
       guardian: primary?.name || '',
+      guardian_phone: primary?.phone || '',
     };
   });
+}
+
+// ── Day Briefing (batch fetch para briefing clínico do dashboard) ─────────────
+export interface DayBriefingItem {
+  patientId: string;
+  lastConsult: {
+    date: string;
+    type: string;
+    chiefComplaint: string;
+    diagnosis: string;
+    plan: string;
+    retorno: string;
+    peso: string;
+    altura: string;
+  } | null;
+  totalConsults: number;
+  overdueVaccines: string[];
+  lastVaccine: { name: string; appliedAt: string } | null;
+  lastGrowth: { weight: number | null; height: number | null; date: string } | null;
+}
+
+export async function fetchDayBriefing(patientIds: string[]): Promise<Record<string, DayBriefingItem>> {
+  if (patientIds.length === 0) return {};
+
+  const [consultsRes, vaccinesRes, growthRes] = await Promise.all([
+    supabase
+      .from('consultations')
+      .select('id, patient_id, scheduled_at, type, chief_complaint, diagnosis, plan, sum_retorno, sum_peso, sum_altura, status')
+      .in('patient_id', patientIds)
+      .eq('status', 'completed')
+      .order('scheduled_at', { ascending: false }),
+    supabase
+      .from('patient_vaccines')
+      .select('patient_id, name, dose, status, applied_at')
+      .in('patient_id', patientIds)
+      .order('applied_at', { ascending: false, nullsFirst: false }),
+    supabase
+      .from('growth_records')
+      .select('patient_id, weight_kg, height_cm, created_at')
+      .in('patient_id', patientIds)
+      .order('created_at', { ascending: false }),
+  ]);
+
+  const result: Record<string, DayBriefingItem> = {};
+  patientIds.forEach(id => {
+    result[id] = { patientId: id, lastConsult: null, totalConsults: 0, overdueVaccines: [], lastVaccine: null, lastGrowth: null };
+  });
+
+  (consultsRes.data || []).forEach((c: any) => {
+    const item = result[c.patient_id];
+    if (!item) return;
+    item.totalConsults++;
+    if (!item.lastConsult) {
+      item.lastConsult = {
+        date: c.scheduled_at?.slice(0, 10) || '',
+        type: c.type || 'retorno',
+        chiefComplaint: c.chief_complaint || '',
+        diagnosis: c.diagnosis || '',
+        plan: c.plan || '',
+        retorno: c.sum_retorno || '',
+        peso: c.sum_peso || '',
+        altura: c.sum_altura || '',
+      };
+    }
+  });
+
+  const seenLastVacc = new Set<string>();
+  (vaccinesRes.data || []).forEach((v: any) => {
+    const item = result[v.patient_id];
+    if (!item) return;
+    if (!seenLastVacc.has(v.patient_id) && v.status === 'done' && v.applied_at) {
+      item.lastVaccine = { name: v.name, appliedAt: v.applied_at.slice(0, 10) };
+      seenLastVacc.add(v.patient_id);
+    }
+    if (v.status === 'overdue' && !item.overdueVaccines.includes(v.name)) {
+      item.overdueVaccines.push(v.name);
+    }
+  });
+
+  const seenGrowth = new Set<string>();
+  (growthRes.data || []).forEach((r: any) => {
+    if (seenGrowth.has(r.patient_id)) return;
+    const item = result[r.patient_id];
+    if (!item) return;
+    item.lastGrowth = {
+      weight: r.weight_kg ? parseFloat(r.weight_kg) : null,
+      height: r.height_cm ? parseFloat(r.height_cm) : null,
+      date: r.created_at?.slice(0, 10) || '',
+    };
+    seenGrowth.add(r.patient_id);
+  });
+
+  return result;
 }
 
 // ── Recent activity ───────────────────────────────────────────────────────────

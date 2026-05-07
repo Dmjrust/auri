@@ -3,6 +3,8 @@ import { supabase } from './lib/supabase';
 import * as db from './lib/db';
 import * as ai from './lib/ai';
 import { SmokeyBackground, LoginForm } from './components/ui/login-form';
+import { TodayPatientCard } from './components/TodayPatientCard';
+import type { DayBriefingItem } from './lib/db';
 import {
   SquaresFour, Users, CalendarBlank, GearSix, SignOut, Bell, MagnifyingGlass, CaretRight,
   Play, Square, CheckCircle, Clock, Warning, Info, ArrowLeft, Plus,
@@ -835,6 +837,7 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
   const [overdueVaccPatients, setOverdueVaccPatients] = useState<{ id: string; full_name: string; overdueCount: number; overdueNames: string[] }[]>([]);
   const [recentActivity, setRecentActivity] = useState<{ id: string; patient_id: string; patient_name: string; date: string; type: string }[]>([]);
   const [consultSummaries, setConsultSummaries] = useState<Record<string, { count: number; lastDate: string | null }>>({});
+  const [dayBriefing, setDayBriefing] = useState<Record<string, DayBriefingItem>>({});
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
   const [expandedPriority, setExpandedPriority] = useState<'retorno' | 'vacinas' | 'sem-consulta' | null>(null);
   const [showAttentionPoints, setShowAttentionPoints] = useState(true);
@@ -877,6 +880,8 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
       setOverdueAppts(stats.overdueAppointments);
       setRecentActivity(activity);
       setConsultSummaries(summaries);
+      const ids = (appts as any[]).map((a: any) => a.patient_id).filter(Boolean);
+      if (ids.length > 0) db.fetchDayBriefing(ids).then(setDayBriefing).catch(() => {});
     }).catch(() => {});
   }, []);
 
@@ -1210,35 +1215,20 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                   <Btn onClick={() => go('patients')}><Stethoscope size={14} /> Iniciar nova consulta</Btn>
                 </div>
               </div>
-            ) : todayAppts.map((a, i) => {
-              const patient = patients.find(p => p.id === a.patient_id);
-              const isDone = a.status === 'completed';
-              return (
-                <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < todayAppts.length - 1 ? `1px solid ${BO}` : 'none', background: isDone ? `${SUC}08` : 'transparent' }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: isDone ? MU : P, fontFamily: '"JetBrains Mono", monospace', width: 44, flexShrink: 0 }}>{a.time}</span>
-                  <div style={{ width: 1, height: 32, background: BO, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>{a.patient_name}</span>
-                      <span style={{ fontSize: 12, color: MU }}>{a.age}</span>
-                      <Pill type={a.type} />
-                      {isDone ? <Badge color={SUC} bg={SUCL}>Realizada</Badge> : <Badge color={WARN} bg={WARNL}>Pendente</Badge>}
-                    </div>
-                    {a.guardian && <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>Resp: {a.guardian}</div>}
-                  </div>
-                  {!isDone && patient && (
-                    <Btn size="sm" onClick={e => { e.stopPropagation(); setActivePatient(patient); go('patient-detail'); }}>
-                      <Stethoscope size={13} /> Iniciar
-                    </Btn>
-                  )}
-                  {isDone && patient && (
-                    <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setActivePatient(patient); go('patient-detail'); }}>
-                      <FileText size={13} /> Prontuário
-                    </Btn>
-                  )}
-                </div>
-              );
-            })}
+            ) : (() => {
+              const nextApptId = todayAppts.find(a => a.status !== 'completed')?.id;
+              return todayAppts.map((appt) => (
+                <TodayPatientCard
+                  key={appt.id}
+                  appt={appt}
+                  patient={patients.find((p: Patient) => p.id === appt.patient_id)}
+                  briefing={dayBriefing[appt.patient_id]}
+                  defaultExpanded={appt.id === nextApptId}
+                  onStart={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
+                  onRecord={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
+                />
+              ));
+            })()}
           </Card>
 
           {/* 3. Alertas clínicos por paciente */}
