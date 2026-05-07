@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Clock, UserCircle } from '@phosphor-icons/react';
 import * as db from '../lib/db';
+import type { AdminAlert } from '../lib/db';
 import { useAuthProfile } from '../contexts/AuthProfileContext';
 import { usePatients } from '../contexts/PatientContext';
 
@@ -65,8 +67,10 @@ export function SecretaryDashboard({ go, setActivePatient, onNewPatient }: Props
   const { fullName } = useAuthProfile();
   const { patients } = usePatients();
 
-  const [appts, setAppts]         = useState<TodayAppt[]>([]);
+  const [appts, setAppts]               = useState<TodayAppt[]>([]);
   const [loadingAppts, setLoadingAppts] = useState(true);
+  const [alerts, setAlerts]             = useState<AdminAlert[]>([]);
+  const [loadingAlerts, setLoadingAlerts] = useState(true);
 
   const today = new Date().toLocaleDateString('pt-BR', {
     weekday: 'long', day: 'numeric', month: 'long',
@@ -78,6 +82,12 @@ export function SecretaryDashboard({ go, setActivePatient, onNewPatient }: Props
       .then((data: any[]) => setAppts(data as TodayAppt[]))
       .catch(() => {})
       .finally(() => setLoadingAppts(false));
+
+    setLoadingAlerts(true);
+    db.fetchAdminAlerts(60)
+      .then(setAlerts)
+      .catch(() => {})
+      .finally(() => setLoadingAlerts(false));
   }, []);
 
   const done      = appts.filter(a => a.status === 'completed').length;
@@ -242,34 +252,70 @@ export function SecretaryDashboard({ go, setActivePatient, onNewPatient }: Props
           {/* Alertas administrativos */}
           <div style={{
             background: '#fff', border: `1px solid ${BO}`, borderRadius: 10,
-            padding: '16px 18px', boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+            overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
           }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 12 }}>
-              Alertas administrativos
+            <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Clock size={14} color={WARN} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.6 }}>
+                Alertas administrativos
+              </span>
+              {alerts.length > 0 && (
+                <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, background: WARNL, color: WARN, padding: '1px 7px', borderRadius: 99 }}>
+                  {alerts.length}
+                </span>
+              )}
             </div>
-            {patients.length === 0 ? (
-              <div style={{ fontSize: 13, color: MU }}>Carregando…</div>
+
+            {loadingAlerts ? (
+              <div style={{ padding: '14px 18px', fontSize: 13, color: MU }}>Verificando…</div>
+            ) : alerts.length === 0 ? (
+              <div style={{ padding: '14px 18px', fontSize: 13, color: SUC, display: 'flex', alignItems: 'center', gap: 6 }}>
+                ✓ Nenhum alerta pendente
+              </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {/* Pacientes sem telefone do responsável */}
+              <div>
+                {/* Sem telefone */}
                 {(() => {
-                  const semTel = patients.filter(p =>
-                    !p.guardians?.some((g: any) => g.phone)
-                  ).length;
+                  const semTel = patients.filter(p => !p.guardians?.some((g: any) => g.phone)).length;
                   return semTel > 0 ? (
-                    <div style={{
-                      fontSize: 13, color: WARN, background: WARNL,
-                      borderRadius: 7, padding: '9px 12px', lineHeight: 1.4,
-                    }}>
+                    <div style={{ padding: '10px 18px', borderBottom: `1px solid ${BO}`, fontSize: 13, color: WARN, background: WARNL }}>
                       ⚠️ {semTel} paciente{semTel > 1 ? 's' : ''} sem telefone cadastrado
                     </div>
                   ) : null;
                 })()}
-
-                {/* Total de pacientes */}
-                <div style={{ fontSize: 13, color: MU }}>
-                  {patients.length} paciente{patients.length !== 1 ? 's' : ''} cadastrado{patients.length !== 1 ? 's' : ''}
-                </div>
+                {/* Pacientes sem retorno recente */}
+                {alerts.slice(0, 5).map(a => (
+                  <div key={a.patientId} style={{
+                    padding: '10px 18px',
+                    borderBottom: `1px solid ${BO}`,
+                    display: 'flex', alignItems: 'center', gap: 10,
+                  }}>
+                    <UserCircle size={18} color={MU} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1D1C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                        {a.patientName}
+                      </div>
+                      <div style={{ fontSize: 11, color: MU }}>
+                        {a.lastConsultDate
+                          ? `Última consulta há ${a.daysSince} dias`
+                          : 'Sem consultas registradas'}
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 99,
+                      background: a.daysSince > 90 ? '#FEF2F2' : WARNL,
+                      color: a.daysSince > 90 ? '#D1646F' : WARN,
+                      flexShrink: 0,
+                    }}>
+                      {a.daysSince > 9000 ? 'Nunca' : `${a.daysSince}d`}
+                    </span>
+                  </div>
+                ))}
+                {alerts.length > 5 && (
+                  <div style={{ padding: '10px 18px', fontSize: 12, color: MU, textAlign: 'center' as const }}>
+                    +{alerts.length - 5} pacientes sem retorno recente
+                  </div>
+                )}
               </div>
             )}
           </div>

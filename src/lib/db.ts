@@ -774,3 +774,148 @@ export async function fetchAllVaccinesForDoctor(): Promise<Record<string, any[]>
   });
   return grouped;
 }
+
+// ── Equipe e Acessos ──────────────────────────────────────────────────────────
+
+export interface TeamMember {
+  id: string;
+  userId: string;
+  doctorId: string;
+  role: 'medico' | 'secretaria';
+  fullName: string;
+  email: string;
+  active: boolean;
+  createdAt: string;
+}
+
+/** Busca todos os perfis associados ao doctor_id do médico logado */
+export async function fetchTeamMembers(): Promise<TeamMember[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Não autenticado');
+
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('id, user_id, doctor_id, role, full_name, email, active, created_at')
+    .eq('doctor_id', user.id)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return (data || []).map((r: any) => ({
+    id:        r.id,
+    userId:    r.user_id,
+    doctorId:  r.doctor_id,
+    role:      r.role,
+    fullName:  r.full_name,
+    email:     r.email,
+    active:    r.active,
+    createdAt: r.created_at,
+  }));
+}
+
+/** Desativa o acesso de um membro (active = false) */
+export async function deactivateMember(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ active: false })
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
+/** Reativa o acesso de um membro (active = true) */
+export async function reactivateMember(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ active: true })
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
+/** Convida secretária via Edge Function invite-secretary */
+export async function inviteSecretary(email: string, fullName: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Não autenticado');
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const res = await fetch(`${supabaseUrl}/functions/v1/invite-secretary`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ email, fullName }),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? 'Erro ao enviar convite');
+}
+
+// ── Alertas administrativos ───────────────────────────────────────────────────
+
+export interface AdminAlert {
+  patientId: string;
+  patientName: string;
+  lastConsultDate: string | null;
+  daysSince: number;
+  type: 'overdue_return' | 'inactive';
+}
+
+/**
+ * Retorna pacientes sem consulta nos últimos `days` dias.
+ * Apenas nome e data — sem dados clínicos.
+ */
+export async function fetchAdminAlerts(days = 60): Promise<AdminAlert[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString();
+  const today = new Date();
+
+  // Busca todos os pacientes ativos
+  const { data: patients, error: pErr } = await supabase
+    .from('patients')
+    .select('id, full_name')
+    .eq('doctor_id', user.id)
+    .eq('is_active', true);
+
+  if (pErr || !patients?.length) return [];
+
+  // Busca a consulta mais recente de cada paciente
+  const { data: consultations, error: cErr } = await supabase
+    .from('consultations')
+    .select('patient_id, created_at')
+    .eq('doctor_id', user.id)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false });
+
+  if (cErr) return [];
+
+  // Mapeia última consulta por paciente
+  const lastConsult: Record<string, string> = {};
+  (consultations || []).forEach((c: any) => {
+    if (!lastConsult[c.patient_id]) lastConsult[c.patient_id] = c.created_at;
+  });
+
+  const alerts: AdminAlert[] = [];
+  patients.forEach((p: any) => {
+    const last = lastConsult[p.id] ?? null;
+    const lastDate = last ? new Date(last) : null;
+    const daysSince = lastDate
+      ? Math.floor((today.getTime() - lastDate.getTime()) / 86_400_000)
+      : 9999;
+
+    if (!lastDate || lastDate < cutoff) {
+      alerts.push({
+        patientId:      p.id,
+        patientName:    p.full_name,
+        lastConsultDate: last,
+        daysSince,
+        type: daysSince > 90 ? 'inactive' : 'overdue_return',
+      });
+    }
+  });
+
+  // Ordena por mais urgente primeiro
+  return alerts.sort((a, b) => b.daysSince - a.daysSince).slice(0, 20);
+}

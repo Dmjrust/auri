@@ -10,7 +10,7 @@ import {
   Baby, Heartbeat, Syringe, CaretDown, CaretUp, CaretLeft,
   FloppyDisk, Buildings, Brain, ShieldCheck, PlayCircle, PencilSimple, Trash,
   ChartBar, ArrowUp, ArrowDown, ArrowRight, Lightbulb, Check,
-  Star, ArrowCounterClockwise, House, WarningCircle, UserPlus,
+  Star, ArrowCounterClockwise, House, WarningCircle, UserPlus, UsersThree,
 } from '@phosphor-icons/react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -33,6 +33,7 @@ import { VaccinesTab, PNI_SCHEDULE } from './components/VaccinesTab';
 import { Badge, Pill, ZBadge, StatusDot, Card, Btn, Tabs } from './components/auri-ui';
 import { RequireRole, useRequireRole } from './components/RequireRole';
 import { SecretaryDashboard } from './components/SecretaryDashboard';
+import { TeamSection } from './components/TeamSection';
 import { useAuthProfile } from './contexts/AuthProfileContext';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -4354,11 +4355,13 @@ function SettingsPage({ user }: { user: any }) {
     ? fullName.split(' ').map((w: string) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
     : 'DR';
 
+  const { isDoctor: settingsIsDoctor } = useAuthProfile();
   const sections = [
     { id: 'perfil',       label: 'Perfil do médico',  icon: User },
     { id: 'consultorio',  label: 'Consultório',        icon: Buildings },
     { id: 'notificacoes', label: 'Notificações',       icon: Bell },
     { id: 'gravacao',     label: 'Gravação e IA',      icon: Brain },
+    ...(settingsIsDoctor ? [{ id: 'equipe', label: 'Equipe e Acessos', icon: UsersThree }] : []),
   ];
 
   const Field = ({ label, value, disabled = true }: { label: string; value: string; disabled?: boolean }) => (
@@ -4583,6 +4586,8 @@ function SettingsPage({ user }: { user: any }) {
               </div>
             </Card>
           )}
+
+          {section === 'equipe' && settingsIsDoctor && <TeamSection />}
           </div>
         </div>
 
