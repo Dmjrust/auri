@@ -4,6 +4,7 @@ import * as db from './lib/db';
 import * as ai from './lib/ai';
 import { SmokeyBackground, LoginForm } from './components/ui/login-form';
 import { TodayPatientCard } from './components/TodayPatientCard';
+import { DevelopmentTab } from './components/DevelopmentTab';
 import type { DayBriefingItem } from './lib/db';
 import {
   SquaresFour, Users, CalendarBlank, GearSix, SignOut, Bell, MagnifyingGlass, CaretRight,
@@ -2322,9 +2323,10 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
   const guardian = primaryGuardian(patient);
   const isMobile = useIsMobile();
   const isDoctor = useRequireRole(['medico']);
+  const { doctorId } = useAuthProfile();
   // Tabs visíveis por role: secretaria só vê Resumo (sem dados clínicos) e Vacinas (admin)
   const visibleTabs = isDoctor
-    ? ['Resumo', 'Consultas', 'Crescimento', 'Vacinas']
+    ? ['Resumo', 'Consultas', 'Crescimento', 'Vacinas', 'Desenvolvimento']
     : ['Resumo', 'Vacinas'];
 
   useEffect(() => {
@@ -2987,6 +2989,15 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
 
         {tab === 'Crescimento' && <RequireRole roles={['medico']}><GrowthChart patient={patient} consultations={consultations} /></RequireRole>}
         {tab === 'Vacinas' && <VaccinesTab patient={patient} />}
+        {tab === 'Desenvolvimento' && (
+          <RequireRole roles={['medico']}>
+            <DevelopmentTab
+              patientId={patient.id}
+              patientBirthDate={patient.birth_date}
+              doctorId={doctorId ?? ''}
+            />
+          </RequireRole>
+        )}
       </div>
     </div>
   );

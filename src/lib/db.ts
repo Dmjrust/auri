@@ -1013,3 +1013,49 @@ export async function fetchAdminAlerts(days = 60): Promise<AdminAlert[]> {
   // Ordena por mais urgente primeiro
   return alerts.sort((a, b) => b.daysSince - a.daysSince).slice(0, 20);
 }
+
+// ── Development Milestones ────────────────────────────────────────────────────
+
+export interface MilestoneRecord {
+  milestone_key: string;
+  status: 'presente' | 'ausente' | 'nao_verificado';
+  checked_at: string | null;
+  notes: string | null;
+}
+
+export async function fetchDevelopmentMilestones(
+  patientId: string
+): Promise<Record<string, MilestoneRecord>> {
+  const { data, error } = await supabase
+    .from('development_milestones')
+    .select('milestone_key, status, checked_at, notes')
+    .eq('patient_id', patientId);
+  if (error) throw error;
+  const map: Record<string, MilestoneRecord> = {};
+  (data || []).forEach((r: any) => { map[r.milestone_key] = r; });
+  return map;
+}
+
+export async function upsertMilestone(params: {
+  patientId: string;
+  doctorId: string;
+  milestoneKey: string;
+  status: 'presente' | 'ausente' | 'nao_verificado';
+  consultationId?: string | null;
+}): Promise<void> {
+  const { patientId, doctorId, milestoneKey, status, consultationId } = params;
+  const { error } = await supabase
+    .from('development_milestones')
+    .upsert(
+      {
+        patient_id:      patientId,
+        doctor_id:       doctorId,
+        milestone_key:   milestoneKey,
+        status,
+        checked_at:      status !== 'nao_verificado' ? new Date().toISOString() : null,
+        consultation_id: consultationId ?? null,
+      },
+      { onConflict: 'patient_id,milestone_key' }
+    );
+  if (error) throw error;
+}
