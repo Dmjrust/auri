@@ -2360,18 +2360,27 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
 
   // Drafts: awaiting doctor confirmation
   const draftConsultations = consultations.filter(c => c.status === 'draft');
-  // Past (completed/scheduled) — excludes drafts and future appointments
-  const todayMidnightOuter = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
-  const pastConsultations = consultations.filter(c => {
-    if (c.status === 'draft') return false;
-    const [y, m, d] = c.scheduled_at.slice(0, 10).split('-').map(Number);
-    return (todayMidnightOuter.getTime() - new Date(y, m - 1, d).getTime()) / 86400000 >= 0;
-  });
+  // Apenas consultas confirmadas (status='completed') — agendamentos gerenciados pela Agenda
+  const pastConsultations = consultations.filter(c => c.status === 'completed');
 
   const lastConsult = pastConsultations[0];
 
-  // Obter última medida (peso, altura, perímetro cefálico) de growth_records ou consultas
-  const lastMeasurement = growthRecords.length > 0 ? growthRecords[growthRecords.length - 1] : null;
+  // Última medida: growth_records primeiro; fallback para sum_peso/sum_altura do prontuário mais recente
+  const lastMeasurement = (() => {
+    if (growthRecords.length > 0) return growthRecords[growthRecords.length - 1];
+    const parseM = (val: string) => { const m = val?.match(/[\d]+[.,]?[\d]*/); return m ? parseFloat(m[0].replace(',', '.')) : undefined; };
+    for (const c of pastConsultations) {
+      const weight = parseM(c.summary?.peso || '');
+      const height = parseM(c.summary?.altura || '');
+      const hc     = parseM(c.summary?.perimetro_cefalico || '');
+      if (weight || height || hc) {
+        const bd = new Date(patient.birth_date), cd = new Date(c.scheduled_at);
+        const month = Math.max(0, (cd.getFullYear() - bd.getFullYear()) * 12 + (cd.getMonth() - bd.getMonth()));
+        return { month, weight, height, hc, date: c.scheduled_at.slice(0, 10) };
+      }
+    }
+    return null;
+  })();
   const pend = pendingVaccinesCount;
 
   return (
@@ -3604,6 +3613,25 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, con
     }
   }
 
+  async function handleSaveDraft() {
+    if (!patient) { onSave(); return; }
+    setSaving(true);
+    setSaveError('');
+    const edited = buildEdited();
+    try {
+      if (draftId) {
+        await db.updateDraftConsultation(draftId, edited);
+      } else {
+        await db.saveDraftConsultation(patient.id, edited, recTime, consultType);
+      }
+      onSave();
+    } catch (e: any) {
+      setSaveError(e?.message || 'Erro ao salvar rascunho. Tente novamente.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const taStyle: React.CSSProperties = {
     width: '100%', fontSize: 14, lineHeight: 1.6,
     padding: '8px 10px', border: `1px solid ${BO}`, borderRadius: 6,
@@ -3749,7 +3777,9 @@ function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, con
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-          <Btn variant="secondary" size="lg"><DownloadSimple size={16} /> Exportar PDF</Btn>
+          <Btn variant="secondary" size="lg" onClick={handleSaveDraft} disabled={saving}>
+            {saving ? 'Salvando…' : 'Salvar como rascunho'}
+          </Btn>
           <Btn size="lg" onClick={handleSave} disabled={saving}>
             {saving ? 'Confirmando…' : <><CheckCircle size={16} /> {draftId ? 'Confirmar prontuário' : 'Salvar no histórico'}</>}
           </Btn>

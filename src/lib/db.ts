@@ -239,6 +239,34 @@ export async function confirmDraftConsultation(
   }
 }
 
+// ── Update draft consultation (keeps status = 'draft', saves edited summary) ──
+export async function updateDraftConsultation(
+  draftId: string,
+  summary: StructuredSummary,
+): Promise<void> {
+  const { error } = await supabase
+    .from('consultations')
+    .update({
+      chief_complaint:          summary.queixa_principal,
+      diagnosis:                summary.hipoteses[0] || '',
+      plan:                     summary.conduta,
+      anamnesis:                summary.hda,
+      physical_exam:            summary.exame_fisico,
+      sum_queixa_principal:     summary.queixa_principal,
+      sum_hda:                  summary.hda,
+      sum_exame_fisico:         summary.exame_fisico,
+      sum_hipoteses:            summary.hipoteses,
+      sum_conduta:              summary.conduta,
+      sum_retorno:              summary.retorno,
+      sum_peso:                 summary.peso,
+      sum_altura:               summary.altura,
+      sum_perimetro_cefalico:   summary.perimetro_cefalico,
+      sum_vacinas_mencionadas:  summary.vacinas_mencionadas,
+    })
+    .eq('id', draftId);
+  if (error) throw error;
+}
+
 // ── Create Appointment ────────────────────────────────────────────────────────
 export async function createAppointment(input: {
   patient_id: string;
