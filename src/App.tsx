@@ -2313,7 +2313,7 @@ function PrimeiraConsultaCard({ patientId, refetchTrigger = 0 }: { patientId: st
 }
 
 // ─── PATIENT DETAIL ───────────────────────────────────────────────────────────
-function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; refetchTrigger?: number }) {
+function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTrigger = 0 }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; onOpenDraft: (draft: Consultation) => void; refetchTrigger?: number }) {
   const [tab, setTab] = useState('Resumo');
   const [selectedConsult, setSelectedConsult] = useState<Consultation | null>(null);
   const [consultations, setConsultations] = useState<Consultation[]>([]);
@@ -2890,54 +2890,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
 
         {tab === 'Consultas' && (
           selectedConsult
-            ? selectedConsult.status === 'draft'
-              ? (
-                /* ── Draft review panel ─────────────────────────────────── */
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-                    <button onClick={() => setSelectedConsult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 6, color: MU, fontSize: 13 }}>
-                      <CaretLeft size={14} /> Voltar
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', background: WARNL, border: `1.5px solid ${WARN}`, borderRadius: 10, marginBottom: 20 }}>
-                    <Warning size={18} color={WARN} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: INK }}>Rascunho aguardando confirmação</div>
-                      <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>Salvo automaticamente em {fmtDateTime(selectedConsult.scheduled_at)}. Revise e confirme para registrar no histórico.</div>
-                    </div>
-                  </div>
-                  <Card style={{ marginBottom: 16 }}>
-                    <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <FileText size={15} color={P} /><span style={{ fontWeight: 600, fontSize: 15 }}>Resumo estruturado</span>
-                    </div>
-                    {[
-                      { label: 'Queixa principal', val: selectedConsult.summary.queixa_principal },
-                      { label: 'HDA', val: selectedConsult.summary.hda },
-                      { label: 'Exame físico', val: selectedConsult.summary.exame_fisico },
-                      { label: 'Hipóteses', val: selectedConsult.summary.hipoteses.length > 0 ? <>{selectedConsult.summary.hipoteses.map((h, i) => <div key={i}>• {h}</div>)}</> : '—' },
-                      { label: 'Conduta', val: selectedConsult.summary.conduta },
-                      { label: 'Retorno', val: selectedConsult.summary.retorno },
-                    ].map(({ label, val }) => val && String(val).trim() ? (
-                      <div key={label} style={{ padding: '12px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16 }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>{label}</span>
-                        <span style={{ fontSize: 14, lineHeight: 1.6 }}>{val}</span>
-                      </div>
-                    ) : null)}
-                  </Card>
-                  <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-                    <Btn variant="secondary" onClick={() => setSelectedConsult(null)}>Cancelar</Btn>
-                    <Btn onClick={async () => {
-                      try {
-                        await db.confirmDraftConsultation(selectedConsult.id, patient.id, selectedConsult.summary, selectedConsult.duration_minutes * 60, patient.birth_date);
-                        const updated = await db.fetchConsultations(patient.id);
-                        setConsultations(updated);
-                        setSelectedConsult(null);
-                      } catch (e) { console.error(e); }
-                    }}><CheckCircle size={15} /> Confirmar prontuário</Btn>
-                  </div>
-                </div>
-              )
-              : <RequireRole roles={['medico']} onBack={() => setSelectedConsult(null)}><ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} /></RequireRole>
+            ? <RequireRole roles={['medico']} onBack={() => setSelectedConsult(null)}><ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} /></RequireRole>
             : (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
@@ -2954,7 +2907,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                       <Warning size={12} color={WARN} /> {draftConsultations.length} rascunho{draftConsultations.length !== 1 ? 's' : ''} aguardando confirmação
                     </div>
                     {draftConsultations.map(c => (
-                      <Card key={c.id} style={{ marginBottom: 8, cursor: 'pointer', border: `1.5px solid ${WARN}40`, background: WARNL }} onClick={() => setSelectedConsult(c)}>
+                      <Card key={c.id} style={{ marginBottom: 8, cursor: 'pointer', border: `1.5px solid ${WARN}40`, background: WARNL }} onClick={() => onOpenDraft(c)}>
                         <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
                           <div style={{ width: 40, height: 40, borderRadius: 8, background: `${WARN}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={18} color={WARN} /></div>
                           <div style={{ flex: 1 }}>
@@ -5123,7 +5076,18 @@ export default function App() {
               </RequireRole>
             )}
             {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
-            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} refetchTrigger={refetchTrigger} />}
+            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} onOpenDraft={async (draft) => {
+                setRealSummary(draft.summary);
+                setRealTranscript('');
+                setDraftConsultationId(draft.id);
+                setConsultType(draft.type as 'retorno' | 'primeira vez');
+                setRecTime(draft.duration_minutes * 60);
+                const anamnese = draft.type === 'primeira vez'
+                  ? await db.fetchAnamnesePrimeiraConsultaByPatient(activePatient.id).catch(() => null)
+                  : null;
+                setRealAnamnese(anamnese);
+                setFlow('done');
+              }} refetchTrigger={refetchTrigger} />}
             {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} />}
             {screen === 'painel'   && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><PainelPage go={go} setActivePatient={setActivePatient} /></RequireRole>}
             {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} /></RequireRole>}
