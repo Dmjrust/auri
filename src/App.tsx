@@ -1062,7 +1062,7 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                   patient={patients.find((p: Patient) => p.id === appt.patient_id)}
                   briefing={dayBriefing[appt.patient_id]}
                   defaultExpanded={appt.id === nextApptId}
-                  onStart={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
+                  onStart={() => { db.updateAppointment(appt.id, { status: 'in_progress' }).catch(() => {}); const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
                   onRecord={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
                 />
               ));
