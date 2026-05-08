@@ -356,6 +356,7 @@ export async function fetchTodayAppointments() {
     .select('id, scheduled_at, status, type, patient_id, patients(full_name, birth_date, patient_guardians(name, phone, is_primary))')
     .gte('scheduled_at', today + 'T00:00:00')
     .lte('scheduled_at', today + 'T23:59:59')
+    .neq('status', 'cancelled')
     .order('scheduled_at', { ascending: true });
   if (error) return [];
   return (data || []).map((c: any) => {
@@ -659,7 +660,7 @@ export async function fetchDashboardStats(): Promise<{
   const [consResult, patResult, apptResult] = await Promise.all([
     supabase.from('consultations').select('id', { count: 'exact', head: true }).eq('doctor_id', user.id).eq('status', 'completed'),
     supabase.from('patients').select('id', { count: 'exact', head: true }).eq('doctor_id', user.id).gte('created_at', monthStart),
-    supabase.from('consultations')
+    supabase.from('appointments')
       .select('patient_id, scheduled_at, patients(full_name)')
       .eq('doctor_id', user.id)
       .eq('status', 'scheduled')
