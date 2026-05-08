@@ -981,22 +981,51 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
     return `há ${Math.floor(diff / 86400)}d`;
   };
 
+  const nextPending = todayAppts.find(a => a.status !== 'completed' && a.status !== 'cancelled');
+  const firstName = doctorName.toLowerCase().includes('dr.') || doctorName.toLowerCase().startsWith('dr ')
+    ? doctorName.split(' ').slice(1).join(' ').split(' ')[0]
+    : doctorName.split(' ')[0];
+
   return (
     <div>
       {/* ── Header ── */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 32, fontWeight: 500, color: INK, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-          {greeting}, {doctorName.toLowerCase().includes('dr.') || doctorName.toLowerCase().startsWith('dr ') ? doctorName.split(' ').slice(1).join(' ').split(' ')[0] : doctorName.split(' ')[0]}
-        </h1>
-        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const }}>
-          <p style={{ margin: 0, color: MU, fontSize: 14 }}>
-            {todayAppts.length === 0
-              ? 'Nenhuma consulta hoje.'
-              : `Você tem ${todayAppts.length} consulta${todayAppts.length !== 1 ? 's' : ''} hoje — ${completedToday} realizada${completedToday !== 1 ? 's' : ''}.`}
-          </p>
-          <a href="#" onClick={e => { e.preventDefault(); go('agenda'); }} style={{ fontSize: 13, color: P, fontWeight: 500, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' as const }}>
-            Ver agenda da semana <CaretRight size={13} />
-          </a>
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 8 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 32, fontWeight: 500, color: INK, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+            {greeting}, {firstName}
+          </h1>
+          <p style={{ margin: '4px 0 0', color: MU, fontSize: 13 }}>{todayStr}</p>
+        </div>
+        <a href="#" onClick={e => { e.preventDefault(); go('agenda'); }} style={{ fontSize: 13, color: P, fontWeight: 500, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' as const }}>
+          Ver agenda da semana <CaretRight size={13} />
+        </a>
+      </div>
+
+      {/* ── KPI strip ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
+        {/* Consultas hoje */}
+        <div style={{ background: PL, border: `1px solid ${P}20`, borderRadius: 12, padding: isMobile ? '12px 14px' : '16px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>Hoje</div>
+          <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, color: P, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' as const }}>{todayAppts.length}</div>
+          <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>consulta{todayAppts.length !== 1 ? 's' : ''} agendada{todayAppts.length !== 1 ? 's' : ''}</div>
+        </div>
+        {/* Realizadas */}
+        <div style={{ background: completedToday > 0 ? SUCL : '#fff', border: `1px solid ${completedToday > 0 ? SUC+'30' : BO}`, borderRadius: 12, padding: isMobile ? '12px 14px' : '16px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>Realizadas</div>
+          <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, color: completedToday > 0 ? SUC : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' as const }}>{completedToday}</div>
+          <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>de {todayAppts.length} hoje</div>
+        </div>
+        {/* Prioridades */}
+        <div style={{ background: totalPrioridades > 0 ? DESL : SUCL, border: `1px solid ${totalPrioridades > 0 ? DES+'30' : SUC+'30'}`, borderRadius: 12, padding: isMobile ? '12px 14px' : '16px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>Prioridades</div>
+          <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, color: totalPrioridades > 0 ? DES : SUC, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' as const }}>{totalPrioridades}</div>
+          <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>{totalPrioridades === 0 ? 'tudo em dia ✓' : `pendência${totalPrioridades !== 1 ? 's' : ''}`}</div>
+        </div>
+        {/* Próxima */}
+        <div style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 12, padding: isMobile ? '12px 14px' : '16px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>Próxima</div>
+          <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, color: nextPending ? P : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' as const }}>{nextPending?.time || '—'}</div>
+          <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>{nextPending ? nextPending.patient_name.split(' ')[0] : 'sem pendentes'}</div>
         </div>
       </div>
 
@@ -1058,175 +1087,71 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                 <span style={{ fontSize: 14, color: MU }}>Sem pendências críticas hoje</span>
               </div>
             ) : (
-              <div>
-                {/* Retornos vencidos */}
-                {displayedOverdueAppts.length > 0 && (() => {
-                  const isLast = displayedOverdueVaccPatients.length === 0 && displayedFirstTimePatients.length === 0;
-                  const expanded = expandedPriority === 'retorno';
-                  const handleClick = () => {
-                    if (displayedOverdueAppts.length === 1) {
-                      navToPatient(displayedOverdueAppts[0].patient_id);
-                    } else {
-                      setExpandedPriority(expanded ? null : 'retorno');
-                    }
-                  };
-                  return (
-                    <div style={{ borderBottom: isLast && !expanded ? 'none' : `1px solid ${BO}` }}>
-                      <div onClick={handleClick}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', cursor: 'pointer' }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = DESL}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: DES, flexShrink: 0 }} />
-                        <span style={{ flex: 1, fontSize: 14 }}>
-                          <strong style={{ color: DES }}>{displayedOverdueAppts.length}</strong> retorno{displayedOverdueAppts.length !== 1 ? 's' : ''} vencido{displayedOverdueAppts.length !== 1 ? 's' : ''}
-                        </span>
-                        {displayedOverdueAppts.length === 1 ? (
-                          <>
-                            <button onClick={e => { e.stopPropagation(); dismissPriority('retorno', displayedOverdueAppts[0].patient_id); }}
-                              style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '2px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
-                              Ignorar
-                            </button>
-                            <CaretRight size={13} color={MU} />
-                          </>
-                        ) : (
-                          <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
-                        )}
-                      </div>
-                      {expanded && (
-                        <div style={{ borderTop: `1px solid ${BO}`, background: `${DES}06` }}>
-                          {displayedOverdueAppts.map(a => {
-                            const daysDiff = Math.floor((new Date().getTime() - new Date(a.scheduled_at).getTime()) / 86400000);
-                            return (
-                              <div key={a.patient_id}
-                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px 10px 36px', borderBottom: `1px solid ${BO}` }}>
-                                <span style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer' }} onClick={() => navToPatient(a.patient_id)}>{a.patient_name}</span>
-                                <span style={{ fontSize: 12, color: DES, flexShrink: 0 }}>{daysDiff}d em atraso</span>
-                                <button onClick={() => { navToPatient(a.patient_id); go('agenda'); }}
-                                  style={{ background: `${P}12`, border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: P, cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}>
-                                  Agendar
-                                </button>
-                                <button onClick={() => dismissPriority('retorno', a.patient_id)}
-                                  style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
-                                  Ignorar
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+              <div style={{ padding: '16px 20px' }}>
+                {/* ── 3 chips visuais ── */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: expandedPriority ? 16 : 0 }}>
+                  {/* Retornos vencidos */}
+                  <div onClick={() => setExpandedPriority(expandedPriority === 'retorno' ? null : 'retorno')}
+                    style={{ border: `1.5px solid ${displayedOverdueAppts.length > 0 ? DES+'40' : BO}`, borderRadius: 10, padding: '12px 14px', background: displayedOverdueAppts.length > 0 ? DESL : '#fff', cursor: displayedOverdueAppts.length > 0 ? 'pointer' : 'default', textAlign: 'center' as const, transition: 'opacity 0.15s', opacity: expandedPriority && expandedPriority !== 'retorno' ? 0.5 : 1 }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: displayedOverdueAppts.length > 0 ? DES : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>{displayedOverdueAppts.length}</div>
+                    <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>retorno{displayedOverdueAppts.length !== 1 ? 's' : ''} vencido{displayedOverdueAppts.length !== 1 ? 's' : ''}</div>
+                  </div>
+                  {/* Vacinas em atraso */}
+                  <div onClick={() => setExpandedPriority(expandedPriority === 'vacinas' ? null : 'vacinas')}
+                    style={{ border: `1.5px solid ${displayedOverdueVaccPatients.length > 0 ? ACCENT+'40' : BO}`, borderRadius: 10, padding: '12px 14px', background: displayedOverdueVaccPatients.length > 0 ? ACCENTL : '#fff', cursor: displayedOverdueVaccPatients.length > 0 ? 'pointer' : 'default', textAlign: 'center' as const, transition: 'opacity 0.15s', opacity: expandedPriority && expandedPriority !== 'vacinas' ? 0.5 : 1 }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: displayedOverdueVaccPatients.length > 0 ? ACCENT : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>{displayedOverdueVaccPatients.length}</div>
+                    <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>paciente{displayedOverdueVaccPatients.length !== 1 ? 's' : ''} c/ vacina em atraso</div>
+                  </div>
+                  {/* Sem consulta */}
+                  <div onClick={() => setExpandedPriority(expandedPriority === 'sem-consulta' ? null : 'sem-consulta')}
+                    style={{ border: `1.5px solid ${displayedFirstTimePatients.length > 0 ? WARN+'40' : BO}`, borderRadius: 10, padding: '12px 14px', background: displayedFirstTimePatients.length > 0 ? WARNL : '#fff', cursor: displayedFirstTimePatients.length > 0 ? 'pointer' : 'default', textAlign: 'center' as const, transition: 'opacity 0.15s', opacity: expandedPriority && expandedPriority !== 'sem-consulta' ? 0.5 : 1 }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: displayedFirstTimePatients.length > 0 ? WARN : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>{displayedFirstTimePatients.length}</div>
+                    <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>sem consulta registrada</div>
+                  </div>
+                </div>
 
-                {/* Vacinas em atraso */}
-                {displayedOverdueVaccPatients.length > 0 && (() => {
-                  const isLast = displayedFirstTimePatients.length === 0;
-                  const expanded = expandedPriority === 'vacinas';
-                  const handleClick = () => {
-                    if (displayedOverdueVaccPatients.length === 1) {
-                      navToPatient(displayedOverdueVaccPatients[0].id);
-                    } else {
-                      setExpandedPriority(expanded ? null : 'vacinas');
-                    }
-                  };
-                  return (
-                    <div style={{ borderBottom: isLast && !expanded ? 'none' : `1px solid ${BO}` }}>
-                      <div onClick={handleClick}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', cursor: 'pointer' }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = ACCENTL}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: ACCENT, flexShrink: 0 }} />
-                        <span style={{ flex: 1, fontSize: 14 }}>
-                          <strong style={{ color: ACCENT }}>{displayedOverdueVaccPatients.length}</strong> paciente{displayedOverdueVaccPatients.length !== 1 ? 's' : ''} com vacinas em atraso
-                        </span>
-                        {displayedOverdueVaccPatients.length === 1 ? (
-                          <>
-                            <button onClick={e => { e.stopPropagation(); dismissPriority('vacinas', displayedOverdueVaccPatients[0].id); }}
-                              style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '2px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
-                              Ignorar
-                            </button>
-                            <CaretRight size={13} color={MU} />
-                          </>
-                        ) : (
-                          <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
-                        )}
-                      </div>
-                      {expanded && (
-                        <div style={{ borderTop: `1px solid ${BO}`, background: `${ACCENT}06` }}>
-                          {displayedOverdueVaccPatients.map(v => (
-                            <div key={v.id}
-                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px 10px 36px', borderBottom: `1px solid ${BO}` }}>
-                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer' }} onClick={() => navToPatient(v.id)}>{v.full_name}</span>
-                              <span style={{ fontSize: 12, color: ACCENT, flexShrink: 0 }}>{v.overdueCount} vacina{v.overdueCount !== 1 ? 's' : ''}</span>
-                              <button onClick={() => navToPatient(v.id)}
-                                style={{ background: `${ACCENT}18`, border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: ACCENT, cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}>
-                                Ver vacinas
-                              </button>
-                              <button onClick={() => dismissPriority('vacinas', v.id)}
-                                style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
-                                Ignorar
-                              </button>
-                            </div>
-                          ))}
+                {/* ── Detalhe expandido por chip ── */}
+                {expandedPriority === 'retorno' && displayedOverdueAppts.length > 0 && (
+                  <div style={{ background: DESL, borderRadius: 8, overflow: 'hidden' }}>
+                    {displayedOverdueAppts.map((a, i) => {
+                      const daysDiff = Math.floor((new Date().getTime() - new Date(a.scheduled_at).getTime()) / 86400000);
+                      return (
+                        <div key={a.patient_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: i < displayedOverdueAppts.length - 1 ? `1px solid ${DES}18` : 'none' }}>
+                          <span style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer', color: INK }} onClick={() => navToPatient(a.patient_id)}>{a.patient_name}</span>
+                          <span style={{ fontSize: 11, color: DES, flexShrink: 0 }}>{daysDiff}d em atraso</span>
+                          <button onClick={() => { navToPatient(a.patient_id); go('agenda'); }} style={{ background: `${P}14`, border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: P, cursor: 'pointer', fontWeight: 500 }}>Agendar</button>
+                          <button onClick={() => dismissPriority('retorno', a.patient_id)} style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, color: MU, cursor: 'pointer' }}>Ignorar</button>
                         </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Sem consulta registrada */}
-                {displayedFirstTimePatients.length > 0 && (() => {
-                  const expanded = expandedPriority === 'sem-consulta';
-                  const handleClick = () => {
-                    if (displayedFirstTimePatients.length === 1) {
-                      setActivePatient(displayedFirstTimePatients[0]); go('patient-detail');
-                    } else {
-                      setExpandedPriority(expanded ? null : 'sem-consulta');
-                    }
-                  };
-                  return (
-                    <div>
-                      <div onClick={handleClick}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', cursor: 'pointer' }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = WARNL}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: WARN, flexShrink: 0 }} />
-                        <span style={{ flex: 1, fontSize: 14 }}>
-                          <strong style={{ color: WARN }}>{displayedFirstTimePatients.length}</strong> paciente{displayedFirstTimePatients.length !== 1 ? 's' : ''} sem consulta registrada
-                        </span>
-                        {displayedFirstTimePatients.length === 1 ? (
-                          <>
-                            <button onClick={e => { e.stopPropagation(); dismissPriority('sem-consulta', displayedFirstTimePatients[0].id); }}
-                              style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '2px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
-                              Ignorar
-                            </button>
-                            <CaretRight size={13} color={MU} />
-                          </>
-                        ) : (
-                          <span style={{ fontSize: 12, color: MU, transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>›</span>
-                        )}
+                      );
+                    })}
+                  </div>
+                )}
+                {expandedPriority === 'vacinas' && displayedOverdueVaccPatients.length > 0 && (
+                  <div style={{ background: ACCENTL, borderRadius: 8, overflow: 'hidden' }}>
+                    {displayedOverdueVaccPatients.map((v, i) => (
+                      <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: i < displayedOverdueVaccPatients.length - 1 ? `1px solid ${ACCENT}18` : 'none' }}>
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer', color: INK }} onClick={() => navToPatient(v.id)}>{v.full_name}</span>
+                        <span style={{ fontSize: 11, color: ACCENT, flexShrink: 0 }}>{v.overdueCount} vacina{v.overdueCount !== 1 ? 's' : ''}</span>
+                        <button onClick={() => navToPatient(v.id)} style={{ background: `${ACCENT}18`, border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: ACCENT, cursor: 'pointer', fontWeight: 500 }}>Ver</button>
+                        <button onClick={() => dismissPriority('vacinas', v.id)} style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, color: MU, cursor: 'pointer' }}>Ignorar</button>
                       </div>
-                      {expanded && (
-                        <div style={{ borderTop: `1px solid ${BO}`, background: `${WARN}06` }}>
-                          {displayedFirstTimePatients.map(p => (
-                            <div key={p.id}
-                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px 10px 36px', borderBottom: `1px solid ${BO}` }}>
-                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer' }} onClick={() => { setActivePatient(p); go('patient-detail'); }}>{p.full_name}</span>
-                              <span style={{ fontSize: 12, color: WARN, flexShrink: 0 }}>sem consultas</span>
-                              <button onClick={() => { setActivePatient(p); go('patient-detail'); }}
-                                style={{ background: `${WARN}18`, border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: WARN, cursor: 'pointer', flexShrink: 0, fontWeight: 500 }}>
-                                Iniciar
-                              </button>
-                              <button onClick={() => dismissPriority('sem-consulta', p.id)}
-                                style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, color: MU, cursor: 'pointer', flexShrink: 0 }}>
-                                Ignorar
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
+                    ))}
+                  </div>
+                )}
+                {expandedPriority === 'sem-consulta' && displayedFirstTimePatients.length > 0 && (
+                  <div style={{ background: WARNL, borderRadius: 8, overflow: 'hidden' }}>
+                    {displayedFirstTimePatients.map((p, i) => (
+                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: i < displayedFirstTimePatients.length - 1 ? `1px solid ${WARN}18` : 'none' }}>
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, cursor: 'pointer', color: INK }} onClick={() => { setActivePatient(p); go('patient-detail'); }}>{p.full_name}</span>
+                        <button onClick={() => { setActivePatient(p); go('patient-detail'); }} style={{ background: `${WARN}20`, border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, color: WARN, cursor: 'pointer', fontWeight: 500 }}>Iniciar</button>
+                        <button onClick={() => dismissPriority('sem-consulta', p.id)} style={{ background: 'none', border: `1px solid ${BO}`, borderRadius: 4, padding: '3px 8px', fontSize: 11, color: MU, cursor: 'pointer' }}>Ignorar</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                  {hasDismissed && <button onClick={clearDismissedPriorities} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: MU, padding: '2px 0' }}>Restaurar ignorados</button>}
+                </div>
                 })()}
               </div>
             )}
@@ -1356,29 +1281,6 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
               </div>
             </Card>
           )}
-
-          {/* Atividade recente */}
-          <Card style={{ padding: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: recentActivity.length > 0 ? 14 : 0 }}>
-              <Clock size={15} color={MU} />
-              <span style={{ fontWeight: 500, fontSize: 15, fontFamily: '"Fraunces", Georgia, serif' }}>Atividade recente</span>
-            </div>
-            {recentActivity.length === 0 ? (
-              <div style={{ fontSize: 13, color: MU, textAlign: 'center' as const, padding: '12px 0' }}>Nenhuma atividade ainda</div>
-            ) : recentActivity.map((a, i) => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < recentActivity.length - 1 ? `1px solid ${BO}` : 'none' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: SUCL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <FileText size={13} color={SUC} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{a.patient_name}</div>
-                  <div style={{ fontSize: 11, color: MU, display: 'flex', alignItems: 'center', gap: 6, marginTop: 1 }}>
-                    <Pill type={a.type} /> {formatRelativeTime(a.date)}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </Card>
         </div>
       </div>
     </div>
