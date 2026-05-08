@@ -2360,7 +2360,7 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
 
   // Drafts: awaiting doctor confirmation
   const draftConsultations = consultations.filter(c => c.status === 'draft');
-  // Apenas consultas confirmadas (status='completed') — agendamentos gerenciados pela Agenda
+  // consultations agora é tabela exclusiva de prontuários clínicos — todos os completed são reais
   const pastConsultations = consultations.filter(c => c.status === 'completed');
 
   const lastConsult = pastConsultations[0];

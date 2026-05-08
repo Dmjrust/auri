@@ -276,18 +276,13 @@ export async function createAppointment(input: {
 }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Não autenticado');
-  const { error } = await supabase.from('consultations').insert({
-    patient_id: input.patient_id,
-    doctor_id: user.id,
-    scheduled_at: input.scheduled_at,
-    status: 'scheduled',
-    type: input.type,
+  const { error } = await supabase.from('appointments').insert({
+    patient_id:      input.patient_id,
+    doctor_id:       user.id,
+    scheduled_at:    input.scheduled_at,
+    status:          'scheduled',
+    type:            input.type,
     chief_complaint: input.chief_complaint || '',
-    duration_minutes: 0,
-    diagnosis: '', plan: '', prescription: '', anamnesis: '', physical_exam: '',
-    sum_queixa_principal: '', sum_hda: '', sum_exame_fisico: '',
-    sum_hipoteses: [], sum_conduta: '', sum_retorno: '',
-    sum_peso: '', sum_altura: '', sum_vacinas_mencionadas: [],
   });
   if (error) throw error;
 }
@@ -295,7 +290,7 @@ export async function createAppointment(input: {
 // ── Appointments ──────────────────────────────────────────────────────────────
 export async function fetchAppointmentsForWeek(from: string, to: string) {
   const { data, error } = await supabase
-    .from('consultations')
+    .from('appointments')
     .select('id, scheduled_at, status, type, chief_complaint, patient_id, patients(full_name, birth_date, patient_guardians(name, is_primary))')
     .gte('scheduled_at', from + 'T00:00:00')
     .lte('scheduled_at', to + 'T23:59:59')
@@ -334,12 +329,12 @@ export async function updateAppointment(id: string, input: {
   chief_complaint?: string;
   status?: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
 }): Promise<void> {
-  const { error } = await supabase.from('consultations').update(input).eq('id', id);
+  const { error } = await supabase.from('appointments').update(input).eq('id', id);
   if (error) throw error;
 }
 
 export async function cancelAppointment(id: string): Promise<void> {
-  const { error } = await supabase.from('consultations').update({ status: 'cancelled' }).eq('id', id);
+  const { error } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
   if (error) throw error;
 }
 
@@ -347,7 +342,7 @@ export async function cancelAppointment(id: string): Promise<void> {
 export async function fetchTodayAppointments() {
   const today = new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
-    .from('consultations')
+    .from('appointments')
     .select('id, scheduled_at, status, type, patient_id, patients(full_name, birth_date, patient_guardians(name, phone, is_primary))')
     .gte('scheduled_at', today + 'T00:00:00')
     .lte('scheduled_at', today + 'T23:59:59')
