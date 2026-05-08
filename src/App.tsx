@@ -1006,7 +1006,41 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
         {/* LEFT COLUMN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-          {/* 1. Prioridades */}
+          {/* 1. Consultas de hoje */}
+          <Card>
+            <SectionHeader
+              icon={CalendarBlank}
+              title={`Consultas de hoje${todayAppts.length > 0 ? ` (${completedToday}/${todayAppts.length})` : ''}`}
+              action="Ver agenda"
+              onAction={() => go('agenda')}
+            />
+            {todayAppts.length === 0 ? (
+              <div style={{ padding: '28px 20px', textAlign: 'center' as const }}>
+                <CalendarBlank size={28} color={BO} style={{ display: 'block', margin: '0 auto 10px' }} />
+                <div style={{ fontWeight: 500, fontSize: 15, color: INK, marginBottom: 4 }}>Nenhuma consulta hoje</div>
+                <div style={{ fontSize: 13, color: MU, marginBottom: 20 }}>Sua agenda está livre.</div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' as const }}>
+                  <Btn variant="secondary" onClick={() => go('agenda')}><CalendarBlank size={14} /> Ver agenda da semana</Btn>
+                  <Btn onClick={() => go('patients')}><Stethoscope size={14} /> Iniciar nova consulta</Btn>
+                </div>
+              </div>
+            ) : (() => {
+              const nextApptId = todayAppts.find(a => a.status !== 'completed')?.id;
+              return todayAppts.map((appt) => (
+                <TodayPatientCard
+                  key={appt.id}
+                  appt={appt}
+                  patient={patients.find((p: Patient) => p.id === appt.patient_id)}
+                  briefing={dayBriefing[appt.patient_id]}
+                  defaultExpanded={appt.id === nextApptId}
+                  onStart={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
+                  onRecord={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
+                />
+              ));
+            })()}
+          </Card>
+
+          {/* 2. Prioridades */}
           <Card style={{ border: totalPrioridades > 0 ? `1.5px solid ${DES}40` : `1px solid ${BO}` }}>
             <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Warning size={16} color={totalPrioridades > 0 ? DES : SUC} />
@@ -1196,40 +1230,6 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                 })()}
               </div>
             )}
-          </Card>
-
-          {/* 2. Consultas de hoje */}
-          <Card>
-            <SectionHeader
-              icon={CalendarBlank}
-              title={`Consultas de hoje${todayAppts.length > 0 ? ` (${completedToday}/${todayAppts.length})` : ''}`}
-              action="Ver agenda"
-              onAction={() => go('agenda')}
-            />
-            {todayAppts.length === 0 ? (
-              <div style={{ padding: '28px 20px', textAlign: 'center' as const }}>
-                <CalendarBlank size={28} color={BO} style={{ display: 'block', margin: '0 auto 10px' }} />
-                <div style={{ fontWeight: 500, fontSize: 15, color: INK, marginBottom: 4 }}>Nenhuma consulta hoje</div>
-                <div style={{ fontSize: 13, color: MU, marginBottom: 20 }}>Sua agenda está livre.</div>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' as const }}>
-                  <Btn variant="secondary" onClick={() => go('agenda')}><CalendarBlank size={14} /> Ver agenda da semana</Btn>
-                  <Btn onClick={() => go('patients')}><Stethoscope size={14} /> Iniciar nova consulta</Btn>
-                </div>
-              </div>
-            ) : (() => {
-              const nextApptId = todayAppts.find(a => a.status !== 'completed')?.id;
-              return todayAppts.map((appt) => (
-                <TodayPatientCard
-                  key={appt.id}
-                  appt={appt}
-                  patient={patients.find((p: Patient) => p.id === appt.patient_id)}
-                  briefing={dayBriefing[appt.patient_id]}
-                  defaultExpanded={appt.id === nextApptId}
-                  onStart={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
-                  onRecord={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
-                />
-              ));
-            })()}
           </Card>
 
           {/* 3. Alertas clínicos por paciente */}
