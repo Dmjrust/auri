@@ -92,7 +92,7 @@ function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) =
   const displayName = fullName || doctorName || 'Usuário';
   const displayRole = role === 'secretaria' ? 'Secretaria' : 'Pediatra';
   return (
-    <div style={{ width: 264, minHeight: '100vh', background: '#fff', borderRight: `1px solid ${BO}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+    <div style={{ width: 264, height: '100%', background: '#fff', borderRight: `1px solid ${BO}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       {/* Brand */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 14px 22px' }}>
         <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 44 }} />
@@ -232,7 +232,7 @@ function Layout({ children, screen, go, breadcrumb, onBack, doctorName, notifica
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: BG }}>
+    <div style={{ display: 'flex', height: '100vh', background: BG }}>
       <Sidebar screen={screen} go={go} doctorName={doctorName} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Header breadcrumb={breadcrumb} onBack={onBack} notifications={notifications} onNotificationClick={onNotificationClick} onClearNotifications={onClearNotifications} />
