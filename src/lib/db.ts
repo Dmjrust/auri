@@ -267,21 +267,31 @@ export async function updateDraftConsultation(
   if (error) throw error;
 }
 
+// ── Detect consultation type from patient history ─────────────────────────────
+export async function detectConsultType(patientId: string): Promise<'retorno' | 'primeira vez'> {
+  const { count } = await supabase
+    .from('consultations')
+    .select('id', { count: 'exact', head: true })
+    .eq('patient_id', patientId)
+    .eq('status', 'completed');
+  return (count ?? 0) > 0 ? 'retorno' : 'primeira vez';
+}
+
 // ── Create Appointment ────────────────────────────────────────────────────────
 export async function createAppointment(input: {
   patient_id: string;
   scheduled_at: string;
-  type: 'retorno' | 'primeira vez';
   chief_complaint?: string;
 }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Não autenticado');
+  const type = await detectConsultType(input.patient_id);
   const { error } = await supabase.from('appointments').insert({
     patient_id:      input.patient_id,
     doctor_id:       user.id,
     scheduled_at:    input.scheduled_at,
     status:          'scheduled',
-    type:            input.type,
+    type,
     chief_complaint: input.chief_complaint || '',
   });
   if (error) throw error;

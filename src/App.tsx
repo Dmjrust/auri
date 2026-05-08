@@ -2418,12 +2418,12 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
             <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
               <Btn variant="secondary" onClick={() => window.print()}><DownloadSimple size={15} /> Imprimir</Btn>
               <Btn variant="secondary"><User size={15} /> Compartilhar</Btn>
-              <Btn onClick={() => onStartConsult(consultations.length === 0 ? 'primeira vez' : 'retorno')}><Stethoscope size={15} /> Iniciar consulta</Btn>
+              <Btn onClick={() => onStartConsult(consultations.some(c => c.status === 'completed') ? 'retorno' : 'primeira vez')}><Stethoscope size={15} /> Iniciar consulta</Btn>
             </div>
           )}
         </div>
         {isMobile && (
-          <Btn onClick={() => onStartConsult(consultations.length === 0 ? 'primeira vez' : 'retorno')} style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
+          <Btn onClick={() => onStartConsult(consultations.some(c => c.status === 'completed') ? 'retorno' : 'primeira vez')} style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
             <Stethoscope size={15} /> Iniciar consulta
           </Btn>
         )}
@@ -3810,7 +3810,6 @@ function NewAppointmentModal({ onClose, onSaved, defaultDate }: { onClose: () =>
   const [patientId, setPatientId] = useState('');
   const [date, setDate] = useState(defaultDate);
   const [time, setTime] = useState('09:00');
-  const [type, setType] = useState<'retorno' | 'primeira vez'>('retorno');
   const [complaint, setComplaint] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -3819,7 +3818,7 @@ function NewAppointmentModal({ onClose, onSaved, defaultDate }: { onClose: () =>
     if (!patientId) { setError('Selecione um paciente.'); return; }
     setSaving(true); setError('');
     try {
-      await db.createAppointment({ patient_id: patientId, scheduled_at: new Date(`${date}T${time}:00`).toISOString(), type, chief_complaint: complaint });
+      await db.createAppointment({ patient_id: patientId, scheduled_at: new Date(`${date}T${time}:00`).toISOString(), chief_complaint: complaint });
       onSaved();
     } catch (e: any) {
       setError(e.message || 'Erro ao agendar.');
@@ -3857,20 +3856,6 @@ function NewAppointmentModal({ onClose, onSaved, defaultDate }: { onClose: () =>
           </div>
         </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <label style={labelStyle}>Tipo de consulta</label>
-          <div style={{ display: 'flex', gap: 10 }}>
-            {(['retorno', 'primeira vez'] as const).map(opt => (
-              <button key={opt} onClick={() => setType(opt)} style={{
-                flex: 1, padding: '10px 0', border: `2px solid ${type === opt ? P : BO}`, borderRadius: 8,
-                background: type === opt ? PL : '#fff', color: type === opt ? P : MU,
-                fontWeight: type === opt ? 600 : 400, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-                textTransform: 'capitalize', transition: 'all 0.15s',
-              }}>{opt}</button>
-            ))}
-          </div>
-        </div>
-
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Motivo / observação (opcional)</label>
           <input value={complaint} onChange={e => setComplaint(e.target.value)} placeholder="Ex: Retorno pós-antibiótico" style={inputStyle} />
@@ -3896,7 +3881,6 @@ function AppointmentDetailModal({
   const [editing, setEditing] = useState(false);
   const [date, setDate] = useState(appt.date);
   const [time, setTime] = useState(appt.time);
-  const [type, setType] = useState<'retorno' | 'primeira vez'>(appt.type);
   const [complaint, setComplaint] = useState(appt.chief_complaint || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -3911,7 +3895,7 @@ function AppointmentDetailModal({
   async function save() {
     setSaving(true); setError('');
     try {
-      await db.updateAppointment(appt.id, { scheduled_at: new Date(`${date}T${time}:00`).toISOString(), type, chief_complaint: complaint });
+      await db.updateAppointment(appt.id, { scheduled_at: new Date(`${date}T${time}:00`).toISOString(), chief_complaint: complaint });
       onUpdate();
     } catch (e: any) { setError(e.message || 'Erro ao salvar.'); setSaving(false); }
   }
@@ -4000,14 +3984,6 @@ function AppointmentDetailModal({
                 </div>
               </div>
               <div>
-                <label style={labelSt}>Tipo de consulta</label>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {(['retorno', 'primeira vez'] as const).map(opt => (
-                    <button key={opt} onClick={() => setType(opt)} style={{ flex: 1, padding: '10px 0', border: `2px solid ${type === opt ? P : BO}`, borderRadius: 8, background: type === opt ? PL : '#fff', color: type === opt ? P : MU, fontWeight: type === opt ? 600 : 400, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' as const }}>{opt}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
                 <label style={labelSt}>Motivo / observação</label>
                 <input value={complaint} onChange={e => setComplaint(e.target.value)} placeholder="Ex: Retorno pós-antibiótico" style={inputSt} />
               </div>
@@ -4054,7 +4030,7 @@ function AppointmentDetailModal({
   );
 }
 
-function AgendaPage({ go, setActivePatient, onApptStart }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onApptStart?: (type: 'retorno' | 'primeira vez') => void }) {
+function AgendaPage({ go, setActivePatient }: { go: (s: string) => void; setActivePatient: (p: Patient) => void }) {
   const { patients: allPatients } = usePatients();
   const todayIso = new Date().toISOString().slice(0, 10);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -4118,10 +4094,6 @@ function AgendaPage({ go, setActivePatient, onApptStart }: { go: (s: string) => 
   }
 
   function handleStartConsult(appt: any) {
-    // Propagate appointment type so the consultation flow shows the correct badge/form
-    const apptType: 'retorno' | 'primeira vez' = appt.type === 'primeira vez' ? 'primeira vez' : 'retorno';
-    onApptStart?.(apptType);
-    // Find patient and navigate (patients already in context — no extra fetch)
     const p = allPatients.find(p => p.id === appt.patient_id);
     if (p) { setActivePatient(p); go('patient-detail'); }
     setSelectedAppt(null);
@@ -5014,8 +4986,6 @@ export default function App() {
   const [activePatient, setActivePatient] = useState<Patient | null>(null);
   const [flow, setFlow] = useState<'consent'|'recording'|'processing'|'done'|null>(null);
   const [consultType, setConsultType] = useState<'retorno' | 'primeira vez'>('retorno');
-  // Type set by AgendaPage when starting consult from an appointment — takes precedence over PatientDetail heuristic
-  const [activeApptType, setActiveApptType] = useState<'retorno' | 'primeira vez' | null>(null);
   const [recTime, setRecTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [realSummary, setRealSummary] = useState<StructuredSummary | null>(null);
@@ -5153,8 +5123,8 @@ export default function App() {
               </RequireRole>
             )}
             {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
-            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(activeApptType ?? type); setActiveApptType(null); setFlow('consent'); }} refetchTrigger={refetchTrigger} />}
-            {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onApptStart={(t) => setActiveApptType(t)} />}
+            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} refetchTrigger={refetchTrigger} />}
+            {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} />}
             {screen === 'painel'   && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><PainelPage go={go} setActivePatient={setActivePatient} /></RequireRole>}
             {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} /></RequireRole>}
           </Layout>
