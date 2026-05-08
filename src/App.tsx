@@ -1152,7 +1152,6 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
                   {hasDismissed && <button onClick={clearDismissedPriorities} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: MU, padding: '2px 0' }}>Restaurar ignorados</button>}
                 </div>
-                })()}
               </div>
             )}
           </Card>
