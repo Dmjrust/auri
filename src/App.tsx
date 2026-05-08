@@ -2929,8 +2929,9 @@ function PatientDetailPage({ patient, go, onStartConsult, refetchTrigger = 0 }: 
                     <Btn onClick={async () => {
                       try {
                         await db.confirmDraftConsultation(selectedConsult.id, patient.id, selectedConsult.summary, selectedConsult.duration_minutes * 60, patient.birth_date);
+                        const updated = await db.fetchConsultations(patient.id);
+                        setConsultations(updated);
                         setSelectedConsult(null);
-                        setRefetchTrigger(t => t + 1);
                       } catch (e) { console.error(e); }
                     }}><CheckCircle size={15} /> Confirmar prontuário</Btn>
                   </div>
