@@ -3935,13 +3935,11 @@ function AgendaPage({ go, setActivePatient }: { go: (s: string) => void; setActi
 
   // Appointment card colors
   function apptBg(a: any) {
-    if (a.status === 'in_progress') return `${ACCENT}20`;
     if (a.status === 'completed') return `${SUC}12`;
     if (a.type === 'primeira vez') return `${ACCENT}14`;
     return `${P}10`;
   }
   function apptBorder(a: any) {
-    if (a.status === 'in_progress') return ACCENT;
     if (a.status === 'completed') return SUC;
     if (a.type === 'primeira vez') return ACCENT;
     return P;
@@ -4047,12 +4045,6 @@ function AgendaPage({ go, setActivePatient }: { go: (s: string) => void; setActi
                       <div style={{ borderRadius: 8, padding: '8px 12px', background: apptBg(appt), borderLeft: `3px solid ${apptBorder(appt)}`, minHeight: 60, boxSizing: 'border-box' as const, transition: 'opacity 0.1s' }}
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.8'}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
-                        {appt.status === 'in_progress' && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: ACCENT, fontWeight: 600, marginBottom: 2 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: ACCENT, display: 'inline-block', animation: 'live-pulse 2s ease-in-out infinite' }} />
-                            ao vivo
-                          </div>
-                        )}
                         <div style={{ fontWeight: 600, fontSize: 13, color: INK }}>{appt.patient_name} · {appt.age}</div>
                         <div style={{ fontSize: 11, color: MU, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
                           {appt.chief_complaint || appt.type}
