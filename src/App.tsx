@@ -830,7 +830,7 @@ const SectionHeader = ({ icon: Icon, title, action, onAction }: { icon: any; tit
   </div>
 );
 
-function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; user: any; doctorName: string }) {
+function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName: doctorNameProp }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; user: any; doctorName: string }) {
   // patients come from shared PatientContext (no individual fetch needed here)
   const { patients } = usePatients();
   const [todayAppts, setTodayAppts] = useState<any[]>([]);
@@ -1062,7 +1062,7 @@ function DashboardPage({ go, setActivePatient, user, doctorName: doctorNameProp 
                   patient={patients.find((p: Patient) => p.id === appt.patient_id)}
                   briefing={dayBriefing[appt.patient_id]}
                   defaultExpanded={appt.id === nextApptId}
-                  onStart={() => { db.updateAppointment(appt.id, { status: 'in_progress' }).catch(() => {}); const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
+                  onStart={() => { db.updateAppointment(appt.id, { status: 'in_progress' }).catch(() => {}); const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); onStartConsult(appt.type as 'retorno' | 'primeira vez'); } }}
                   onRecord={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
                 />
               ));
@@ -4943,7 +4943,7 @@ export default function App() {
     ? <LoginScreen onBack={() => setShowLogin(false)} />
     : <LandingPage onEnter={() => setShowLogin(true)} />;
 
-  if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => setFlow(null)} />;
+  if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => { if (screen === 'dashboard') { go('patient-detail'); } else { setFlow(null); } }} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} />;
   if (flow === 'processing') return <ProcessingScreen consultType={consultType} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese) => {
     setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setFlow('done');
@@ -4973,7 +4973,7 @@ export default function App() {
               <RequireRole roles={['medico']}
                 fallback={<SecretaryDashboard go={go} setActivePatient={setActivePatient} onNewPatient={() => go('patients')} />}
               >
-                <DashboardPage go={go} setActivePatient={setActivePatient} user={user} doctorName={doctorName} />
+                <DashboardPage go={go} setActivePatient={setActivePatient} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} user={user} doctorName={doctorName} />
               </RequireRole>
             )}
             {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
