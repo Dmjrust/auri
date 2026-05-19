@@ -830,7 +830,7 @@ const SectionHeader = ({ icon: Icon, title, action, onAction }: { icon: any; tit
   </div>
 );
 
-function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName: doctorNameProp }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez', apptId?: string) => void; user: any; doctorName: string }) {
+function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName: doctorNameProp, specialty = 'Pediatria' }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez', apptId?: string) => void; user: any; doctorName: string; specialty?: string }) {
   // patients come from shared PatientContext (no individual fetch needed here)
   const { patients } = usePatients();
   const [todayAppts, setTodayAppts] = useState<any[]>([]);
@@ -894,9 +894,9 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
     }
   }, [recentActivity, patients]);
 
-  // Batch vaccine overdue calc — single query replaces N+1 per-patient fetches
+  // Batch vaccine overdue calc — Pediatria only
   useEffect(() => {
-    if (patients.length === 0) return;
+    if (patients.length === 0 || specialty !== 'Pediatria') return;
     db.fetchAllVaccinesForDoctor().then(vaccMap => {
       const results: { id: string; full_name: string; overdueCount: number; overdueNames: string[] }[] = [];
       const now = new Date();
@@ -917,7 +917,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
       });
       setOverdueVaccPatients(results);
     }).catch(() => {});
-  }, [patients]);
+  }, [patients, specialty]);
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? 'Bom dia' : now.getHours() < 18 ? 'Boa tarde' : 'Boa noite';
@@ -1101,12 +1101,19 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
                     <div style={{ fontSize: 28, fontWeight: 700, color: displayedOverdueAppts.length > 0 ? DES : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>{displayedOverdueAppts.length}</div>
                     <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>retorno{displayedOverdueAppts.length !== 1 ? 's' : ''} vencido{displayedOverdueAppts.length !== 1 ? 's' : ''}</div>
                   </div>
-                  {/* Vacinas em atraso */}
-                  <div onClick={() => setExpandedPriority(expandedPriority === 'vacinas' ? null : 'vacinas')}
-                    style={{ border: `1.5px solid ${displayedOverdueVaccPatients.length > 0 ? ACCENT+'40' : BO}`, borderRadius: 10, padding: '12px 14px', background: displayedOverdueVaccPatients.length > 0 ? ACCENTL : '#fff', cursor: displayedOverdueVaccPatients.length > 0 ? 'pointer' : 'default', textAlign: 'center' as const, transition: 'opacity 0.15s', opacity: expandedPriority && expandedPriority !== 'vacinas' ? 0.5 : 1 }}>
-                    <div style={{ fontSize: 28, fontWeight: 700, color: displayedOverdueVaccPatients.length > 0 ? ACCENT : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>{displayedOverdueVaccPatients.length}</div>
-                    <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>paciente{displayedOverdueVaccPatients.length !== 1 ? 's' : ''} c/ vacina em atraso</div>
-                  </div>
+                  {/* Vacinas em atraso (Pediatria) / Sem retorno há 60d (Tricologia) */}
+                  {specialty === 'Pediatria' ? (
+                    <div onClick={() => setExpandedPriority(expandedPriority === 'vacinas' ? null : 'vacinas')}
+                      style={{ border: `1.5px solid ${displayedOverdueVaccPatients.length > 0 ? ACCENT+'40' : BO}`, borderRadius: 10, padding: '12px 14px', background: displayedOverdueVaccPatients.length > 0 ? ACCENTL : '#fff', cursor: displayedOverdueVaccPatients.length > 0 ? 'pointer' : 'default', textAlign: 'center' as const, transition: 'opacity 0.15s', opacity: expandedPriority && expandedPriority !== 'vacinas' ? 0.5 : 1 }}>
+                      <div style={{ fontSize: 28, fontWeight: 700, color: displayedOverdueVaccPatients.length > 0 ? ACCENT : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>{displayedOverdueVaccPatients.length}</div>
+                      <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>paciente{displayedOverdueVaccPatients.length !== 1 ? 's' : ''} c/ vacina em atraso</div>
+                    </div>
+                  ) : (
+                    <div style={{ border: `1.5px solid ${BO}`, borderRadius: 10, padding: '12px 14px', background: '#fff', textAlign: 'center' as const }}>
+                      <div style={{ fontSize: 28, fontWeight: 700, color: MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>—</div>
+                      <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>sem retorno há 60d</div>
+                    </div>
+                  )}
                   {/* Sem consulta */}
                   <div onClick={() => setExpandedPriority(expandedPriority === 'sem-consulta' ? null : 'sem-consulta')}
                     style={{ border: `1.5px solid ${displayedFirstTimePatients.length > 0 ? WARN+'40' : BO}`, borderRadius: 10, padding: '12px 14px', background: displayedFirstTimePatients.length > 0 ? WARNL : '#fff', cursor: displayedFirstTimePatients.length > 0 ? 'pointer' : 'default', textAlign: 'center' as const, transition: 'opacity 0.15s', opacity: expandedPriority && expandedPriority !== 'sem-consulta' ? 0.5 : 1 }}>
@@ -1303,7 +1310,7 @@ function FRow({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated }: { onClose: () => void; onCreated: (p: Patient) => void }) {
+const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated, specialty = 'Pediatria' }: { onClose: () => void; onCreated: (p: Patient) => void; specialty?: string }) {
   const [form, setForm] = useState({
     full_name: '', birth_date: '', gender: 'M' as 'M' | 'F',
     insurance_plan: '', insurance_card_number: '',
@@ -1313,11 +1320,20 @@ const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated
   const [error, setError] = useState('');
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
+  // Guardian obrigatório apenas para Pediatria ou menores de 18
+  const calcAgeYears = (bd: string) => {
+    if (!bd) return null;
+    const now = new Date(); const b = new Date(bd);
+    return now.getFullYear() - b.getFullYear() - (now < new Date(now.getFullYear(), b.getMonth(), b.getDate()) ? 1 : 0);
+  };
+  const patientAge = form.birth_date ? calcAgeYears(form.birth_date) : null;
+  const showGuardianSection = specialty === 'Pediatria' || (patientAge !== null && patientAge < 18);
+
   async function handleSubmit() {
     if (!form.full_name.trim()) { setError('Nome completo é obrigatório.'); return; }
     if (!form.birth_date) { setError('Data de nascimento é obrigatória.'); return; }
-    if (!form.guardian_name.trim()) { setError('Nome do responsável é obrigatório.'); return; }
-    if (!form.guardian_phone.trim()) { setError('Telefone do responsável é obrigatório.'); return; }
+    if (showGuardianSection && !form.guardian_name.trim()) { setError('Nome do responsável é obrigatório.'); return; }
+    if (showGuardianSection && !form.guardian_phone.trim()) { setError('Telefone do responsável é obrigatório.'); return; }
     setLoading(true); setError('');
     try {
       const p = await db.createPatient(form);
@@ -1383,26 +1399,44 @@ const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated
             </div>
           </section>
 
-          {/* Responsável */}
-          <section>
-            <p style={{ margin: '0 0 14px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>Responsável principal</p>
-            <FRow label="Nome *">
-              <input value={form.guardian_name} onChange={e => set('guardian_name', e.target.value)} placeholder="Nome completo do responsável" style={inputStyle} />
-            </FRow>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <FRow label="Parentesco">
-                <select value={form.guardian_relationship} onChange={e => set('guardian_relationship', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
-                  {['Mãe','Pai','Avó','Avô','Tio(a)','Responsável legal'].map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+          {/* Responsável — obrigatório em Pediatria ou para menores de 18 */}
+          {showGuardianSection && (
+            <section>
+              <p style={{ margin: '0 0 14px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>
+                Responsável principal{specialty !== 'Pediatria' ? ' (menor de 18 anos)' : ''}
+              </p>
+              <FRow label="Nome *">
+                <input value={form.guardian_name} onChange={e => set('guardian_name', e.target.value)} placeholder="Nome completo do responsável" style={inputStyle} />
               </FRow>
-              <FRow label="Telefone *">
-                <input value={form.guardian_phone} onChange={e => set('guardian_phone', e.target.value)} placeholder="(11) 99999-9999" style={inputStyle} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <FRow label="Parentesco">
+                  <select value={form.guardian_relationship} onChange={e => set('guardian_relationship', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+                    {['Mãe','Pai','Avó','Avô','Tio(a)','Responsável legal'].map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </FRow>
+                <FRow label="Telefone *">
+                  <input value={form.guardian_phone} onChange={e => set('guardian_phone', e.target.value)} placeholder="(11) 99999-9999" style={inputStyle} />
+                </FRow>
+              </div>
+              <FRow label="E-mail">
+                <input type="email" value={form.guardian_email} onChange={e => set('guardian_email', e.target.value)} placeholder="email@exemplo.com" style={inputStyle} />
               </FRow>
-            </div>
-            <FRow label="E-mail">
-              <input type="email" value={form.guardian_email} onChange={e => set('guardian_email', e.target.value)} placeholder="email@exemplo.com" style={inputStyle} />
-            </FRow>
-          </section>
+            </section>
+          )}
+          {/* Contato do paciente — apenas para especialidades não-pediátricas (adultos) */}
+          {!showGuardianSection && (
+            <section>
+              <p style={{ margin: '0 0 14px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>Contato do paciente</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <FRow label="Telefone">
+                  <input value={form.guardian_phone} onChange={e => set('guardian_phone', e.target.value)} placeholder="(11) 99999-9999" style={inputStyle} />
+                </FRow>
+                <FRow label="E-mail">
+                  <input type="email" value={form.guardian_email} onChange={e => set('guardian_email', e.target.value)} placeholder="email@exemplo.com" style={inputStyle} />
+                </FRow>
+              </div>
+            </section>
+          )}
 
           {/* Erro + ações */}
           {error && (
@@ -1423,7 +1457,7 @@ const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated
 });
 
 // ─── PATIENTS ─────────────────────────────────────────────────────────────────
-function PatientsPage({ go, setActivePatient }: { go: (s: string) => void; setActivePatient: (p: Patient) => void }) {
+function PatientsPage({ go, setActivePatient, specialty = 'Pediatria' }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; specialty?: string }) {
   const [search, setSearch] = useState('');
   // patients come from shared PatientContext
   const { patients, loading: patientsLoading, refetch: refetchPatients } = usePatients();
@@ -1471,7 +1505,7 @@ function PatientsPage({ go, setActivePatient }: { go: (s: string) => void; setAc
 
   return (
     <div>
-      {showModal && <NewPatientModal onClose={handleCloseModal} onCreated={handlePatientCreated} />}
+      {showModal && <NewPatientModal onClose={handleCloseModal} onCreated={handlePatientCreated} specialty={specialty} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isMobile ? 14 : 24 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 26, fontWeight: 500 }}>Pacientes</h1>
@@ -2219,7 +2253,7 @@ function PrimeiraConsultaCard({ patientId, refetchTrigger = 0 }: { patientId: st
 }
 
 // ─── PATIENT DETAIL ───────────────────────────────────────────────────────────
-function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTrigger = 0 }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; onOpenDraft: (draft: Consultation) => void; refetchTrigger?: number }) {
+function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTrigger = 0, specialty = 'Pediatria' }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; onOpenDraft: (draft: Consultation) => void; refetchTrigger?: number; specialty?: string }) {
   const [tab, setTab] = useState('Resumo');
   const [selectedConsult, setSelectedConsult] = useState<Consultation | null>(null);
   const [consultations, setConsultations] = useState<Consultation[]>([]);
@@ -2230,10 +2264,14 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
   const isMobile = useIsMobile();
   const isDoctor = useRequireRole(['medico']);
   const { doctorId } = useAuthProfile();
-  // Tabs visíveis por role: secretaria só vê Resumo (sem dados clínicos) e Vacinas (admin)
+  // Tabs visíveis por especialidade e role
+  const TABS_BY_SPECIALTY: Record<string, string[]> = {
+    'Pediatria':  ['Resumo', 'Consultas', 'Crescimento', 'Vacinas', 'Desenvolvimento'],
+    'Tricologia': ['Resumo', 'Consultas', 'Avaliação Capilar'],
+  };
   const visibleTabs = isDoctor
-    ? ['Resumo', 'Consultas', 'Crescimento', 'Vacinas', 'Desenvolvimento']
-    : ['Resumo', 'Vacinas'];
+    ? (TABS_BY_SPECIALTY[specialty] ?? TABS_BY_SPECIALTY['Pediatria'])
+    : (specialty === 'Pediatria' ? ['Resumo', 'Vacinas'] : ['Resumo']);
 
   useEffect(() => {
     setLoadingC(true);
@@ -2865,6 +2903,17 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
               patientBirthDate={patient.birth_date}
               doctorId={doctorId ?? ''}
             />
+          </RequireRole>
+        )}
+        {tab === 'Avaliação Capilar' && (
+          <RequireRole roles={['medico']}>
+            <div style={{ padding: '32px 0', textAlign: 'center' as const, color: MU }}>
+              <Stethoscope size={36} color={P} style={{ display: 'block', margin: '0 auto 12px' }} />
+              <div style={{ fontWeight: 600, color: INK, marginBottom: 6, fontSize: 15 }}>Avaliação Capilar</div>
+              <div style={{ fontSize: 13, maxWidth: 320, margin: '0 auto' }}>
+                Módulo em desenvolvimento. Aqui ficará o prontuário tricológico, tratamentos ativos, exames laboratoriais e evolução fotográfica.
+              </div>
+            </div>
           </RequireRole>
         )}
       </div>
@@ -4134,7 +4183,7 @@ const Toggle = ({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   </button>
 );
 
-function SettingsPage({ user }: { user: any }) {
+function SettingsPage({ user, onSpecialtyChange }: { user: any; onSpecialtyChange?: (s: string) => void }) {
   const [section, setSection] = useState('perfil');
   const isMobile = useIsMobile();
   const [notifVaccines, setNotifVaccines] = useState(true);
@@ -4185,6 +4234,7 @@ function SettingsPage({ user }: { user: any }) {
     setSaving(true); setSaveMsg('');
     try {
       await db.updateProfile({ full_name: fullName, crm, specialty, phone });
+      onSpecialtyChange?.(specialty); // propaga para o App root
       setSaveMsg('Salvo com sucesso!');
     } catch (e: any) {
       setSaveMsg(e.message || 'Erro ao salvar.');
@@ -4312,8 +4362,11 @@ function SettingsPage({ user }: { user: any }) {
                 </div>
                 <div style={{ marginBottom: 18 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Especialidade</label>
-                  <input value={specialty} onChange={e => setSpecialty(e.target.value)}
-                    style={{ width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff', color: INK }} />
+                  <select value={specialty} onChange={e => setSpecialty(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff', color: INK }}>
+                    <option value="Pediatria">Pediatria</option>
+                    <option value="Tricologia">Tricologia</option>
+                  </select>
                 </div>
                 <div style={{ marginBottom: 18 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Telefone</label>
@@ -4837,6 +4890,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [doctorName, setDoctorName] = useState('');
+  const [doctorSpecialty, setDoctorSpecialty] = useState<string>('Pediatria');
   const [screen, setScreen] = useState('dashboard');
   const [activePatient, setActivePatient] = useState<Patient | null>(null);
   const [flow, setFlow] = useState<'consent'|'recording'|'processing'|'done'|null>(null);
@@ -4882,14 +4936,17 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load prontuario format from profile
+  // Load prontuario format + specialty from profile
   useEffect(() => {
     if (!user) return;
     db.fetchProfile().then(profile => {
       if (profile?.prontuario_format) {
         setProntuarioFormatState(profile.prontuario_format as ProntuarioFormat);
       }
-    }).catch(err => console.error('Failed to load prontuario format:', err));
+      if (profile?.specialty) {
+        setDoctorSpecialty(profile.specialty);
+      }
+    }).catch(err => console.error('Failed to load profile:', err));
   }, [user]);
 
   // Notificações globais
@@ -4897,27 +4954,29 @@ export default function App() {
     if (!user) return;
     const load = async () => {
       const notifs: AppNotification[] = [];
-      const [ps, stats, vaccMap] = await Promise.all([
-        db.fetchPatients(),
-        db.fetchDashboardStats(),
-        db.fetchAllVaccinesForDoctor(),
-      ]).catch(() => [[], { overdueAppointments: [] }, {}] as any);
+      // Vaccine notifications only for Pediatria
+      const isPediatria = doctorSpecialty === 'Pediatria';
+      const basePromises: Promise<any>[] = [db.fetchPatients(), db.fetchDashboardStats()];
+      if (isPediatria) basePromises.push(db.fetchAllVaccinesForDoctor());
+      const [ps, stats, vaccMap] = await Promise.all(basePromises).catch(() => [[], { overdueAppointments: [] }, {}] as any);
       stats.overdueAppointments?.forEach((a: any) => {
         notifs.push({ type: 'appointment', title: `${a.patient_name} — consulta não realizada`, subtitle: `Agendada para ${a.scheduled_at?.slice(0,10)}`, patientId: a.patient_id });
       });
-      // Batch vaccine check — single query replaces N+1
-      const now = new Date();
-      (ps || []).forEach((p: Patient) => {
-        const bd = new Date(p.birth_date);
-        const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
-        const dbVs = (vaccMap as Record<string, any[]>)[p.id] || [];
-        const overdue = PNI_SCHEDULE.filter(pni => !dbVs.find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done') && pni.age_months < ageMonths).length;
-        if (overdue > 0) notifs.push({ type: 'vaccine', title: `${p.full_name} — ${overdue} vacina${overdue > 1 ? 's' : ''} em atraso`, subtitle: 'Verificar calendário PNI', patientId: p.id });
-      });
+      // Batch vaccine check — single query replaces N+1 (Pediatria only)
+      if (isPediatria) {
+        const now = new Date();
+        (ps || []).forEach((p: Patient) => {
+          const bd = new Date(p.birth_date);
+          const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
+          const dbVs = ((vaccMap as Record<string, any[]>) || {})[p.id] || [];
+          const overdue = PNI_SCHEDULE.filter(pni => !dbVs.find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done') && pni.age_months < ageMonths).length;
+          if (overdue > 0) notifs.push({ type: 'vaccine', title: `${p.full_name} — ${overdue} vacina${overdue > 1 ? 's' : ''} em atraso`, subtitle: 'Verificar calendário PNI', patientId: p.id });
+        });
+      }
       setNotifications(notifs);
     };
     load();
-  }, [user]);
+  }, [user, doctorSpecialty]);
 
   // Recording timer
   useEffect(() => {
@@ -4975,11 +5034,11 @@ export default function App() {
               <RequireRole roles={['medico']}
                 fallback={<SecretaryDashboard go={go} setActivePatient={setActivePatient} onNewPatient={() => go('patients')} />}
               >
-                <DashboardPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} user={user} doctorName={doctorName} />
+                <DashboardPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} user={user} doctorName={doctorName} specialty={doctorSpecialty} />
               </RequireRole>
             )}
-            {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
-            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} onOpenDraft={async (draft) => {
+            {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} specialty={doctorSpecialty} />}
+            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} specialty={doctorSpecialty} onOpenDraft={async (draft) => {
                 setRealSummary(draft.summary);
                 setRealTranscript('');
                 setDraftConsultationId(draft.id);
@@ -4993,7 +5052,7 @@ export default function App() {
               }} refetchTrigger={refetchTrigger} />}
             {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} />}
             {screen === 'painel'   && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><PainelPage go={go} setActivePatient={setActivePatient} /></RequireRole>}
-            {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} /></RequireRole>}
+            {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} onSpecialtyChange={setDoctorSpecialty} /></RequireRole>}
           </Layout>
         </ProntuarioFormatCtx.Provider>
       </PatientProvider>

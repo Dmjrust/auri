@@ -56,7 +56,96 @@ REGRAS:
 - Se um campo não for mencionado, use string vazia ou array vazio
 - Conforme CFM 2.454/2026: você é apoio à decisão, o médico revisará e validará`;
 
-export async function structureSummary(transcript: string): Promise<StructuredSummary> {
+// ── Prompt tricológico ────────────────────────────────────────────────────────
+const TRICHOLOGY_STRUCTURE_PROMPT = `
+Você é um assistente de prontuário tricológico brasileiro.
+
+Sua tarefa é extrair informações de uma transcrição de consulta médica em tricologia e retornar APENAS JSON válido.
+
+REGRAS:
+- Use apenas informações explicitamente mencionadas na transcrição.
+- Não invente dados clínicos.
+- Não feche diagnóstico definitivo.
+- Use linguagem de hipótese: "compatível com", "sugestivo de", "hipótese de".
+- Se uma informação não for mencionada, retorne "" ou null.
+- Não retorne markdown.
+- Não retorne texto fora do JSON.
+- Não recomende medicamentos, doses ou condutas não mencionadas pelo médico.
+
+Retorne exatamente este schema:
+
+{
+  "queixa_principal": "",
+  "hda": "",
+  "exame_fisico": "",
+  "hipoteses": [],
+  "conduta": "",
+  "retorno": "",
+
+  "trichology": {
+    "scalp_condition": "",
+    "miniaturization": "",
+    "rarefaction": "",
+    "tricoscopy_findings": "",
+    "hair_loss_pattern": "",
+    "evolution_time": "",
+
+    "classification_scores": {
+      "ludwig_scale": null,
+      "hamilton_norwood": null,
+      "salt_score": null
+    },
+
+    "risk_factors": {
+      "chemical_procedures": "",
+      "hormonal_factors": "",
+      "emotional_factors": "",
+      "family_history": ""
+    },
+
+    "treatments_mentioned": [],
+    "exams_mentioned": []
+  }
+}
+
+ORIENTAÇÕES DE EXTRAÇÃO:
+- queixa_principal: motivo principal da consulta.
+- hda: história da doença atual, tempo de evolução, progressão, sintomas associados e contexto.
+- exame_fisico: achados clínicos observados ou descritos pelo médico.
+- hipoteses: lista de hipóteses clínicas mencionadas ou fortemente sugeridas pela consulta, sem diagnóstico definitivo.
+- conduta: plano informado pelo médico, incluindo orientações, exames, tratamentos e acompanhamento.
+- retorno: prazo ou orientação de retorno, se mencionado.
+
+CAMPOS TRICOLÓGICOS:
+- scalp_condition: oleosidade, descamação, eritema, prurido, dor, inflamação ou lesões.
+- miniaturization: presença, ausência ou grau de miniaturização quando mencionado.
+- rarefaction: áreas de rarefação ou redução de densidade.
+- tricoscopy_findings: achados de tricoscopia, se mencionados.
+- hair_loss_pattern: padrão da queda, como difusa, frontal, temporal, vértex, placas, entradas ou rarefação central.
+- evolution_time: tempo de evolução da queixa.
+- ludwig_scale, hamilton_norwood, salt_score: preencher apenas se citado explicitamente.
+- chemical_procedures: coloração, alisamento, progressiva, descoloração, tração ou outros procedimentos.
+- hormonal_factors: SOP, puerpério, menopausa, anticoncepcional, tireoide ou outros fatores hormonais citados.
+- emotional_factors: estresse, ansiedade, luto, trauma emocional ou eventos recentes citados.
+- family_history: histórico familiar de alopecia ou doenças capilares.
+- treatments_mentioned: lista de tratamentos mencionados, como minoxidil, finasterida, dutasterida, MMP, PRP, laser, LED, shampoos ou suplementos.
+- exams_mentioned: lista de exames citados ou solicitados, como ferritina, vitamina D, TSH, zinco, B12, testosterona, DHEA ou hemograma.
+
+TRANSCRIÇÃO:
+`;
+
+export function getStructurePrompt(specialty: string): string {
+  return specialty === 'Tricologia' ? TRICHOLOGY_STRUCTURE_PROMPT : STRUCTURE_SYSTEM_PROMPT;
+}
+
+export async function structureSummary(transcript: string, specialty = 'Pediatria'): Promise<StructuredSummary> {
+  const systemPrompt = specialty === 'Tricologia'
+    ? TRICHOLOGY_STRUCTURE_PROMPT + transcript
+    : STRUCTURE_SYSTEM_PROMPT;
+  const userContent = specialty === 'Tricologia'
+    ? '' // transcript já incluída no system prompt para Tricologia
+    : `Transcrição da consulta:\n\n${transcript}`;
+
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
@@ -65,8 +154,8 @@ export async function structureSummary(transcript: string): Promise<StructuredSu
       response_format: { type: 'json_object' },
       temperature: 0.2,
       messages: [
-        { role: 'system', content: STRUCTURE_SYSTEM_PROMPT },
-        { role: 'user', content: `Transcrição da consulta:\n\n${transcript}` },
+        { role: 'system', content: systemPrompt },
+        ...(userContent ? [{ role: 'user' as const, content: userContent }] : []),
       ],
     }),
   });
@@ -83,11 +172,14 @@ export async function structureSummary(transcript: string): Promise<StructuredSu
     hipoteses:           Array.isArray(raw.hipoteses)          ? raw.hipoteses.map(String)          : [],
     conduta:             String(raw.conduta              ?? ''),
     retorno:             String(raw.retorno              ?? ''),
+    // Pediatria only — empty for Tricologia
     peso:                String(raw.peso                 ?? ''),
     altura:              String(raw.altura               ?? ''),
     perimetro_cefalico:  String(raw.perimetro_cefalico   ?? ''),
     vacinas_mencionadas: Array.isArray(raw.vacinas_mencionadas) ? raw.vacinas_mencionadas.map(String) : [],
-  };
+    // Tricologia only — object with hair/scalp assessment fields
+    specialty_data:      raw.trichology ?? null,
+  } as StructuredSummary & { specialty_data?: unknown };
 }
 
 // ── GPT-4o: consulta → prontuário escaneável ─────────────────────────────────
