@@ -3884,7 +3884,7 @@ function AppointmentDetailModal({
   );
 }
 
-function AgendaPage({ go, setActivePatient }: { go: (s: string) => void; setActivePatient: (p: Patient) => void }) {
+function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void }) {
   const { patients: allPatients } = usePatients();
   const todayIso = new Date().toISOString().slice(0, 10);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -3947,7 +3947,11 @@ function AgendaPage({ go, setActivePatient }: { go: (s: string) => void; setActi
 
   function handleStartConsult(appt: any) {
     const p = allPatients.find(p => p.id === appt.patient_id);
-    if (p) { setActivePatient(p); go('patient-detail'); }
+    if (p) {
+      setActivePatient(p);
+      db.updateAppointment(appt.id, { status: 'in_progress' }).catch(() => {});
+      onStartConsult(appt.type as 'retorno' | 'primeira vez');
+    }
     setSelectedAppt(null);
   }
 
@@ -4981,7 +4985,7 @@ export default function App() {
                 setRealAnamnese(anamnese);
                 setFlow('done');
               }} refetchTrigger={refetchTrigger} />}
-            {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} />}
+            {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} />}
             {screen === 'painel'   && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><PainelPage go={go} setActivePatient={setActivePatient} /></RequireRole>}
             {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} /></RequireRole>}
           </Layout>
