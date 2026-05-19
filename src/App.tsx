@@ -3320,8 +3320,8 @@ function ProcessingScreen({ audioBlob, onDone, onRetry, consultType }: {
   const [error, setError] = useState('');
   const isPrimeira = consultType === 'primeira vez';
   const steps = isPrimeira
-    ? ['Enviando áudio para transcrição…', 'Whisper transcrevendo consulta…', 'GPT-4o estruturando prontuário…', 'Preenchendo ficha de puericultura…', 'Finalizando resumo clínico…']
-    : ['Enviando áudio para transcrição…', 'Whisper transcrevendo consulta…', 'GPT-4o estruturando prontuário…', 'Finalizando resumo clínico…'];
+    ? ['Enviando áudio para transcrição…', 'Transcrevendo consulta…', 'Estruturando prontuário…', 'Preenchendo ficha de puericultura…', 'Finalizando resumo clínico…']
+    : ['Enviando áudio para transcrição…', 'Transcrevendo consulta…', 'Estruturando prontuário…', 'Finalizando resumo clínico…'];
 
   useEffect(() => {
     let cancelled = false;
