@@ -1055,7 +1055,12 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
               </div>
             ) : (() => {
               const nextApptId = todayAppts.find(a => a.status !== 'completed')?.id;
-              return todayAppts.map((appt) => (
+              const sortedAppts = [...todayAppts].sort((a, b) => {
+                const aDone = a.status === 'completed' ? 1 : 0;
+                const bDone = b.status === 'completed' ? 1 : 0;
+                return aDone - bDone;
+              });
+              return sortedAppts.map((appt) => (
                 <TodayPatientCard
                   key={appt.id}
                   appt={appt}
