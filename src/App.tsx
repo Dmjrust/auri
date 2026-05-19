@@ -926,7 +926,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
   // Computed metrics
   const firstTimePatients = patients.filter(p => !(consultSummaries[p.id]?.count > 0));
   const retornosPendentes = overdueAppts.length;
-  const completedToday = todayAppts.filter(a => a.status === 'completed').length;
+  const completedToday = todayAppts.filter(a => a.status === 'completed' || a.status === 'in_progress').length;
 
   // Filtered by dismissed state
   const displayedOverdueAppts = overdueAppts.filter(a => !dismissedPriorities.has(`retorno:${a.patient_id}`));
@@ -981,7 +981,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
     return `há ${Math.floor(diff / 86400)}d`;
   };
 
-  const nextPending = todayAppts.find(a => a.status !== 'completed' && a.status !== 'cancelled');
+  const nextPending = todayAppts.find(a => a.status === 'scheduled');
   const firstName = doctorName.toLowerCase().includes('dr.') || doctorName.toLowerCase().startsWith('dr ')
     ? doctorName.split(' ').slice(1).join(' ').split(' ')[0]
     : doctorName.split(' ')[0];
