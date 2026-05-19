@@ -830,7 +830,7 @@ const SectionHeader = ({ icon: Icon, title, action, onAction }: { icon: any; tit
   </div>
 );
 
-function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName: doctorNameProp }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; user: any; doctorName: string }) {
+function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName: doctorNameProp }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez', apptId?: string) => void; user: any; doctorName: string }) {
   // patients come from shared PatientContext (no individual fetch needed here)
   const { patients } = usePatients();
   const [todayAppts, setTodayAppts] = useState<any[]>([]);
@@ -1067,7 +1067,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
                   patient={patients.find((p: Patient) => p.id === appt.patient_id)}
                   briefing={dayBriefing[appt.patient_id]}
                   defaultExpanded={appt.id === nextApptId}
-                  onStart={() => { db.updateAppointment(appt.id, { status: 'in_progress' }).catch(() => {}); const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); onStartConsult(appt.type as 'retorno' | 'primeira vez'); } }}
+                  onStart={() => { db.updateAppointment(appt.id, { status: 'in_progress' }).catch(() => {}); const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); onStartConsult(appt.type as 'retorno' | 'primeira vez', appt.id); } }}
                   onRecord={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
                 />
               ));
@@ -3889,7 +3889,7 @@ function AppointmentDetailModal({
   );
 }
 
-function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void }) {
+function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez', apptId?: string) => void }) {
   const { patients: allPatients } = usePatients();
   const todayIso = new Date().toISOString().slice(0, 10);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -3955,7 +3955,7 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
     if (p) {
       setActivePatient(p);
       db.updateAppointment(appt.id, { status: 'in_progress' }).catch(() => {});
-      onStartConsult(appt.type as 'retorno' | 'primeira vez');
+      onStartConsult(appt.type as 'retorno' | 'primeira vez', appt.id);
     }
     setSelectedAppt(null);
   }
@@ -4847,6 +4847,7 @@ export default function App() {
   const [realTranscript, setRealTranscript] = useState('');
   const [realAnamnese, setRealAnamnese] = useState<AnamnesePrimeiraConsultaData | null>(null);
   const [draftConsultationId, setDraftConsultationId] = useState<string | null>(null);
+  const [activeAppointmentId, setActiveAppointmentId] = useState<string | null>(null);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [prontuarioFormat, setProntuarioFormatState] = useState<ProntuarioFormat>('narrativo');
@@ -4954,7 +4955,7 @@ export default function App() {
         .catch(err => console.error('Auto-save draft failed:', err));
     }
   }} />;
-  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} anamnese={realAnamnese} onSave={() => { setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRealAnamnese(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
+  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} anamnese={realAnamnese} onSave={() => { if (activeAppointmentId) db.updateAppointment(activeAppointmentId, { status: 'completed' }).catch(() => {}); setActiveAppointmentId(null); setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRealAnamnese(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
 
   const breadcrumbs: Record<string, string[]> = {
     dashboard:        ['Início', 'Dashboard'],
@@ -4974,7 +4975,7 @@ export default function App() {
               <RequireRole roles={['medico']}
                 fallback={<SecretaryDashboard go={go} setActivePatient={setActivePatient} onNewPatient={() => go('patients')} />}
               >
-                <DashboardPage go={go} setActivePatient={setActivePatient} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} user={user} doctorName={doctorName} />
+                <DashboardPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} user={user} doctorName={doctorName} />
               </RequireRole>
             )}
             {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} />}
@@ -4990,7 +4991,7 @@ export default function App() {
                 setRealAnamnese(anamnese);
                 setFlow('done');
               }} refetchTrigger={refetchTrigger} />}
-            {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} />}
+            {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} />}
             {screen === 'painel'   && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><PainelPage go={go} setActivePatient={setActivePatient} /></RequireRole>}
             {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} /></RequireRole>}
           </Layout>
