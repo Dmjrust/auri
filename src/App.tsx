@@ -5231,8 +5231,19 @@ export default function App() {
     ? <LoginScreen onBack={() => setShowLogin(false)} />
     : <LandingPage onEnter={() => setShowLogin(true)} />;
 
+  // Aguarda fetchProfile() resolver — evita flash de dashboard antes do onboarding
+  if (!profileLoaded) return (
+    <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' as const }}>
+        <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 52, marginBottom: 16 }}
+          onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+        <div style={{ fontSize: 13, color: MU }}>Carregando perfil…</div>
+      </div>
+    </div>
+  );
+
   // Onboarding: bloqueia o dashboard até o médico configurar o perfil
-  if (profileLoaded && needsOnboarding) return (
+  if (needsOnboarding) return (
     <OnboardingPage
       user={user}
       onComplete={(specialty) => {
