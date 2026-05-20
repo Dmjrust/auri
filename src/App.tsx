@@ -3253,6 +3253,221 @@ function AnamnesePrimeiraConsulta({ data, onChange }: {
   );
 }
 
+// ─── ONBOARDING PAGE ─────────────────────────────────────────────────────────
+function OnboardingPage({ user, onComplete }: { user: any; onComplete: (specialty: string) => void }) {
+  const isMobile = useIsMobile();
+  const [selectedSpecialty, setSelectedSpecialty] = useState<string | null>(null);
+  const [fullName, setFullName] = useState(user?.user_metadata?.full_name || '');
+  const [crm, setCrm] = useState('');
+  const [clinicName, setClinicName] = useState('');
+  const [clinicPhone, setClinicPhone] = useState('');
+  const [clinicAddress, setClinicAddress] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const canSubmit = !!selectedSpecialty && fullName.trim().length > 1 && crm.trim().length > 2 && clinicName.trim().length > 1;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit || !selectedSpecialty) return;
+    setSaving(true); setError('');
+    try {
+      await db.updateProfile({
+        specialty: selectedSpecialty,
+        full_name: fullName.trim(),
+        crm: crm.trim(),
+        clinic_name: clinicName.trim(),
+        clinic_phone: clinicPhone.trim(),
+        clinic_address: clinicAddress.trim(),
+      });
+      onComplete(selectedSpecialty);
+    } catch (err: any) {
+      setError(err?.message || 'Erro ao salvar perfil. Tente novamente.');
+      setSaving(false);
+    }
+  }
+
+  const specialties = [
+    {
+      id: 'Pediatria',
+      icon: '👶',
+      label: 'Pediatria',
+      desc: 'Puericultura, vacinas, curvas de crescimento, SOAP pediátrico e alertas clínicos longitudinais.',
+    },
+    {
+      id: 'Tricologia',
+      icon: '✂️',
+      label: 'Tricologia',
+      desc: 'Prontuário capilar, evolução fotográfica, exames laboratoriais e rastreamento de tratamentos.',
+    },
+  ];
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', border: `1px solid ${BO}`,
+    borderRadius: 8, fontSize: 14, fontFamily: 'inherit',
+    outline: 'none', background: '#fff', color: INK, boxSizing: 'border-box',
+  };
+  const labelStyle: React.CSSProperties = {
+    display: 'block', fontSize: 11, fontWeight: 600, color: MU,
+    marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: '0.05em',
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'stretch' }}>
+      {/* Left panel — editorial (desktop only) */}
+      {!isMobile && (
+        <div style={{
+          width: 380, flexShrink: 0, background: P, color: '#fff',
+          display: 'flex', flexDirection: 'column' as const,
+          padding: '48px 40px', justifyContent: 'space-between',
+        }}>
+          <div>
+            <img src="/brand/auri-logo-white.svg" alt="Auri" style={{ height: 36, marginBottom: 48 }}
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#ffffff99', marginBottom: 12, textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>
+              Boas-vindas ao Auri
+            </div>
+            <h1 style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, margin: '0 0 20px', fontFamily: 'Fraunces, serif' }}>
+              Configure seu perfil clínico
+            </h1>
+            <p style={{ fontSize: 15, color: '#ffffffcc', lineHeight: 1.6, margin: 0 }}>
+              Essas informações definem o produto que você vai usar e são exibidas nas suas consultas e documentos.
+            </p>
+          </div>
+          <div style={{ fontSize: 12, color: '#ffffff66', lineHeight: 1.5 }}>
+            Auri — Prontuário Eletrônico com IA<br />
+            Conforme CFM 2.454/2026 e LGPD
+          </div>
+        </div>
+      )}
+
+      {/* Right panel — form */}
+      <div style={{
+        flex: 1, overflowY: 'auto' as const,
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        padding: isMobile ? '32px 20px' : '48px 40px',
+      }}>
+        <div style={{ width: '100%', maxWidth: 520 }}>
+          {isMobile && (
+            <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 32, marginBottom: 32 }}
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          )}
+
+          <h2 style={{ fontSize: isMobile ? 22 : 26, fontWeight: 700, margin: '0 0 6px', color: INK }}>
+            Configuração inicial
+          </h2>
+          <p style={{ fontSize: 14, color: MU, margin: '0 0 32px', lineHeight: 1.5 }}>
+            Preencha seus dados profissionais para começar a usar o Auri.
+          </p>
+
+          <form onSubmit={handleSubmit}>
+            {/* Specialty selection */}
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: INK, marginBottom: 12, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                Sua especialidade *
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {specialties.map(sp => {
+                  const selected = selectedSpecialty === sp.id;
+                  return (
+                    <button
+                      key={sp.id}
+                      type="button"
+                      onClick={() => setSelectedSpecialty(sp.id)}
+                      style={{
+                        padding: '16px 14px', borderRadius: 12, cursor: 'pointer',
+                        border: selected ? `2px solid ${P}` : `2px solid ${BO}`,
+                        background: selected ? PL : '#fff',
+                        textAlign: 'left' as const, transition: 'all 0.15s',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <div style={{ fontSize: 24, marginBottom: 8 }}>{sp.icon}</div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: selected ? P : INK, marginBottom: 5 }}>
+                        {sp.label}
+                      </div>
+                      <div style={{ fontSize: 12, color: MU, lineHeight: 1.5 }}>
+                        {sp.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Professional data */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: INK, marginBottom: 14, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                Dados profissionais
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Nome completo *</label>
+                <input style={inputStyle} value={fullName} onChange={e => setFullName(e.target.value)}
+                  placeholder="Dr. João Silva" />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>CRM *</label>
+                <input style={inputStyle} value={crm} onChange={e => setCrm(e.target.value)}
+                  placeholder="CRM 123456/SP" />
+              </div>
+            </div>
+
+            {/* Clinic data */}
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: INK, marginBottom: 14, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                Dados do consultório
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Nome do consultório *</label>
+                <input style={inputStyle} value={clinicName} onChange={e => setClinicName(e.target.value)}
+                  placeholder="Clínica Saúde Infantil" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={labelStyle}>Telefone</label>
+                  <input style={inputStyle} value={clinicPhone} onChange={e => setClinicPhone(e.target.value)}
+                    placeholder="(11) 99999-9999" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Endereço</label>
+                  <input style={inputStyle} value={clinicAddress} onChange={e => setClinicAddress(e.target.value)}
+                    placeholder="Rua, número, cidade" />
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div style={{ marginBottom: 16, padding: '10px 14px', background: DESL, borderRadius: 8, fontSize: 13, color: DES }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={!canSubmit || saving}
+              style={{
+                width: '100%', padding: '14px 24px', borderRadius: 10, border: 'none',
+                background: canSubmit ? P : BO, color: canSubmit ? '#fff' : MU,
+                fontSize: 15, fontWeight: 700, cursor: canSubmit ? 'pointer' : 'default',
+                fontFamily: 'inherit', transition: 'background 0.15s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}
+            >
+              {saving ? 'Salvando…' : 'Começar a usar o Auri →'}
+            </button>
+
+            {!canSubmit && (
+              <p style={{ textAlign: 'center' as const, fontSize: 12, color: MU, marginTop: 10 }}>
+                Preencha especialidade, nome, CRM e nome do consultório para continuar.
+              </p>
+            )}
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConsentScreen({ onOk, onCancel, consultType }: { onOk: () => void; onCancel: () => void; consultType: 'retorno' | 'primeira vez' }) {
   const [agreed, setAgreed] = useState(false);
   return (
@@ -4188,7 +4403,7 @@ const Toggle = ({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   </button>
 );
 
-function SettingsPage({ user, onSpecialtyChange }: { user: any; onSpecialtyChange?: (s: string) => void }) {
+function SettingsPage({ user }: { user: any }) {
   const [section, setSection] = useState('perfil');
   const isMobile = useIsMobile();
   const [notifVaccines, setNotifVaccines] = useState(true);
@@ -4238,8 +4453,7 @@ function SettingsPage({ user, onSpecialtyChange }: { user: any; onSpecialtyChang
   async function handleSaveProfile() {
     setSaving(true); setSaveMsg('');
     try {
-      await db.updateProfile({ full_name: fullName, crm, specialty, phone });
-      onSpecialtyChange?.(specialty); // propaga para o App root
+      await db.updateProfile({ full_name: fullName, crm, phone });
       setSaveMsg('Salvo com sucesso!');
     } catch (e: any) {
       setSaveMsg(e.message || 'Erro ao salvar.');
@@ -4367,11 +4581,10 @@ function SettingsPage({ user, onSpecialtyChange }: { user: any; onSpecialtyChang
                 </div>
                 <div style={{ marginBottom: 18 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Especialidade</label>
-                  <select value={specialty} onChange={e => setSpecialty(e.target.value)}
-                    style={{ width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff', color: INK }}>
-                    <option value="Pediatria">Pediatria</option>
-                    <option value="Tricologia">Tricologia</option>
-                  </select>
+                  <div style={{ width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, background: SEC, color: INK, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxSizing: 'border-box' as const }}>
+                    <span style={{ fontWeight: 500 }}>{specialty || '—'}</span>
+                    <span style={{ fontSize: 11, color: MU }}>definido no cadastro</span>
+                  </div>
                 </div>
                 <div style={{ marginBottom: 18 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Telefone</label>
@@ -4896,6 +5109,8 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [doctorName, setDoctorName] = useState('');
   const [doctorSpecialty, setDoctorSpecialty] = useState<string>('Pediatria');
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [screen, setScreen] = useState('dashboard');
   const [activePatient, setActivePatient] = useState<Patient | null>(null);
   const [flow, setFlow] = useState<'consent'|'recording'|'processing'|'done'|null>(null);
@@ -4941,17 +5156,24 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load prontuario format + specialty from profile
+  // Load profile — detect onboarding if profile not yet configured
   useEffect(() => {
-    if (!user) return;
+    if (!user) { setProfileLoaded(false); setNeedsOnboarding(false); return; }
     db.fetchProfile().then(profile => {
-      if (profile?.prontuario_format) {
-        setProntuarioFormatState(profile.prontuario_format as ProntuarioFormat);
-      }
-      if (profile?.specialty) {
+      setProfileLoaded(true);
+      if (!profile || !profile.specialty) {
+        // Primeiro login ou perfil incompleto → onboarding obrigatório
+        setNeedsOnboarding(true);
+        // Pre-fill name from auth metadata if available
+        if (user.user_metadata?.full_name) setDoctorName(user.user_metadata.full_name);
+      } else {
+        setNeedsOnboarding(false);
         setDoctorSpecialty(profile.specialty);
+        if (profile.prontuario_format) {
+          setProntuarioFormatState(profile.prontuario_format as ProntuarioFormat);
+        }
       }
-    }).catch(err => console.error('Failed to load profile:', err));
+    }).catch(() => { setProfileLoaded(true); setNeedsOnboarding(true); });
   }, [user]);
 
   // Notificações globais
@@ -5009,6 +5231,17 @@ export default function App() {
     ? <LoginScreen onBack={() => setShowLogin(false)} />
     : <LandingPage onEnter={() => setShowLogin(true)} />;
 
+  // Onboarding: bloqueia o dashboard até o médico configurar o perfil
+  if (profileLoaded && needsOnboarding) return (
+    <OnboardingPage
+      user={user}
+      onComplete={(specialty) => {
+        setDoctorSpecialty(specialty);
+        setNeedsOnboarding(false);
+      }}
+    />
+  );
+
   if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => { if (screen === 'dashboard') { go('patient-detail'); } else { setFlow(null); } }} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} />;
   if (flow === 'processing') return <ProcessingScreen consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese) => {
@@ -5057,7 +5290,7 @@ export default function App() {
               }} refetchTrigger={refetchTrigger} />}
             {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} />}
             {screen === 'painel'   && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><PainelPage go={go} setActivePatient={setActivePatient} /></RequireRole>}
-            {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} onSpecialtyChange={setDoctorSpecialty} /></RequireRole>}
+            {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} /></RequireRole>}
           </Layout>
         </ProntuarioFormatCtx.Provider>
       </PatientProvider>
