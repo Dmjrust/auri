@@ -5,6 +5,7 @@ import * as ai from './lib/ai';
 import { SmokeyBackground, LoginForm } from './components/ui/login-form';
 import { TodayPatientCard } from './components/TodayPatientCard';
 import { DevelopmentTab } from './components/DevelopmentTab';
+import { TrichologyTreatmentsTab } from './components/TrichologyTreatmentsTab';
 import type { DayBriefingItem } from './lib/db';
 import {
   SquaresFour, Users, CalendarBlank, GearSix, SignOut, Bell, MagnifyingGlass, CaretRight,
@@ -2907,13 +2908,16 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
         )}
         {tab === 'Avaliação Capilar' && (
           <RequireRole roles={['medico']}>
-            <div style={{ padding: '32px 0', textAlign: 'center' as const, color: MU }}>
-              <Stethoscope size={36} color={P} style={{ display: 'block', margin: '0 auto 12px' }} />
-              <div style={{ fontWeight: 600, color: INK, marginBottom: 6, fontSize: 15 }}>Avaliação Capilar</div>
-              <div style={{ fontSize: 13, maxWidth: 320, margin: '0 auto' }}>
-                Módulo em desenvolvimento. Aqui ficará o prontuário tricológico, tratamentos ativos, exames laboratoriais e evolução fotográfica.
-              </div>
-            </div>
+            <TrichologyTreatmentsTab
+              patientId={patient.id}
+              suggestedTreatments={(() => {
+                // Extract treatments_mentioned from the most recent consultation's specialty_data
+                const latest = consultations.find(c => c.status === 'completed');
+                const sd = (latest?.summary as any)?.specialty_data ?? null;
+                const treatments = sd?.treatments_mentioned;
+                return Array.isArray(treatments) ? treatments.map(String) : [];
+              })()}
+            />
           </RequireRole>
         )}
       </div>
@@ -3364,11 +3368,12 @@ function RecordingScreen({ time, patient, consultType, onFinish }: { time: numbe
   );
 }
 
-function ProcessingScreen({ audioBlob, onDone, onRetry, consultType }: {
+function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, specialty = 'Pediatria' }: {
   audioBlob: Blob | null;
   onDone: (summary: StructuredSummary, transcript: string, anamnese?: AnamnesePrimeiraConsultaData) => void;
   onRetry: () => void;
   consultType: 'retorno' | 'primeira vez';
+  specialty?: string;
 }) {
   const [step, setStep]   = useState(0);
   const [error, setError] = useState('');
@@ -3388,7 +3393,7 @@ function ProcessingScreen({ audioBlob, onDone, onRetry, consultType }: {
 
         if (cancelled) return;
         setStep(2);
-        const summary = await ai.structureSummary(transcript);
+        const summary = await ai.structureSummary(transcript, specialty);
 
         if (cancelled) return;
 
@@ -3412,7 +3417,7 @@ function ProcessingScreen({ audioBlob, onDone, onRetry, consultType }: {
     }
     run();
     return () => { cancelled = true; };
-  }, []);
+  }, [specialty]);
 
   return (
     <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -5006,7 +5011,7 @@ export default function App() {
 
   if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => { if (screen === 'dashboard') { go('patient-detail'); } else { setFlow(null); } }} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} />;
-  if (flow === 'processing') return <ProcessingScreen consultType={consultType} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese) => {
+  if (flow === 'processing') return <ProcessingScreen consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese) => {
     setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setFlow('done');
     if (activePatient) {
       db.saveDraftConsultation(activePatient.id, summary, recTime, consultType)

@@ -70,6 +70,8 @@ export interface StructuredSummary {
   queixa_principal: string; hda: string; exame_fisico: string;
   hipoteses: string[]; conduta: string; retorno: string;
   peso: string; altura: string; perimetro_cefalico: string; vacinas_mencionadas: string[];
+  // Tricologia: objeto extraído pela IA com campos capilares; null em consultas pediátricas
+  specialty_data?: Record<string, unknown> | null;
 }
 export interface Consultation {
   id: string; patient_id: string; scheduled_at: string; status: string;

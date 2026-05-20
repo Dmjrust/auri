@@ -82,7 +82,7 @@ export async function createPatient(input: {
 export async function fetchConsultations(patientId: string): Promise<Consultation[]> {
   const { data, error } = await supabase
     .from('consultations')
-    .select('*')
+    .select('*, specialty_data')
     .eq('patient_id', patientId)
     .order('scheduled_at', { ascending: false });
   if (error) throw error;
@@ -130,6 +130,7 @@ export async function saveConsultation(
     sum_altura: summary.altura,
     sum_perimetro_cefalico: summary.perimetro_cefalico,
     sum_vacinas_mencionadas: summary.vacinas_mencionadas,
+    specialty_data: summary.specialty_data ?? null,
   }).select('id').single();
   if (error) throw error;
 
@@ -184,6 +185,7 @@ export async function saveDraftConsultation(
     sum_altura: summary.altura,
     sum_perimetro_cefalico: summary.perimetro_cefalico,
     sum_vacinas_mencionadas: summary.vacinas_mencionadas,
+    specialty_data: summary.specialty_data ?? null,
   }).select('id').single();
   if (error) throw error;
   return data.id;
@@ -218,6 +220,7 @@ export async function confirmDraftConsultation(
       sum_altura:               summary.altura,
       sum_perimetro_cefalico:   summary.perimetro_cefalico,
       sum_vacinas_mencionadas:  summary.vacinas_mencionadas,
+      specialty_data:           summary.specialty_data ?? null,
     })
     .eq('id', draftId);
   if (error) throw error;
@@ -262,6 +265,7 @@ export async function updateDraftConsultation(
       sum_altura:               summary.altura,
       sum_perimetro_cefalico:   summary.perimetro_cefalico,
       sum_vacinas_mencionadas:  summary.vacinas_mencionadas,
+      specialty_data:           summary.specialty_data ?? null,
     })
     .eq('id', draftId);
   if (error) throw error;
@@ -883,6 +887,7 @@ function mapConsultation(c: any): Consultation {
       altura: c.sum_altura || '',
       perimetro_cefalico: c.sum_perimetro_cefalico || '',
       vacinas_mencionadas: c.sum_vacinas_mencionadas || [],
+      specialty_data: c.specialty_data ?? null,
     },
   };
 }
@@ -1091,5 +1096,79 @@ export async function upsertMilestone(params: {
       },
       { onConflict: 'patient_id,milestone_key' }
     );
+  if (error) throw error;
+}
+
+// ── Trichology Treatments ─────────────────────────────────────────────────────
+
+export interface TrichologyTreatment {
+  id: string;
+  patient_id: string;
+  doctor_id: string;
+  name: string;
+  dose: string | null;
+  frequency: string | null;
+  indication: string | null;
+  start_date: string;
+  end_date: string | null;
+  status: 'active' | 'paused' | 'completed' | 'discontinued';
+  adherence_status: 'boa' | 'parcial' | 'baixa' | 'interrompida' | null;
+  adherence_notes: string | null;
+  created_at: string;
+}
+
+export async function fetchTrichologyTreatments(patientId: string): Promise<TrichologyTreatment[]> {
+  const { data, error } = await supabase
+    .from('trichology_treatments')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('start_date', { ascending: false });
+  if (error) throw error;
+  return (data || []) as TrichologyTreatment[];
+}
+
+export async function createTrichologyTreatment(input: {
+  patient_id: string;
+  name: string;
+  dose?: string;
+  frequency?: string;
+  indication?: string;
+  start_date: string;
+  end_date?: string | null;
+  status?: 'active' | 'paused' | 'completed' | 'discontinued';
+  adherence_status?: 'boa' | 'parcial' | 'baixa' | 'interrompida' | null;
+  adherence_notes?: string;
+}): Promise<TrichologyTreatment> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Não autenticado');
+  const { data, error } = await supabase
+    .from('trichology_treatments')
+    .insert({
+      patient_id:       input.patient_id,
+      doctor_id:        user.id,
+      name:             input.name,
+      dose:             input.dose || null,
+      frequency:        input.frequency || null,
+      indication:       input.indication || null,
+      start_date:       input.start_date,
+      end_date:         input.end_date || null,
+      status:           input.status || 'active',
+      adherence_status: input.adherence_status || null,
+      adherence_notes:  input.adherence_notes || null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrichologyTreatment;
+}
+
+export async function updateTrichologyTreatment(
+  id: string,
+  fields: Partial<Pick<TrichologyTreatment, 'dose' | 'frequency' | 'indication' | 'end_date' | 'status' | 'adherence_status' | 'adherence_notes'>>,
+): Promise<void> {
+  const { error } = await supabase
+    .from('trichology_treatments')
+    .update(fields)
+    .eq('id', id);
   if (error) throw error;
 }
