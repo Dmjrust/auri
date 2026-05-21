@@ -15,6 +15,7 @@ import {
   FloppyDisk, Buildings, Brain, ShieldCheck, PlayCircle, PencilSimple, Trash,
   ChartBar, ArrowUp, ArrowDown, ArrowRight, Lightbulb, Check,
   Star, ArrowCounterClockwise, House, WarningCircle, UserPlus, UsersThree,
+  Leaf,
 } from '@phosphor-icons/react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -3287,16 +3288,16 @@ function OnboardingPage({ user, onComplete }: { user: any; onComplete: (specialt
     }
   }
 
-  const specialties = [
+  const specialties: { id: string; Icon: React.ElementType; label: string; desc: string }[] = [
     {
       id: 'Pediatria',
-      icon: '👶',
+      Icon: Stethoscope,
       label: 'Pediatria',
       desc: 'Puericultura, vacinas, curvas de crescimento, SOAP pediátrico e alertas clínicos longitudinais.',
     },
     {
       id: 'Tricologia',
-      icon: '✂️',
+      Icon: Leaf,
       label: 'Tricologia',
       desc: 'Prontuário capilar, evolução fotográfica, exames laboratoriais e rastreamento de tratamentos.',
     },
@@ -3375,6 +3376,7 @@ function OnboardingPage({ user, onComplete }: { user: any; onComplete: (specialt
                       type="button"
                       onClick={() => setSelectedSpecialty(sp.id)}
                       style={{
+                        position: 'relative' as const,
                         padding: '16px 14px', borderRadius: 12, cursor: 'pointer',
                         border: selected ? `2px solid ${P}` : `2px solid ${BO}`,
                         background: selected ? PL : '#fff',
@@ -3382,7 +3384,19 @@ function OnboardingPage({ user, onComplete }: { user: any; onComplete: (specialt
                         fontFamily: 'inherit',
                       }}
                     >
-                      <div style={{ fontSize: 24, marginBottom: 8 }}>{sp.icon}</div>
+                      {selected && (
+                        <div style={{ position: 'absolute' as const, top: 10, right: 10 }}>
+                          <CheckCircle size={16} color={P} weight="fill" />
+                        </div>
+                      )}
+                      <div style={{
+                        width: 40, height: 40, borderRadius: 10,
+                        background: selected ? `${P}1a` : '#F3F4F6',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        marginBottom: 12, transition: 'background 0.15s',
+                      }}>
+                        <sp.Icon size={20} color={selected ? P : MU} weight="duotone" />
+                      </div>
                       <div style={{ fontWeight: 700, fontSize: 14, color: selected ? P : INK, marginBottom: 5 }}>
                         {sp.label}
                       </div>
