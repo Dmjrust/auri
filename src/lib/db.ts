@@ -894,7 +894,11 @@ function mapConsultation(c: any): Consultation {
 
 // Busca TODAS as vacinas de todos os pacientes do médico em uma única query
 // Retorna mapa: patient_id → lista de registros
+// Segurança: RLS em patient_vaccines filtra por doctor_id via subquery em patients.
+// Auth check explícito adicionado para defesa em profundidade.
 export async function fetchAllVaccinesForDoctor(): Promise<Record<string, any[]>> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return {};
   const { data, error } = await supabase
     .from('patient_vaccines')
     .select('*')
@@ -924,7 +928,7 @@ export interface TeamMember {
 /** Busca todos os perfis associados ao doctor_id do médico logado */
 export async function fetchTeamMembers(): Promise<TeamMember[]> {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Não autenticado');
+  if (!user) return []; // degradação segura — não lança erro para não quebrar TeamSection
 
   const { data, error } = await supabase
     .from('user_profiles')
