@@ -1,18 +1,24 @@
 /**
  * billing.ts — Serviço de cobrança Stripe (skeleton)
  *
- * Status: SKELETON — funções retornam mock/placeholder até o webhook e
- * checkout serem implementados no backend.
+ * ─────────────────────────────────────────────────────────────────
+ *  BILLING_ENABLED = false  →  modo validação
+ *    - hasActiveAccess() retorna true para todos os usuários
+ *    - startCheckout() e openBillingPortal() são no-ops
+ *    - Nenhum usuário é bloqueado por falta de assinatura
  *
- * Para ativar:
- *   1. Executar migration 20260523_subscriptions.sql no Supabase SQL Editor
- *   2. Configurar STRIPE_SECRET_KEY e STRIPE_WEBHOOK_SECRET nas variáveis
- *      de ambiente server-side no Vercel (sem prefixo VITE_)
- *   3. Implementar a Edge Function ou Vercel API Route do webhook
- *   4. Descomentar as chamadas reais abaixo
+ *  Para ativar o billing real, mude para BILLING_ENABLED = true e:
+ *    1. Executar migration 20260523_subscriptions.sql no Supabase
+ *    2. Configurar STRIPE_SECRET_KEY e STRIPE_WEBHOOK_SECRET no Vercel
+ *       (variáveis server-side, sem prefixo VITE_)
+ *    3. Implementar a Vercel API Route do webhook Stripe
+ * ─────────────────────────────────────────────────────────────────
  */
 
 import { supabase } from './supabase';
+
+/** Chave mestra de billing. Mude para `true` para ativar cobranças. */
+export const BILLING_ENABLED = false;
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -65,9 +71,10 @@ export async function fetchSubscription(): Promise<SubscriptionInfo | null> {
 
 /**
  * Verifica se o médico tem acesso ativo ao produto.
- * Trialing e active = com acesso. Qualquer outro status = sem acesso.
+ * Enquanto BILLING_ENABLED = false, retorna true para todos os usuários.
  */
 export async function hasActiveAccess(): Promise<boolean> {
+  if (!BILLING_ENABLED) return true; // modo validação — acesso liberado
   const sub = await fetchSubscription();
   if (!sub) return true; // sem assinatura = ainda no onboarding/trial implícito
   return sub.status === 'active' || sub.status === 'trialing';
@@ -86,6 +93,10 @@ export async function hasActiveAccess(): Promise<boolean> {
  * Por enquanto, abre a landing page de planos.
  */
 export async function startCheckout(plan: Plan): Promise<void> {
+  if (!BILLING_ENABLED) {
+    console.info('[billing] Modo validação — billing desativado. Plan solicitado:', plan);
+    return;
+  }
   // TODO: substituir pelo endpoint real quando o backend estiver pronto
   console.warn('[billing] startCheckout não implementado. Plan:', plan);
   window.open('https://auri-git-main-dmjrust.vercel.app/#pricing', '_blank');
@@ -99,6 +110,10 @@ export async function startCheckout(plan: Plan): Promise<void> {
  *   → Retorna: { url: 'https://billing.stripe.com/...' }
  */
 export async function openBillingPortal(): Promise<void> {
+  if (!BILLING_ENABLED) {
+    console.info('[billing] Modo validação — billing desativado.');
+    return;
+  }
   console.warn('[billing] openBillingPortal não implementado.');
 }
 

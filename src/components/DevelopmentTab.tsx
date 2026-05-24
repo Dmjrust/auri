@@ -3,6 +3,7 @@ import {
   Circle, CheckCircle, XCircle, Info, CaretDown, CaretUp,
   Warning, WarningCircle, CheckSquare, Spinner,
 } from '@phosphor-icons/react';
+import type { IconComponent } from '../lib/types';
 import * as db from '../lib/db';
 import type { MilestoneRecord } from '../lib/db';
 import {
@@ -127,7 +128,7 @@ function MilestoneRow({
 
 // ── Alert badges ──────────────────────────────────────────────────────────────
 function AlertBadge({ color, bg, icon: Icon, text }: {
-  color: string; bg: string; icon: any; text: string;
+  color: string; bg: string; icon: IconComponent; text: string;
 }) {
   return (
     <div style={{

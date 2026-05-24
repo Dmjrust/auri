@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { toast } from 'sonner';
 import {
   Clock, UserCircle, CalendarBlank, CheckCircle, Warning,
   ArrowRight, Phone, CaretRight, Hourglass, ArrowClockwise,
   Stethoscope, EnvelopeSimple, Heartbeat,
 } from '@phosphor-icons/react';
 import * as db from '../lib/db';
-import type { AdminAlert } from '../lib/db';
+import type { AdminAlert, TodayAppointment, RecentActivityItem } from '../lib/db';
+import type { Patient } from '../data/mock';
 import { useAuthProfile } from '../contexts/AuthProfileContext';
 import { usePatients } from '../contexts/PatientContext';
 
@@ -23,25 +25,9 @@ const DANGER  = '#D1646F';
 const DANGERL = '#FEF2F2';
 const BG      = '#FAFAF8';
 
-// ── Tipos ─────────────────────────────────────────────────────────────────────
-interface TodayAppt {
-  id: string;
-  time: string;
-  patient_id: string;
-  patient_name: string;
-  age: string;
-  type: 'retorno' | 'primeira vez';
-  status: 'completed' | 'in_progress' | 'scheduled';
-  guardian: string;
-}
-
-interface RecentItem {
-  id: string;
-  patient_name: string;
-  patient_id: string;
-  date: string;
-  type: 'retorno' | 'primeira vez';
-}
+// ── Tipos (re-exported from db.ts) ────────────────────────────────────────────
+type TodayAppt = TodayAppointment;
+type RecentItem = RecentActivityItem;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function timeToMinutes(time: string) {
@@ -210,7 +196,7 @@ function SectionCard({ title, icon, count, countColor, children, onViewAll, bord
 // ── SecretaryDashboard ────────────────────────────────────────────────────────
 interface Props {
   go: (s: string) => void;
-  setActivePatient: (p: any) => void;
+  setActivePatient: (p: Patient) => void;
   onNewPatient: () => void;
 }
 
@@ -231,19 +217,19 @@ export function SecretaryDashboard({ go, setActivePatient, onNewPatient }: Props
   useEffect(() => {
     setLoadingAppts(true);
     db.fetchTodayAppointments()
-      .then((data: any[]) => setAppts(data as TodayAppt[]))
-      .catch(() => {})
+      .then(setAppts)
+      .catch(() => { toast.error('Erro ao carregar agenda de hoje'); })
       .finally(() => setLoadingAppts(false));
 
     setLoadingAlerts(true);
     db.fetchAdminAlerts(60)
       .then(setAlerts)
-      .catch(() => {})
+      .catch(() => { toast.error('Erro ao carregar alertas'); })
       .finally(() => setLoadingAlerts(false));
 
     db.fetchRecentActivity()
-      .then((data: any[]) => setRecentActivity(data as RecentItem[]))
-      .catch(() => {});
+      .then(setRecentActivity)
+      .catch(() => { toast.error('Erro ao carregar atividade recente'); });
   }, []);
 
   const { completed, inProgress, upcoming, delayed, pendingConfirm } = useMemo(() => {
@@ -257,7 +243,7 @@ export function SecretaryDashboard({ go, setActivePatient, onNewPatient }: Props
   }, [appts]);
 
   const semTelefone = useMemo(
-    () => patients.filter(p => !p.guardians?.some((g: any) => g.phone)).length,
+    () => patients.filter(p => !p.guardians?.some((g) => g.phone)).length,
     [patients]
   );
 

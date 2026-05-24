@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useContext, useCallback, useDeferredValue } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { toast } from 'sonner';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import type { IconComponent, AppointmentRow } from './lib/types';
@@ -24,7 +25,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import {
-  CONSULTATIONS, GROWTH_DATA, VACCINES, INSIGHTS,
+  INSIGHTS,
   OMS_WEIGHT_BOY, OMS_HEIGHT_BOY, OMS_WEIGHT_GIRL, OMS_HEIGHT_GIRL,
   type Patient, type Consultation, type StructuredSummary, type ScannableSummary,
   type AnamnesePrimeiraConsultaData, defaultAnamnesePrimeiraConsulta,
@@ -51,6 +52,7 @@ import { useAuthProfile } from './contexts/AuthProfileContext';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().slice(0, 10);
+const SIDEBAR_W = 264; // desktop sidebar width in px — change here if resizing
 
 // ─── RESPONSIVE ──────────────────────────────────────────────────────────────
 
@@ -102,7 +104,7 @@ function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) =
   const displayName = fullName || doctorName || 'Usuário';
   const displayRole = role === 'secretaria' ? 'Secretaria' : 'Pediatra';
   return (
-    <div style={{ width: 264, height: '100%', background: '#fff', borderRight: `1px solid ${BO}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+    <div style={{ width: SIDEBAR_W, height: '100%', background: '#fff', borderRight: `1px solid ${BO}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       {/* Brand */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 14px 22px' }}>
         <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 44 }} />
@@ -142,6 +144,7 @@ function Header({ breadcrumb, onBack, notifications = [], onNotificationClick, o
   notifications?: AppNotification[]; onNotificationClick?: (patientId?: string) => void; onClearNotifications?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
   const ref = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -180,7 +183,7 @@ function Header({ breadcrumb, onBack, notifications = [], onNotificationClick, o
           </button>
 
           {open && (
-            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 8, width: 360, background: '#fff', border: `1px solid ${BO}`, borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', zIndex: 200, overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 8, width: isMobile ? 'calc(100vw - 24px)' : 360, background: '#fff', border: `1px solid ${BO}`, borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', zIndex: 200, overflow: 'hidden' }}>
               <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontWeight: 700, fontSize: 14 }}>Notificações</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -891,7 +894,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
       setOverdueAppts(stats.overdueAppointments);
       setRecentActivity(activity);
       setConsultSummaries(summaries);
-      const ids = (appts as any[]).map((a: any) => a.patient_id).filter(Boolean);
+      const ids = appts.map((a) => a.patient_id).filter(Boolean);
       if (ids.length > 0) db.fetchDayBriefing(ids).then(setDayBriefing).catch(() => {});
     }).catch(() => { toast.error('Erro ao carregar dados do painel'); });
   }, []);
@@ -915,7 +918,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
         const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
         const dbVs = vaccMap[p.id] || [];
         const overdue = PNI_SCHEDULE.filter(pni => {
-          const done = (dbVs as any[]).find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
+          const done = dbVs.find((v) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
           return !done && pni.age_months < ageMonths; // strict: vacinas do mês atual ainda estão no prazo
         });
         if (overdue.length > 0) results.push({
@@ -1469,6 +1472,8 @@ const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated
 // ─── PATIENTS ─────────────────────────────────────────────────────────────────
 function PatientsPage({ go, setActivePatient, specialty = 'Pediatria' }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; specialty?: string }) {
   const [search, setSearch] = useState('');
+  // Defer filter computation so typing stays instant even with 200+ patients
+  const deferredSearch = useDeferredValue(search);
   // patients come from shared PatientContext
   const { patients, loading: patientsLoading, refetch: refetchPatients } = usePatients();
   const [loading, setLoading] = useState(false);
@@ -1477,6 +1482,8 @@ function PatientsPage({ go, setActivePatient, specialty = 'Pediatria' }: { go: (
   // Vacinas em atraso por paciente — batch query (substitui N+1 individual)
   const [vaccineOverdue, setVaccineOverdue] = useState<Record<string, number>>({});
   const isMobile = useIsMobile();
+  // Ref for the virtualizer scroll container
+  const listRef = useRef<HTMLDivElement>(null);
 
   // Fetch consultation summaries once
   useEffect(() => {
@@ -1495,7 +1502,7 @@ function PatientsPage({ go, setActivePatient, specialty = 'Pediatria' }: { go: (
         const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
         const dbVs = vaccMap[p.id] || [];
         vcMap[p.id] = PNI_SCHEDULE.filter(pni => {
-          const done = (dbVs as any[]).find(v => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
+          const done = dbVs.find(v => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
           return !done && pni.age_months < ageMonths;
         }).length;
       });
@@ -1508,10 +1515,25 @@ function PatientsPage({ go, setActivePatient, specialty = 'Pediatria' }: { go: (
   const handleCloseModal = useCallback(() => setShowModal(false), []);
   const handlePatientCreated = useCallback(() => { setShowModal(false); refetchPatients(); }, [refetchPatients]);
 
-  const filtered = patients.filter(p =>
-    p.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    p.guardians.some(g => g.name.toLowerCase().includes(search.toLowerCase()))
-  );
+  // Filter uses deferred search — UI stays responsive while filter computes
+  const filtered = patients.filter(p => {
+    if (!deferredSearch) return true;
+    const q = deferredSearch.toLowerCase();
+    return p.full_name.toLowerCase().includes(q) ||
+      p.guardians.some(g => g.name.toLowerCase().includes(q));
+  });
+
+  // Row height estimates: mobile items ~82px, desktop ~66px (vaccine badge adds ~18px)
+  const ROW_H = isMobile ? 82 : 66;
+
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => ROW_H,
+    overscan: 8,
+  });
+
+  const virtualItems = virtualizer.getVirtualItems();
 
   return (
     <div>
@@ -1528,64 +1550,96 @@ function PatientsPage({ go, setActivePatient, specialty = 'Pediatria' }: { go: (
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome ou responsável..."
           style={{ width: '100%', padding: '10px 12px 10px 38px', border: `1px solid ${BO}`, borderRadius: 8, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff' }} />
       </div>
-      <Card>
+      <Card style={{ overflow: 'hidden' }}>
         {!isMobile && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 170px 130px 120px 90px', gap: 16, padding: '10px 20px', borderBottom: `1px solid ${BO}`, fontSize: 11, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
             <span>Paciente</span><span>Idade</span><span>Responsável</span><span>Última consulta</span><span>Próx. retorno</span><span>Ações</span>
           </div>
         )}
-        {filtered.map((p, i) => {
-          const g = primaryGuardian(p);
-          const pend = vaccineOverdue[p.id] ?? 0;
-          return isMobile ? (
-            <div key={p.id} onClick={() => { setActivePatient(p); go('patient-detail'); }}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: i < filtered.length - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = PL; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-              <div style={{ width: 42, height: 42, borderRadius: '50%', background: p.gender === 'M' ? PL : FEMALEL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <User size={18} color={p.gender === 'M' ? P : FEMALE} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{p.full_name}</div>
-                <div style={{ fontSize: 12, color: MU }}>{calcAge(p.birth_date)} · {g?.name || '—'}</div>
-                {pend > 0 && <div style={{ fontSize: 11, color: WARN, fontWeight: 500, marginTop: 2 }}>{pend} vacina{pend > 1 ? 's' : ''} pendente{pend > 1 ? 's' : ''}</div>}
-              </div>
-              <CaretRight size={16} color={MU} />
+        {/* Virtualized scroll container — only renders visible rows */}
+        <div
+          ref={listRef}
+          style={{
+            height: isLoading || filtered.length === 0
+              ? 'auto'
+              : Math.min(filtered.length * ROW_H, isMobile ? 520 : 560),
+            overflowY: 'auto',
+          }}
+        >
+          {isLoading ? (
+            <div style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Carregando pacientes…</div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center' as const, color: MU }}>
+              {patients.length === 0 ? 'Nenhum paciente cadastrado ainda.' : 'Nenhum paciente encontrado.'}
             </div>
           ) : (
-            <div key={p.id} onClick={() => { setActivePatient(p); go('patient-detail'); }}
-              style={{ display: 'grid', gridTemplateColumns: '1fr 90px 170px 130px 120px 90px', gap: 16, padding: '14px 20px', borderBottom: i < filtered.length - 1 ? `1px solid ${BO}` : 'none', alignItems: 'center', cursor: 'pointer' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = PL; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', background: p.gender === 'M' ? PL : FEMALEL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <User size={16} color={p.gender === 'M' ? P : FEMALE} />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{p.full_name}</div>
-                  <div style={{ fontSize: 12, color: MU }}>
-                    {pend > 0 && <span style={{ color: WARN, fontWeight: 500 }}>{pend} vacina{pend > 1 ? 's' : ''} pendente{pend > 1 ? 's' : ''} · </span>}
-                    {consultSummaries[p.id]?.count ?? 0} consultas
+            <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+              {virtualItems.map(vRow => {
+                const p = filtered[vRow.index];
+                const g = primaryGuardian(p);
+                const pend = vaccineOverdue[p.id] ?? 0;
+                return (
+                  <div
+                    key={p.id}
+                    data-index={vRow.index}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${vRow.start}px)`,
+                      borderBottom: `1px solid ${BO}`,
+                    }}
+                  >
+                    {isMobile ? (
+                      <div onClick={() => { setActivePatient(p); go('patient-detail'); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', cursor: 'pointer' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = PL; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+                        <div style={{ width: 42, height: 42, borderRadius: '50%', background: p.gender === 'M' ? PL : FEMALEL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <User size={18} color={p.gender === 'M' ? P : FEMALE} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{p.full_name}</div>
+                          <div style={{ fontSize: 12, color: MU }}>{calcAge(p.birth_date)} · {g?.name || '—'}</div>
+                          {pend > 0 && <div style={{ fontSize: 11, color: WARN, fontWeight: 500, marginTop: 2 }}>{pend} vacina{pend > 1 ? 's' : ''} pendente{pend > 1 ? 's' : ''}</div>}
+                        </div>
+                        <CaretRight size={16} color={MU} />
+                      </div>
+                    ) : (
+                      <div onClick={() => { setActivePatient(p); go('patient-detail'); }}
+                        style={{ display: 'grid', gridTemplateColumns: '1fr 90px 170px 130px 120px 90px', gap: 16, padding: '14px 20px', alignItems: 'center', cursor: 'pointer' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = PL; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: p.gender === 'M' ? PL : FEMALEL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <User size={16} color={p.gender === 'M' ? P : FEMALE} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14 }}>{p.full_name}</div>
+                            <div style={{ fontSize: 12, color: MU }}>
+                              {pend > 0 && <span style={{ color: WARN, fontWeight: 500 }}>{pend} vacina{pend > 1 ? 's' : ''} pendente{pend > 1 ? 's' : ''} · </span>}
+                              {consultSummaries[p.id]?.count ?? 0} consultas
+                            </div>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 13 }}>{calcAge(p.birth_date)}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500 }}>{g?.name || '—'}</div>
+                          <div style={{ fontSize: 12, color: MU }}>{g?.phone}</div>
+                        </div>
+                        <span style={{ fontSize: 13, color: MU }}>{consultSummaries[p.id]?.lastDate ? fmtDate(consultSummaries[p.id].lastDate!) : '—'}</span>
+                        <span style={{ fontSize: 13, color: p.next_return && new Date(p.next_return) < new Date(TODAY) ? DES : INK }}>{fmtDate(p.next_return)}</span>
+                        <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setActivePatient(p); go('patient-detail'); }}>Ver ficha</Btn>
+                      </div>
+                    )}
                   </div>
-                </div>
-              </div>
-              <span style={{ fontSize: 13 }}>{calcAge(p.birth_date)}</span>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{g?.name || '—'}</div>
-                <div style={{ fontSize: 12, color: MU }}>{g?.phone}</div>
-              </div>
-              <span style={{ fontSize: 13, color: MU }}>{consultSummaries[p.id]?.lastDate ? fmtDate(consultSummaries[p.id].lastDate!) : '—'}</span>
-              <span style={{ fontSize: 13, color: p.next_return && new Date(p.next_return) < new Date(TODAY) ? DES : INK }}>{fmtDate(p.next_return)}</span>
-              <Btn size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setActivePatient(p); go('patient-detail'); }}>Ver ficha</Btn>
+                );
+              })}
             </div>
-          );
-        })}
-        {isLoading && <div style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Carregando pacientes…</div>}
-        {!isLoading && filtered.length === 0 && (
-          <div style={{ padding: 40, textAlign: 'center' as const, color: MU }}>
-            {patients.length === 0 ? 'Nenhum paciente cadastrado ainda.' : 'Nenhum paciente encontrado.'}
-          </div>
-        )}
+          )}
+        </div>
       </Card>
     </div>
   );
@@ -2304,7 +2358,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
     db.fetchVaccines(patient.id)
       .then(dbVs => {
         const count = PNI_SCHEDULE.filter(pni => {
-          const done = dbVs.find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
+          const done = dbVs.find((v) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
           return !done && pni.age_months < ageMonths; // strict: vacinas do mês atual ainda estão no prazo
         }).length;
         setPendingVaccinesCount(count);
@@ -3223,7 +3277,7 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
   })();
 
   // Appointment card colors
-  function apptBg(a: any) {
+  function apptBg(a: AppointmentRow) {
     if (a.status === 'completed') return `${SUC}12`;
     if (a.type === 'primeira vez') return `${ACCENT}14`;
     return `${P}10`;
@@ -3869,7 +3923,7 @@ function PainelPage({ go, setActivePatient }: { go: (s: string) => void; setActi
     .slice(0, 5) as { patient: { id: string; full_name: string; birth_date: string; created_at: string }; lastDate: string }[];
 
   // Insights
-  type Insight = { color: string; bg: string; icon: any; text: string; action?: { label: string; fn: () => void } };
+  type Insight = { color: string; bg: string; icon: IconComponent; text: string; action?: { label: string; fn: () => void } };
   const insights: Insight[] = [];
   if (consultDelta !== null && consultDelta <= -10) insights.push({ color: DES, bg: DESL, icon: ArrowDown, text: `Consultas caíram ${Math.abs(consultDelta)}% em relação ao período anterior.` });
   else if (consultDelta !== null && consultDelta >= 10) insights.push({ color: SUC, bg: SUCL, icon: ArrowUp, text: `Consultas cresceram ${consultDelta}% em relação ao período anterior.` });

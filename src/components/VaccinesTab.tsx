@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { CheckCircle, Clock, Warning, X } from '@phosphor-icons/react';
 import { P, MU, BO, SUC, SUCL, WARN, WARNL, DES, DESL } from '../lib/design';
 import * as db from '../lib/db';
@@ -56,7 +57,7 @@ export function VaccinesTab({ patient }: { patient: Patient }) {
   })();
 
   function refetch() {
-    db.fetchVaccines(patient.id).then(setDbVaccines).catch(() => {}).finally(() => setLoading(false));
+    db.fetchVaccines(patient.id).then(setDbVaccines).catch(() => { toast.error('Erro ao carregar vacinas'); }).finally(() => setLoading(false));
   }
   useEffect(() => { refetch(); }, [patient.id]);
 

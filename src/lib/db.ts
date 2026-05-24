@@ -1,6 +1,223 @@
 import { supabase } from './supabase';
 import type { Patient, Consultation, StructuredSummary, AnamnesePrimeiraConsultaData } from '../data/mock';
 
+// ── Raw Supabase row shapes (internal) ────────────────────────────────────────
+// Represent the exact shape returned by Supabase before mapping.
+// Not exported — consumers use the mapped output types below.
+
+interface RawGuardianRow {
+  name: string;
+  relationship: string | null;
+  phone: string | null;
+  email: string | null;
+  is_primary: boolean;
+}
+
+interface RawPatientRow {
+  id: string;
+  full_name: string;
+  birth_date: string;
+  gender: 'M' | 'F';
+  blood_type: string | null;
+  delivery_type: string | null;
+  gestational_age_weeks: number | null;
+  birth_weight_g: number | null;
+  notes: string | null;
+  insurance_plan: string | null;
+  insurance_card_number: string | null;
+  is_active: boolean;
+  next_return: string | null;
+  patient_guardians?: RawGuardianRow[];
+}
+
+interface RawConsultationRow {
+  id: string;
+  patient_id: string;
+  scheduled_at: string;
+  status: string;
+  type: string;
+  duration_minutes: number | null;
+  chief_complaint: string | null;
+  diagnosis: string | null;
+  plan: string | null;
+  prescription: string | null;
+  anamnesis: string | null;
+  physical_exam: string | null;
+  sum_queixa_principal: string | null;
+  sum_hda: string | null;
+  sum_exame_fisico: string | null;
+  sum_hipoteses: string[] | null;
+  sum_conduta: string | null;
+  sum_retorno: string | null;
+  sum_peso: string | null;
+  sum_altura: string | null;
+  sum_perimetro_cefalico: string | null;
+  sum_vacinas_mencionadas: string[] | null;
+  specialty_data: Record<string, unknown> | null;
+}
+
+interface RawAppointmentRow {
+  id: string;
+  scheduled_at: string;
+  status: string;
+  type: string;
+  chief_complaint: string | null;
+  patient_id: string;
+  patients: {
+    full_name: string;
+    birth_date: string;
+    patient_guardians: Pick<RawGuardianRow, 'name' | 'phone' | 'is_primary'>[];
+  } | null;
+}
+
+interface RawVaccineRow {
+  patient_id: string;
+  name: string;
+  dose: string;
+  status: string;
+  applied_at: string | null;
+  [key: string]: unknown;
+}
+
+interface RawGrowthRow {
+  patient_id?: string;
+  month_age?: number;
+  weight_kg: number | string | null;
+  height_cm: number | string | null;
+  head_circumference_cm?: number | string | null;
+  created_at: string | null;
+}
+
+interface RawDayBriefingConsultRow {
+  id: string;
+  patient_id: string;
+  scheduled_at: string;
+  type: string;
+  chief_complaint: string | null;
+  diagnosis: string | null;
+  plan: string | null;
+  sum_retorno: string | null;
+  sum_peso: string | null;
+  sum_altura: string | null;
+  status: string;
+}
+
+interface RawRecentActivityRow {
+  id: string;
+  scheduled_at: string;
+  type: string;
+  patient_id: string;
+  patients: { full_name: string } | null;
+}
+
+interface RawUserProfileRow {
+  id: string;
+  user_id: string;
+  doctor_id: string;
+  role: 'medico' | 'secretaria';
+  full_name: string;
+  email: string;
+  active: boolean;
+  created_at: string;
+}
+
+interface RawPatientSimple {
+  id: string;
+  full_name: string;
+}
+
+interface RawConsultationSimple {
+  patient_id: string;
+  created_at: string;
+}
+
+interface RawMilestoneRow {
+  milestone_key: string;
+  status: 'presente' | 'ausente' | 'nao_verificado';
+  checked_at: string | null;
+  notes: string | null;
+}
+
+interface RawPatientWithDates {
+  id: string;
+  birth_date: string;
+  full_name: string;
+  created_at: string;
+}
+
+interface RawConsultationWithType {
+  scheduled_at: string;
+  type: string;
+  status: string;
+  patient_id: string;
+}
+
+interface RawOverdueAppointmentRow {
+  patient_id: string;
+  scheduled_at: string;
+  patients: { full_name: string } | null;
+}
+
+interface RawVaccineSimple {
+  patient_id: string;
+  name: string;
+  dose: string;
+  status: string;
+}
+
+interface RawConsultationSummaryRow {
+  patient_id: string;
+  scheduled_at: string;
+}
+
+// ── Exported output types (used by consumers of this module) ──────────────────
+
+/** Shape returned by fetchAppointmentsForWeek — used in AgendaPage */
+export interface AgendaAppointment {
+  id: string;
+  time: string;
+  patient_id: string;
+  patient_name: string;
+  age: string;
+  type: 'retorno' | 'primeira vez';
+  status: 'completed' | 'in_progress' | 'scheduled';
+  chief_complaint: string;
+  guardian: string;
+  date: string;
+}
+
+/** Shape returned by fetchTodayAppointments — used in Dashboard + SecretaryDashboard */
+export interface TodayAppointment {
+  id: string;
+  time: string;
+  patient_id: string;
+  patient_name: string;
+  patient_birth_date: string;
+  age: string;
+  type: 'retorno' | 'primeira vez';
+  status: 'completed' | 'in_progress' | 'scheduled';
+  guardian: string;
+  guardian_phone: string;
+}
+
+/** Shape returned by fetchRecentActivity */
+export interface RecentActivityItem {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  date: string;
+  type: 'retorno' | 'primeira vez';
+}
+
+/** Shape returned by fetchGrowthRecords */
+export interface GrowthRecord {
+  month: number;
+  weight?: number;
+  height?: number;
+  hc?: number;
+  date: string;
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const signUp = (email: string, password: string, fullName: string) =>
   supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
@@ -302,7 +519,7 @@ export async function createAppointment(input: {
 }
 
 // ── Appointments ──────────────────────────────────────────────────────────────
-export async function fetchAppointmentsForWeek(from: string, to: string) {
+export async function fetchAppointmentsForWeek(from: string, to: string): Promise<AgendaAppointment[]> {
   const { data, error } = await supabase
     .from('appointments')
     .select('id, scheduled_at, status, type, chief_complaint, patient_id, patients(full_name, birth_date, patient_guardians(name, is_primary))')
@@ -311,10 +528,10 @@ export async function fetchAppointmentsForWeek(from: string, to: string) {
     .order('scheduled_at', { ascending: true });
   if (error) throw error;
 
-  return (data || []).map((c: any) => {
+  return (data || []).map((c: RawAppointmentRow) => {
     const patient = c.patients;
-    const guardians: any[] = patient?.patient_guardians || [];
-    const primary = guardians.find((g: any) => g.is_primary) || guardians[0];
+    const guardians = patient?.patient_guardians || [];
+    const primary = guardians.find((g) => g.is_primary) || guardians[0];
     let age = '';
     if (patient?.birth_date) {
       const bd = new Date(patient.birth_date);
@@ -353,7 +570,7 @@ export async function cancelAppointment(id: string): Promise<void> {
 }
 
 // ── Today's appointments ──────────────────────────────────────────────────────
-export async function fetchTodayAppointments() {
+export async function fetchTodayAppointments(): Promise<TodayAppointment[]> {
   const today = new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from('appointments')
@@ -363,10 +580,10 @@ export async function fetchTodayAppointments() {
     .neq('status', 'cancelled')
     .order('scheduled_at', { ascending: true });
   if (error) return [];
-  return (data || []).map((c: any) => {
+  return (data || []).map((c: RawAppointmentRow) => {
     const patient = c.patients;
-    const guardians: any[] = patient?.patient_guardians || [];
-    const primary = guardians.find((g: any) => g.is_primary) || guardians[0];
+    const guardians = patient?.patient_guardians || [];
+    const primary = guardians.find((g) => g.is_primary) || guardians[0];
     let age = '';
     if (patient?.birth_date) {
       const bd = new Date(patient.birth_date), now = new Date();
@@ -434,7 +651,7 @@ export async function fetchDayBriefing(patientIds: string[]): Promise<Record<str
     result[id] = { patientId: id, lastConsult: null, totalConsults: 0, overdueVaccines: [], lastVaccine: null, lastGrowth: null };
   });
 
-  (consultsRes.data || []).forEach((c: any) => {
+  (consultsRes.data || []).forEach((c: RawDayBriefingConsultRow) => {
     const item = result[c.patient_id];
     if (!item) return;
     item.totalConsults++;
@@ -453,7 +670,7 @@ export async function fetchDayBriefing(patientIds: string[]): Promise<Record<str
   });
 
   const seenLastVacc = new Set<string>();
-  (vaccinesRes.data || []).forEach((v: any) => {
+  (vaccinesRes.data || []).forEach((v: RawVaccineRow) => {
     const item = result[v.patient_id];
     if (!item) return;
     if (!seenLastVacc.has(v.patient_id) && v.status === 'done' && v.applied_at) {
@@ -466,7 +683,7 @@ export async function fetchDayBriefing(patientIds: string[]): Promise<Record<str
   });
 
   const seenGrowth = new Set<string>();
-  (growthRes.data || []).forEach((r: any) => {
+  (growthRes.data || []).forEach((r: RawGrowthRow) => {
     if (seenGrowth.has(r.patient_id)) return;
     const item = result[r.patient_id];
     if (!item) return;
@@ -482,7 +699,7 @@ export async function fetchDayBriefing(patientIds: string[]): Promise<Record<str
 }
 
 // ── Recent activity ───────────────────────────────────────────────────────────
-export async function fetchRecentActivity() {
+export async function fetchRecentActivity(): Promise<RecentActivityItem[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
   const { data } = await supabase
@@ -492,7 +709,7 @@ export async function fetchRecentActivity() {
     .eq('status', 'completed')
     .order('scheduled_at', { ascending: false })
     .limit(5);
-  return (data || []).map((c: any) => ({
+  return (data || []).map((c: RawRecentActivityRow) => ({
     id: c.id,
     patient_id: c.patient_id,
     patient_name: c.patients?.full_name || 'Paciente',
@@ -522,7 +739,7 @@ export async function fetchConsultationEvolution(days: number): Promise<{ date: 
 
   // Group by date and type
   const grouped: Record<string, { 'Primeira vez': number; 'Retorno': number }> = {};
-  data.forEach((c: any) => {
+  data.forEach((c: RawConsultationWithType) => {
     const date = c.scheduled_at.slice(0, 10);
     if (!grouped[date]) grouped[date] = { 'Primeira vez': 0, 'Retorno': 0 };
     const typeLabel = c.type === 'primeira vez' ? 'Primeira vez' : 'Retorno';
@@ -557,7 +774,7 @@ export async function fetchConsultationSummaries(): Promise<Record<string, { cou
     .order('scheduled_at', { ascending: false });
   if (error) return {};
   const map: Record<string, { count: number; lastDate: string | null }> = {};
-  (data || []).forEach((c: any) => {
+  (data || []).forEach((c: RawConsultationSummaryRow) => {
     if (!map[c.patient_id]) map[c.patient_id] = { count: 0, lastDate: null };
     map[c.patient_id].count++;
     if (!map[c.patient_id].lastDate) map[c.patient_id].lastDate = c.scheduled_at.slice(0, 10);
@@ -615,37 +832,37 @@ export async function fetchClinicPanelData(days: number): Promise<ClinicPanelDat
       .order('scheduled_at', { ascending: false }),
   ]);
 
-  const patientIds = (patientsRes.data || []).map((p: any) => p.id);
+  const patientIds = (patientsRes.data || []).map((p: RawPatientWithDates) => p.id);
   const vaccinesRes = patientIds.length > 0
     ? await supabase.from('patient_vaccines').select('patient_id, name, dose, status').in('patient_id', patientIds)
     : { data: [] };
 
   return {
     periodStart,
-    patients: (patientsRes.data || []).map((p: any) => ({
+    patients: (patientsRes.data || []).map((p: RawPatientWithDates) => ({
       id: p.id,
       birth_date: p.birth_date,
       full_name: p.full_name,
       created_at: (p.created_at || '').slice(0, 10),
     })),
-    periodConsults: (periodConsultsRes.data || []).map((c: any) => ({
+    periodConsults: (periodConsultsRes.data || []).map((c: RawConsultationWithType) => ({
       date: c.scheduled_at.slice(0, 10),
       type: c.type || 'retorno',
       status: c.status || 'scheduled',
       patient_id: c.patient_id,
     })),
-    prevConsults: (prevConsultsRes.data || []).map((c: any) => ({
+    prevConsults: (prevConsultsRes.data || []).map((c: RawConsultationWithType) => ({
       date: c.scheduled_at.slice(0, 10),
       type: c.type || 'retorno',
       patient_id: c.patient_id,
     })),
-    allConsults: (allConsultsRes.data || []).map((c: any) => ({
+    allConsults: (allConsultsRes.data || []).map((c: RawConsultationWithType) => ({
       date: c.scheduled_at.slice(0, 10),
       type: c.type || 'retorno',
       status: c.status,
       patient_id: c.patient_id,
     })),
-    allVaccines: (vaccinesRes.data || []) as { patient_id: string; name: string; dose: string; status: string }[],
+    allVaccines: (vaccinesRes.data || []) as RawVaccineSimple[],
   };
 }
 
@@ -674,7 +891,7 @@ export async function fetchDashboardStats(): Promise<{
   return {
     totalConsultations: consResult.count || 0,
     thisMonthPatients: patResult.count || 0,
-    overdueAppointments: (apptResult.data || []).map((r: any) => ({
+    overdueAppointments: (apptResult.data || []).map((r: RawOverdueAppointmentRow) => ({
       patient_id: r.patient_id,
       patient_name: r.patients?.full_name || 'Paciente',
       scheduled_at: r.scheduled_at,
@@ -693,7 +910,7 @@ export async function fetchPatientsOverdueVaccines(patients: { id: string; birth
     const done = data || [];
     const overdue = PNI_SCHEDULE_NAMES.filter(pni =>
       pni.age_months < ageMonths &&
-      !done.find((v: any) => v.name === pni.name && v.dose === pni.dose && v.status === 'done')
+      !done.find((v: RawVaccineSimple) => v.name === pni.name && v.dose === pni.dose && v.status === 'done')
     ).length;
     if (overdue > 0) results.push({ id: p.id, full_name: p.full_name, overdueCount: overdue });
   }));
@@ -768,14 +985,14 @@ export async function fetchAnamnesePrimeiraConsultaByPatient(
 }
 
 // ── Growth Records ────────────────────────────────────────────────────────────
-export async function fetchGrowthRecords(patientId: string) {
+export async function fetchGrowthRecords(patientId: string): Promise<GrowthRecord[]> {
   const { data, error } = await supabase
     .from('growth_records')
     .select('month_age, weight_kg, height_cm, head_circumference_cm, created_at')
     .eq('patient_id', patientId)
     .order('month_age', { ascending: true });
   if (error) throw error;
-  return (data || []).map((r: any) => ({
+  return (data || []).map((r: RawGrowthRow) => ({
     month: r.month_age as number,
     weight: r.weight_kg ? parseFloat(r.weight_kg) : undefined,
     height: r.height_cm ? parseFloat(r.height_cm) : undefined,
@@ -836,7 +1053,7 @@ export async function createVaccine(input: {
 }
 
 // ── Mappers ───────────────────────────────────────────────────────────────────
-function mapPatient(p: any): Patient {
+function mapPatient(p: RawPatientRow): Patient {
   return {
     id: p.id,
     full_name: p.full_name,
@@ -852,7 +1069,7 @@ function mapPatient(p: any): Patient {
     is_active: p.is_active ?? true,
     next_return: p.next_return,
     consultation_count: 0,
-    guardians: (p.patient_guardians || []).map((g: any) => ({
+    guardians: (p.patient_guardians || []).map((g: RawGuardianRow) => ({
       name: g.name,
       relationship: g.relationship || 'Responsável',
       phone: g.phone || '',
@@ -862,7 +1079,7 @@ function mapPatient(p: any): Patient {
   };
 }
 
-function mapConsultation(c: any): Consultation {
+function mapConsultation(c: RawConsultationRow): Consultation {
   return {
     id: c.id,
     patient_id: c.patient_id,
@@ -896,7 +1113,7 @@ function mapConsultation(c: any): Consultation {
 // Retorna mapa: patient_id → lista de registros
 // Segurança: RLS em patient_vaccines filtra por doctor_id via subquery em patients.
 // Auth check explícito adicionado para defesa em profundidade.
-export async function fetchAllVaccinesForDoctor(): Promise<Record<string, any[]>> {
+export async function fetchAllVaccinesForDoctor(): Promise<Record<string, RawVaccineRow[]>> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return {};
   const { data, error } = await supabase
@@ -904,8 +1121,8 @@ export async function fetchAllVaccinesForDoctor(): Promise<Record<string, any[]>
     .select('*')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  const grouped: Record<string, any[]> = {};
-  (data || []).forEach((v: any) => {
+  const grouped: Record<string, RawVaccineRow[]> = {};
+  (data || []).forEach((v: RawVaccineRow) => {
     if (!grouped[v.patient_id]) grouped[v.patient_id] = [];
     grouped[v.patient_id].push(v);
   });
@@ -937,7 +1154,7 @@ export async function fetchTeamMembers(): Promise<TeamMember[]> {
     .order('created_at', { ascending: true });
 
   if (error) throw error;
-  return (data || []).map((r: any) => ({
+  return (data || []).map((r: RawUserProfileRow) => ({
     id:        r.id,
     userId:    r.user_id,
     doctorId:  r.doctor_id,
@@ -1006,7 +1223,6 @@ export async function fetchAdminAlerts(days = 60): Promise<AdminAlert[]> {
 
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
-  const cutoffStr = cutoff.toISOString();
   const today = new Date();
 
   // Busca todos os pacientes ativos
@@ -1030,12 +1246,12 @@ export async function fetchAdminAlerts(days = 60): Promise<AdminAlert[]> {
 
   // Mapeia última consulta por paciente
   const lastConsult: Record<string, string> = {};
-  (consultations || []).forEach((c: any) => {
+  (consultations || []).forEach((c: RawConsultationSimple) => {
     if (!lastConsult[c.patient_id]) lastConsult[c.patient_id] = c.created_at;
   });
 
   const alerts: AdminAlert[] = [];
-  patients.forEach((p: any) => {
+  patients.forEach((p: RawPatientSimple) => {
     const last = lastConsult[p.id] ?? null;
     const lastDate = last ? new Date(last) : null;
     const daysSince = lastDate
@@ -1075,7 +1291,7 @@ export async function fetchDevelopmentMilestones(
     .eq('patient_id', patientId);
   if (error) throw error;
   const map: Record<string, MilestoneRecord> = {};
-  (data || []).forEach((r: any) => { map[r.milestone_key] = r; });
+  (data || []).forEach((r: RawMilestoneRow) => { map[r.milestone_key] = r; });
   return map;
 }
 
