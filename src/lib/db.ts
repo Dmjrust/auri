@@ -416,7 +416,8 @@ export async function confirmDraftConsultation(
   durationSeconds: number,
   birthDate: string,
 ): Promise<void> {
-  // Persiste o resumo editado pelo médico junto com a confirmação
+  // FIX B3: filtro por status='draft' evita confirmar uma consulta já 'completed'
+  // e impede duplicação de registros em growth_records
   const { error } = await supabase
     .from('consultations')
     .update({
@@ -439,7 +440,8 @@ export async function confirmDraftConsultation(
       sum_vacinas_mencionadas:  summary.vacinas_mencionadas,
       specialty_data:           summary.specialty_data ?? null,
     })
-    .eq('id', draftId);
+    .eq('id', draftId)
+    .eq('status', 'draft'); // garante idempotência — sem efeito em consultas já confirmadas
   if (error) throw error;
 
   const now = new Date();
@@ -917,25 +919,53 @@ export async function fetchPatientsOverdueVaccines(patients: { id: string; birth
   return results;
 }
 
-// PNI names needed for vaccine check (kept minimal to avoid circular dep)
+// PNI completo (sincronizado com VaccinesTab.tsx — SBP/MS 2024)
+// Cobre do nascimento até 11 anos. Nomes devem corresponder exatamente
+// ao que é gravado em patient_vaccines via createVaccine().
 const PNI_SCHEDULE_NAMES = [
-  { name: 'BCG', dose: '1ª dose', age_months: 0 },
-  { name: 'Hepatite B', dose: '1ª dose', age_months: 0 },
-  { name: 'Penta (DTP+Hib+HepB)', dose: '1ª dose', age_months: 2 },
-  { name: 'VIP (Poliomielite)', dose: '1ª dose', age_months: 2 },
-  { name: 'Pneumocócica 10V', dose: '1ª dose', age_months: 2 },
-  { name: 'Rotavírus', dose: '1ª dose', age_months: 2 },
-  { name: 'Meningocócica C', dose: '1ª dose', age_months: 3 },
-  { name: 'Penta (DTP+Hib+HepB)', dose: '2ª dose', age_months: 4 },
-  { name: 'VIP (Poliomielite)', dose: '2ª dose', age_months: 4 },
-  { name: 'Pneumocócica 10V', dose: '2ª dose', age_months: 4 },
-  { name: 'Rotavírus', dose: '2ª dose', age_months: 4 },
-  { name: 'Meningocócica C', dose: '2ª dose', age_months: 5 },
-  { name: 'Penta (DTP+Hib+HepB)', dose: '3ª dose', age_months: 6 },
-  { name: 'VIP (Poliomielite)', dose: '3ª dose', age_months: 6 },
-  { name: 'Pneumocócica 10V', dose: '3ª dose', age_months: 6 },
-  { name: 'Hepatite B', dose: '2ª dose', age_months: 6 },
-  { name: 'Influenza', dose: 'Anual', age_months: 6 },
+  // Nascimento
+  { name: 'BCG',                    dose: '1ª dose',    age_months: 0   },
+  { name: 'Hepatite B',             dose: '1ª dose',    age_months: 0   },
+  // 2 meses
+  { name: 'Penta (DTP+Hib+HepB)',   dose: '1ª dose',    age_months: 2   },
+  { name: 'VIP (Polio inativada)',   dose: '1ª dose',    age_months: 2   },
+  { name: 'Rotavírus Humano',        dose: '1ª dose',    age_months: 2   },
+  { name: 'Pneumocócica 10V',        dose: '1ª dose',    age_months: 2   },
+  // 3 meses
+  { name: 'Meningocócica C',         dose: '1ª dose',    age_months: 3   },
+  // 4 meses
+  { name: 'Penta (DTP+Hib+HepB)',    dose: '2ª dose',    age_months: 4   },
+  { name: 'VIP (Polio inativada)',    dose: '2ª dose',    age_months: 4   },
+  { name: 'Rotavírus Humano',         dose: '2ª dose',    age_months: 4   },
+  { name: 'Pneumocócica 10V',         dose: '2ª dose',    age_months: 4   },
+  // 5 meses
+  { name: 'Meningocócica C',          dose: '2ª dose',    age_months: 5   },
+  // 6 meses
+  { name: 'Penta (DTP+Hib+HepB)',     dose: '3ª dose',    age_months: 6   },
+  { name: 'VIP (Polio inativada)',     dose: '3ª dose',    age_months: 6   },
+  // 12 meses
+  { name: 'Meningocócica ACWY',        dose: '1ª dose',    age_months: 12  },
+  { name: 'Febre Amarela',             dose: '1ª dose',    age_months: 12  },
+  { name: 'Tríplice Viral (SCR)',       dose: '1ª dose',    age_months: 12  },
+  { name: 'Varicela',                  dose: '1ª dose',    age_months: 12  },
+  { name: 'Pneumocócica 10V',          dose: 'Reforço',    age_months: 12  },
+  { name: 'Meningocócica C',           dose: 'Reforço',    age_months: 12  },
+  { name: 'Hepatite A',                dose: '1ª dose',    age_months: 12  },
+  // 15 meses
+  { name: 'DTP',                       dose: '1º Reforço', age_months: 15  },
+  { name: 'VOP (Polio oral)',           dose: '1º Reforço', age_months: 15  },
+  { name: 'Tríplice Viral (SCR)',       dose: '2ª dose',    age_months: 15  },
+  // 4 anos
+  { name: 'DTP',                       dose: '2º Reforço', age_months: 48  },
+  { name: 'VOP (Polio oral)',           dose: '2º Reforço', age_months: 48  },
+  { name: 'Varicela',                  dose: '2ª dose',    age_months: 48  },
+  // 9 anos
+  { name: 'HPV',                       dose: '1ª dose',    age_months: 108 },
+  { name: 'HPV',                       dose: '2ª dose',    age_months: 114 },
+  // 10 anos
+  { name: 'Meningocócica ACWY',        dose: 'Reforço',    age_months: 120 },
+  // 11 anos
+  { name: 'dT (Difteria + Tétano)',    dose: 'Reforço',    age_months: 132 },
 ];
 
 // ── Anamnese Primeira Consulta ────────────────────────────────────────────────
@@ -1111,14 +1141,27 @@ function mapConsultation(c: RawConsultationRow): Consultation {
 
 // Busca TODAS as vacinas de todos os pacientes do médico em uma única query
 // Retorna mapa: patient_id → lista de registros
-// Segurança: RLS em patient_vaccines filtra por doctor_id via subquery em patients.
-// Auth check explícito adicionado para defesa em profundidade.
+// Segurança (defesa em profundidade):
+//   1. Auth check explícito — retorna vazio se não autenticado
+//   2. Busca explícita dos patient_ids do médico antes de filtrar vacinas
+//   3. RLS em patient_vaccines também filtra via patients.doctor_id (dupla proteção)
 export async function fetchAllVaccinesForDoctor(): Promise<Record<string, RawVaccineRow[]>> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return {};
+
+  // FIX B1: buscar explicitamente os IDs dos pacientes do médico (não depende só de RLS)
+  const { data: patientsData } = await supabase
+    .from('patients')
+    .select('id')
+    .eq('doctor_id', user.id)
+    .eq('is_active', true);
+  const patientIds = (patientsData || []).map((p: { id: string }) => p.id);
+  if (patientIds.length === 0) return {};
+
   const { data, error } = await supabase
     .from('patient_vaccines')
     .select('*')
+    .in('patient_id', patientIds)
     .order('created_at', { ascending: false });
   if (error) throw error;
   const grouped: Record<string, RawVaccineRow[]> = {};
