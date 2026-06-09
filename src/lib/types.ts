@@ -19,7 +19,7 @@ export interface UserProfile {
   id: string;
   userId: string;
   doctorId: string;
-  role: 'medico' | 'secretaria';
+  role: 'medico' | 'secretaria' | 'admin';
   fullName: string;
   email: string;
   active: boolean;

@@ -43,7 +43,7 @@ function AccessDenied({ onBack }: { onBack?: () => void }) {
 // ── RequireRole — wrapper de autorização por papel ───────────────────────────
 
 interface RequireRoleProps {
-  roles: Array<'medico' | 'secretaria'>;
+  roles: Array<'medico' | 'secretaria' | 'admin'>;
   children: React.ReactNode;
   /** Conteúdo alternativo. Se omitido, renderiza <AccessDenied /> */
   fallback?: React.ReactNode;
@@ -69,7 +69,7 @@ export function RequireRole({ roles, children, fallback, onBack }: RequireRolePr
 
 // ── useRequireRole — hook para lógica condicional fora do JSX ─────────────────
 
-export function useRequireRole(roles: Array<'medico' | 'secretaria'>): boolean {
+export function useRequireRole(roles: Array<'medico' | 'secretaria' | 'admin'>): boolean {
   const { role, isLoading } = useAuthProfile();
   if (isLoading || !role) return false;
   return roles.includes(role);

@@ -13,11 +13,12 @@ import type { UserProfile } from '../lib/types';
 
 interface AuthProfileCtxValue {
   profile:      UserProfile | null;
-  role:         'medico' | 'secretaria' | null;
+  role:         'medico' | 'secretaria' | 'admin' | null;
   doctorId:     string | null;
   fullName:     string | null;
   isDoctor:     boolean;
   isSecretary:  boolean;
+  isAdmin:      boolean;
   isLoading:    boolean;
   /** true quando o usuário está autenticado mas não tem registro em user_profiles */
   profileMissing: boolean;
@@ -30,6 +31,7 @@ const defaultValue: AuthProfileCtxValue = {
   fullName:       null,
   isDoctor:       false,
   isSecretary:    false,
+  isAdmin:        false,
   isLoading:      true,
   profileMissing: false,
 };
@@ -52,7 +54,7 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
     id:        data.id,
     userId:    data.user_id,
     doctorId:  data.doctor_id,
-    role:      data.role as 'medico' | 'secretaria',
+    role:      data.role as 'medico' | 'secretaria' | 'admin',
     fullName:  data.full_name,
     email:     data.email,
     active:    data.active,
@@ -117,6 +119,7 @@ export function AuthProfileProvider({ children }: { children: React.ReactNode })
     fullName:       profile?.fullName     ?? null,
     isDoctor:       profile?.role         === 'medico',
     isSecretary:    profile?.role         === 'secretaria',
+    isAdmin:        profile?.role         === 'admin',
     isLoading,
     profileMissing,
   }), [profile, isLoading, profileMissing]);

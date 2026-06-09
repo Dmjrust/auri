@@ -61,14 +61,16 @@ type ProntuarioFormat = 'narrativo' | 'escaneavel';
 
 // ─── BOTTOM NAV (mobile) ─────────────────────────────────────────────────────
 function BottomNav({ screen, go }: { screen: string; go: (s: string) => void }) {
-  const { isDoctor } = useAuthProfile();
+  const { isDoctor, isAdmin } = useAuthProfile();
   const allNavItems = [
-    { id: 'dashboard', label: 'Início',     icon: SquaresFour, doctorOnly: false },
-    { id: 'patients',  label: 'Pacientes',  icon: Users,        doctorOnly: false },
+    { id: 'dashboard', label: 'Início',     icon: SquaresFour,  doctorOnly: false },
+    { id: 'patients',  label: 'Pacientes',  icon: Users,         doctorOnly: false },
     { id: 'agenda',    label: 'Agenda',     icon: CalendarBlank, doctorOnly: false },
-    { id: 'settings',  label: 'Config.',    icon: GearSix,      doctorOnly: true },
+    { id: 'settings',  label: 'Config.',    icon: GearSix,       doctorOnly: true  },
   ];
-  const navItems = allNavItems.filter(i => !i.doctorOnly || isDoctor);
+  const navItems = isAdmin
+    ? [{ id: 'admin', label: 'Admin', icon: ShieldCheck, doctorOnly: false }]
+    : allNavItems.filter(i => !i.doctorOnly || isDoctor);
   return (
     <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, background: '#fff', borderTop: `1px solid ${BO}`, display: 'flex', zIndex: 100 }}>
       {navItems.map(({ id, label, icon: Icon }) => {
@@ -90,18 +92,23 @@ function BottomNav({ screen, go }: { screen: string; go: (s: string) => void }) 
 
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) => void; doctorName: string }) {
-  const { isDoctor, role, fullName } = useAuthProfile();
+  const { isDoctor, isAdmin, role, fullName } = useAuthProfile();
   const allNavItems = [
-    { id: 'dashboard', label: 'Dashboard',            icon: SquaresFour,  doctorOnly: false },
-    { id: 'patients',  label: 'Pacientes',             icon: Users,         doctorOnly: false },
-    { id: 'agenda',    label: 'Agenda',                icon: CalendarBlank, doctorOnly: false },
-    { id: 'painel',    label: 'Painel do consultório', icon: ChartBar,      doctorOnly: true },
-    { id: 'settings',  label: 'Configurações',         icon: GearSix,       doctorOnly: true },
+    { id: 'dashboard', label: 'Dashboard',            icon: SquaresFour,  doctorOnly: false, adminOnly: false },
+    { id: 'patients',  label: 'Pacientes',             icon: Users,         doctorOnly: false, adminOnly: false },
+    { id: 'agenda',    label: 'Agenda',                icon: CalendarBlank, doctorOnly: false, adminOnly: false },
+    { id: 'painel',    label: 'Painel do consultório', icon: ChartBar,      doctorOnly: true,  adminOnly: false },
+    { id: 'settings',  label: 'Configurações',         icon: GearSix,       doctorOnly: true,  adminOnly: false },
   ];
-  const navItems = allNavItems.filter(i => !i.doctorOnly || isDoctor);
+  const adminNavItems = [
+    { id: 'admin', label: 'Admin', icon: ShieldCheck, doctorOnly: false, adminOnly: true },
+  ];
+  const navItems = isAdmin
+    ? adminNavItems
+    : allNavItems.filter(i => !i.doctorOnly || isDoctor);
   // Nome exibido: fullName do perfil (médico ou secretaria)
   const displayName = fullName || doctorName || 'Usuário';
-  const displayRole = role === 'secretaria' ? 'Secretaria' : 'Pediatra';
+  const displayRole = isAdmin ? 'Admin' : role === 'secretaria' ? 'Secretaria' : 'Pediatra';
   return (
     <div style={{ width: SIDEBAR_W, height: '100%', background: '#fff', borderRight: `1px solid ${BO}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       {/* Brand */}
@@ -4214,10 +4221,320 @@ function OnboardingPage({ user, onComplete }: { user: SupabaseUser; onComplete: 
   );
 }
 
+// ─── ADMIN PAGE ──────────────────────────────────────────────────────────────
+
+type AdminFilter = 'all' | 'active' | 'trialing' | 'past_due' | 'canceled' | 'none';
+type AdminSort  = 'name' | 'consults' | 'cost' | 'last_active';
+
+function AdminStatusBadge({ status }: { status: string | null }) {
+  if (!status) return <span style={{ fontSize: 11, color: MU, fontWeight: 500 }}>Sem plano</span>;
+  const map: Record<string, { label: string; color: string; bg: string }> = {
+    active:   { label: 'Ativo',       color: SUC,  bg: SUCL  },
+    trialing: { label: 'Trial',       color: P,    bg: PL    },
+    past_due: { label: 'Inadimplente',color: WARN, bg: WARNL },
+    canceled: { label: 'Cancelado',   color: MU,   bg: SEC   },
+    incomplete:{ label: 'Incompleto', color: MU,   bg: SEC   },
+    unpaid:   { label: 'Não pago',    color: DES,  bg: DESL  },
+  };
+  const s = map[status] ?? { label: status, color: MU, bg: SEC };
+  return (
+    <span style={{ fontSize: 11, fontWeight: 600, color: s.color, background: s.bg, borderRadius: 5, padding: '2px 7px' }}>
+      {s.label}
+    </span>
+  );
+}
+
+function AdminStatsCard({ label, value, sub, subColor }: { label: string; value: string | number; sub?: string; subColor?: string }) {
+  return (
+    <div style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 10, padding: '18px 20px' }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: INK, fontFamily: '"Fraunces", serif', lineHeight: 1.1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: subColor ?? MU, marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function AdminPage({ go: _go }: { go: (s: string) => void }) {
+  const [doctors, setDoctors]       = useState<db.AdminDoctorRow[]>([]);
+  const [stats, setStats]           = useState<db.AdminStats | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [filter, setFilter]         = useState<AdminFilter>('all');
+  const [search, setSearch]         = useState('');
+  const [sortBy, setSortBy]         = useState<AdminSort>('last_active');
+  const [actionTarget, setActionTarget] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [d, s] = await Promise.all([db.fetchAllDoctorsAdmin(), db.fetchAdminStats()]);
+      setDoctors(d);
+      setStats(s);
+    } catch {
+      toast.error('Erro ao carregar dados de admin');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    if (!actionTarget) return;
+    const handler = () => setActionTarget(null);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [actionTarget]);
+
+  const filtered = doctors.filter(d => {
+    if (filter === 'none' && d.subscription.status) return false;
+    if (filter !== 'all' && filter !== 'none' && d.subscription.status !== filter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return d.full_name.toLowerCase().includes(q) || d.crm.toLowerCase().includes(q) || d.email.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'name')    return a.full_name.localeCompare(b.full_name);
+    if (sortBy === 'consults')return b.consults_this_month - a.consults_this_month;
+    if (sortBy === 'cost')    return b.estimated_ai_cost_brl - a.estimated_ai_cost_brl;
+    // last_active (default)
+    if (!a.last_consultation_at) return 1;
+    if (!b.last_consultation_at) return -1;
+    return new Date(b.last_consultation_at).getTime() - new Date(a.last_consultation_at).getTime();
+  });
+
+  async function doAction(doctorId: string, action: string) {
+    setActionLoading(true);
+    try {
+      if (action === 'activate')  await db.adminUpdateSubscription(doctorId, { status: 'active' });
+      if (action === 'suspend')   await db.adminSuspendDoctor(doctorId);
+      if (action === 'trial7')    await db.adminExtendTrial(doctorId, 7);
+      if (action === 'trial30')   await db.adminExtendTrial(doctorId, 30);
+      if (action === 'essencial') await db.adminUpdateSubscription(doctorId, { plan: 'essencial', status: 'active' });
+      if (action === 'pro')       await db.adminUpdateSubscription(doctorId, { plan: 'pro', status: 'active' });
+      toast.success('Assinatura atualizada');
+      setActionTarget(null);
+      load();
+    } catch {
+      toast.error('Erro ao atualizar assinatura');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  const filterOptions: Array<[AdminFilter, string]> = [
+    ['all','Todos'], ['active','Ativo'], ['trialing','Trial'],
+    ['past_due','Inadimplente'], ['canceled','Cancelado'], ['none','Sem plano'],
+  ];
+
+  const isMobile = useIsMobile();
+
+  function fmtLastActive(d: string | null) {
+    if (!d) return 'Nunca';
+    const diff = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+    if (diff === 0) return 'Hoje';
+    if (diff === 1) return 'Ontem';
+    if (diff < 30)  return `${diff}d atrás`;
+    return fmtDate(d.slice(0, 10));
+  }
+
+  return (
+    <div style={{ padding: isMobile ? 16 : 32, maxWidth: 1400 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 16, flexWrap: 'wrap' as const }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: INK, fontFamily: '"Fraunces", serif', letterSpacing: '-0.5px' }}>
+            Gestão de Assinantes
+          </div>
+          <div style={{ fontSize: 13, color: MU, marginTop: 3 }}>Visão operacional do SaaS · Mês atual</div>
+        </div>
+        <Btn variant="secondary" onClick={load} disabled={loading} style={{ flexShrink: 0 }}>
+          <ArrowCounterClockwise size={14} /> {loading ? 'Carregando…' : 'Atualizar'}
+        </Btn>
+      </div>
+
+      {/* Stats cards */}
+      {stats && (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
+          <AdminStatsCard
+            label="Médicos"
+            value={stats.total_doctors}
+            sub={`${stats.active} ativo${stats.active !== 1 ? 's' : ''} · ${stats.trialing} trial${stats.trialing !== 1 ? 's' : ''} · ${stats.past_due} inadimp.`}
+          />
+          <AdminStatsCard
+            label="MRR"
+            value={`R$ ${stats.mrr_brl.toLocaleString('pt-BR')}/mês`}
+            sub={`Essencial R$${stats.mrr_essencial} · Pro R$${stats.mrr_pro}`}
+            subColor={stats.mrr_brl > 0 ? SUC : MU}
+          />
+          <AdminStatsCard
+            label="Consultas este mês"
+            value={stats.total_consults_this_month}
+            sub={`${stats.total_ai_consults_this_month} com IA · ${stats.total_patients} pacientes total`}
+          />
+          <AdminStatsCard
+            label="Custo IA estimado"
+            value={`R$ ${stats.estimated_total_ai_cost_brl.toFixed(2)}`}
+            sub={`≈ R$0,80/consulta transcrita`}
+            subColor={stats.estimated_total_ai_cost_brl > 50 ? WARN : MU}
+          />
+        </div>
+      )}
+
+      {/* Filters + search */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' as const, alignItems: 'center' }}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Buscar por nome, CRM ou email…"
+          style={{ padding: '8px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff', color: INK, width: 240, flexShrink: 0 }}
+        />
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+          {filterOptions.map(([v, l]) => (
+            <button key={v} onClick={() => setFilter(v)}
+              style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, border: `1.5px solid ${filter === v ? P : BO}`, background: filter === v ? PL : '#fff', color: filter === v ? P : MU, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 12, color: MU }}>Ordenar por</span>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value as AdminSort)}
+            style={{ padding: '6px 10px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit', background: '#fff', color: INK, outline: 'none', cursor: 'pointer' }}>
+            <option value="last_active">Última atividade</option>
+            <option value="consults">Consultas/mês</option>
+            <option value="cost">Custo IA</option>
+            <option value="name">Nome</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Table */}
+      {loading ? (
+        <div style={{ padding: 56, textAlign: 'center' as const, color: MU, fontSize: 14 }}>Carregando assinantes…</div>
+      ) : sorted.length === 0 ? (
+        <div style={{ padding: 56, textAlign: 'center' as const, color: MU, fontSize: 14 }}>Nenhum médico encontrado</div>
+      ) : (
+        <div style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 12, overflow: 'hidden' }}>
+          {/* Table header */}
+          {!isMobile && (
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 0.7fr 1fr 1fr 1fr 1fr', gap: 0, padding: '10px 18px', borderBottom: `1px solid ${BO}`, background: BG }}>
+              {['Médico', 'CRM', 'Plano', 'Status', 'Pacientes', 'Consultas/mês', 'IA/mês', 'Custo IA', 'Ações'].map(h => (
+                <div key={h} style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>{h}</div>
+              ))}
+            </div>
+          )}
+          {/* Table rows */}
+          {sorted.map((d, i) => (
+            <div key={d.id}
+              style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 0.7fr 1fr 1fr 1fr 1fr', gap: 0, padding: isMobile ? '14px 16px' : '12px 18px', borderBottom: i < sorted.length - 1 ? `1px solid ${BO}` : 'none', alignItems: 'center' }}>
+              {/* Médico */}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: INK }}>{d.full_name || '—'}</div>
+                <div style={{ fontSize: 11, color: MU, marginTop: 1 }}>{d.email}</div>
+                {isMobile && <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                  <AdminStatusBadge status={d.subscription.status} />
+                  <span style={{ fontSize: 11, color: MU }}>{d.specialty ?? '—'}</span>
+                </div>}
+              </div>
+              {!isMobile && <>
+                {/* CRM */}
+                <div style={{ fontSize: 12, color: MU }}>{d.crm || '—'}</div>
+                {/* Plano */}
+                <div style={{ fontSize: 12, color: d.subscription.plan ? INK : MU, fontWeight: d.subscription.plan ? 600 : 400, textTransform: 'capitalize' as const }}>
+                  {d.subscription.plan ?? '—'}
+                </div>
+                {/* Status */}
+                <div><AdminStatusBadge status={d.subscription.status} /></div>
+                {/* Pacientes */}
+                <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{d.patient_count}</div>
+                {/* Consultas/mês */}
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{d.consults_this_month}</div>
+                  <div style={{ fontSize: 10, color: MU }}>{d.consults_total} total</div>
+                </div>
+                {/* IA/mês */}
+                <div style={{ fontSize: 13, color: d.consults_ai_this_month > 0 ? INK : MU, fontWeight: d.consults_ai_this_month > 0 ? 600 : 400 }}>
+                  {d.consults_ai_this_month}
+                </div>
+                {/* Custo IA */}
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: d.estimated_ai_cost_brl > 10 ? WARN : INK }}>
+                    R$ {d.estimated_ai_cost_brl.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 10, color: MU }}>{fmtLastActive(d.last_consultation_at)}</div>
+                </div>
+                {/* Ações */}
+                <div style={{ position: 'relative' as const }}>
+                  <button
+                    onClick={e => { e.stopPropagation(); setActionTarget(actionTarget === d.id ? null : d.id); }}
+                    style={{ padding: '5px 10px', border: `1px solid ${BO}`, borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 13, color: MU, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    ··· <CaretDown size={11} />
+                  </button>
+                  {actionTarget === d.id && (
+                    <div onMouseDown={e => e.stopPropagation()}
+                      style={{ position: 'absolute' as const, right: 0, top: '110%', zIndex: 200, background: '#fff', border: `1px solid ${BO}`, borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,0.12)', minWidth: 200, overflow: 'hidden', padding: '6px 0' }}>
+                      {[
+                        { action: 'activate',  label: 'Marcar como pago',     color: SUC },
+                        { action: 'essencial', label: 'Plano Essencial',       color: INK },
+                        { action: 'pro',       label: 'Plano Pro',             color: P   },
+                        { action: 'trial7',    label: 'Estender trial +7 dias',color: INK },
+                        { action: 'trial30',   label: 'Estender trial +30 dias',color: INK},
+                        { action: 'suspend',   label: 'Suspender conta',       color: DES },
+                      ].map(opt => (
+                        <button key={opt.action}
+                          disabled={actionLoading}
+                          onClick={() => doAction(d.id, opt.action)}
+                          style={{ display: 'block', width: '100%', padding: '9px 16px', background: 'none', border: 'none', textAlign: 'left' as const, fontSize: 13, color: opt.color, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = BG}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                          {opt.label}
+                        </button>
+                      ))}
+                      <div style={{ borderTop: `1px solid ${BO}`, margin: '4px 0' }} />
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(d.email).then(() => toast.success('Email copiado')); setActionTarget(null); }}
+                        style={{ display: 'block', width: '100%', padding: '9px 16px', background: 'none', border: 'none', textAlign: 'left' as const, fontSize: 13, color: MU, cursor: 'pointer', fontFamily: 'inherit' }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = BG}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                        Copiar email
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>}
+              {/* Mobile: linha resumida */}
+              {isMobile && (
+                <div style={{ marginTop: 8, display: 'flex', gap: 16, fontSize: 12, color: MU }}>
+                  <span>{d.patient_count} pac.</span>
+                  <span>{d.consults_this_month} cons./mês</span>
+                  <span>{d.consults_ai_this_month} IA</span>
+                  <span>R${d.estimated_ai_cost_brl.toFixed(2)}</span>
+                  <span>{fmtLastActive(d.last_consultation_at)}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Legenda */}
+      <div style={{ marginTop: 16, fontSize: 11, color: MU }}>
+        Custo IA estimado: R$0,80/consulta transcrita (Whisper ~2min + GPT-4o ~1.5k tokens). Valores aproximados.
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export type AppNotification = { type: 'vaccine' | 'appointment'; title: string; subtitle: string; patientId?: string; };
 
 export default function App() {
+  const { isAdmin, isLoading: authProfileLoading } = useAuthProfile();
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [showLogin, setShowLogin] = useState(false);
@@ -4330,6 +4647,14 @@ export default function App() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [flow]);
 
+  // Admin: skip onboarding (admin não tem perfil clínico) + redireciona para tela admin
+  useEffect(() => {
+    if (isAdmin && !authProfileLoading) {
+      setNeedsOnboarding(false);
+      setScreen('admin');
+    }
+  }, [isAdmin, authProfileLoading]);
+
   const go = (s: string) => { setScreen(s); setFlow(null); };
 
   if (authLoading) return (
@@ -4357,7 +4682,7 @@ export default function App() {
   );
 
   // Onboarding: bloqueia o dashboard até o médico configurar o perfil
-  if (needsOnboarding) return (
+  if (needsOnboarding && !isAdmin) return (
     <OnboardingPage
       user={user}
       onComplete={(specialty) => {
@@ -4386,6 +4711,7 @@ export default function App() {
     agenda:           ['Início', 'Agenda'],
     painel:           ['Início', 'Painel do consultório'],
     settings:         ['Início', 'Configurações'],
+    admin:            ['Admin', 'Gestão de Assinantes'],
   };
 
   return (
@@ -4416,6 +4742,7 @@ export default function App() {
             {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} />}
             {screen === 'painel'   && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><PainelPage go={go} setActivePatient={setActivePatient} /></RequireRole>}
             {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} /></RequireRole>}
+            {screen === 'admin'    && <RequireRole roles={['admin']}  onBack={() => go('admin')}><AdminPage go={go} /></RequireRole>}
           </Layout>
         </ProntuarioFormatCtx.Provider>
       </PatientProvider>

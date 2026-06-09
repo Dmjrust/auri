@@ -318,6 +318,7 @@ export async function saveConsultation(
   durationSeconds: number,
   birthDate: string,
   consultType: 'retorno' | 'primeira vez' = 'retorno',
+  aiTranscribed = false,
 ): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Não autenticado');
@@ -348,6 +349,7 @@ export async function saveConsultation(
     sum_perimetro_cefalico: summary.perimetro_cefalico,
     sum_vacinas_mencionadas: summary.vacinas_mencionadas,
     specialty_data: summary.specialty_data ?? null,
+    ai_transcribed: aiTranscribed,
   }).select('id').single();
   if (error) throw error;
 
@@ -439,6 +441,7 @@ export async function confirmDraftConsultation(
       sum_perimetro_cefalico:   summary.perimetro_cefalico,
       sum_vacinas_mencionadas:  summary.vacinas_mencionadas,
       specialty_data:           summary.specialty_data ?? null,
+      ai_transcribed:           true, // drafts sempre vêm do fluxo de gravação + IA
     })
     .eq('id', draftId)
     .eq('status', 'draft'); // garante idempotência — sem efeito em consultas já confirmadas
@@ -1434,4 +1437,179 @@ export async function updateTrichologyTreatment(
     .update(fields)
     .eq('id', id);
   if (error) throw error;
+}
+
+// ── Admin: gestão de assinantes + métricas de custo ─────────────────────────
+
+/** Custo médio estimado por consulta transcrita via IA (Whisper ~2min + GPT-4o ~1.5k tokens) */
+const AI_COST_PER_CONSULT_BRL = 0.80; // ≈ USD 0,15 × 5,3 (câmbio estimado)
+
+export interface AdminDoctorRow {
+  id: string;
+  full_name: string;
+  crm: string;
+  clinic_name: string | null;
+  specialty: string | null;
+  email: string;
+  subscription: {
+    status: string | null;           // 'trialing' | 'active' | 'past_due' | 'canceled' | null
+    plan: string | null;             // 'essencial' | 'pro' | null
+    trial_ends_at: string | null;
+    current_period_end: string | null;
+    stripe_customer_id: string | null;
+  };
+  patient_count: number;
+  consults_total: number;            // total de consultas realizadas (all-time)
+  consults_this_month: number;       // consultas no mês corrente
+  consults_ai_this_month: number;    // consultas com IA transcrição este mês (custo OpenAI)
+  estimated_ai_cost_brl: number;     // R$ estimado de custo OpenAI este mês
+  last_consultation_at: string | null;
+}
+
+export interface AdminStats {
+  total_doctors: number;
+  active: number;
+  trialing: number;
+  past_due: number;
+  canceled: number;
+  no_subscription: number;
+  total_patients: number;
+  total_consults_this_month: number;
+  total_ai_consults_this_month: number;
+  estimated_total_ai_cost_brl: number;
+  mrr_brl: number;
+  mrr_essencial: number;
+  mrr_pro: number;
+}
+
+/** Lista todos os médicos com status de assinatura + métricas de uso — apenas admin */
+export async function fetchAllDoctorsAdmin(): Promise<AdminDoctorRow[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Não autenticado');
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+  const [
+    { data: profiles, error: pErr },
+    { data: subs },
+    { data: ups },
+  ] = await Promise.all([
+    supabase.from('profiles').select('id, full_name, crm, clinic_name, specialty'),
+    supabase.from('subscriptions').select('doctor_id, status, plan, trial_ends_at, current_period_end, stripe_customer_id'),
+    supabase.from('user_profiles').select('user_id, email').eq('role', 'medico'),
+  ]);
+  if (pErr) throw pErr;
+
+  const subMap = Object.fromEntries((subs ?? []).map((s: Record<string, string>) => [s.doctor_id, s]));
+  const emailMap = Object.fromEntries((ups ?? []).map((u: Record<string, string>) => [u.user_id, u.email ?? '']));
+
+  const rows = await Promise.all((profiles ?? []).map(async (d: Record<string, string | null>) => {
+    const [
+      { count: patient_count },
+      { count: consults_total },
+      { count: consults_this_month },
+      { count: consults_ai_this_month },
+      { data: lastConsult },
+    ] = await Promise.all([
+      supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', d.id),
+      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', d.id).eq('status', 'completed'),
+      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', d.id).eq('status', 'completed').gte('created_at', monthStart),
+      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', d.id).eq('ai_transcribed', true).gte('created_at', monthStart),
+      supabase.from('consultations').select('created_at').eq('doctor_id', d.id).eq('status', 'completed').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    ]);
+
+    const ai = consults_ai_this_month ?? 0;
+    return {
+      id: d.id as string,
+      full_name: d.full_name ?? '',
+      crm: d.crm ?? '',
+      clinic_name: d.clinic_name ?? null,
+      specialty: d.specialty ?? null,
+      email: emailMap[d.id as string] ?? '',
+      subscription: subMap[d.id as string] ?? { status: null, plan: null, trial_ends_at: null, current_period_end: null, stripe_customer_id: null },
+      patient_count: patient_count ?? 0,
+      consults_total: consults_total ?? 0,
+      consults_this_month: consults_this_month ?? 0,
+      consults_ai_this_month: ai,
+      estimated_ai_cost_brl: parseFloat((ai * AI_COST_PER_CONSULT_BRL).toFixed(2)),
+      last_consultation_at: (lastConsult as Record<string, string> | null)?.created_at ?? null,
+    };
+  }));
+
+  return rows;
+}
+
+/** Estatísticas globais do SaaS — apenas admin */
+export async function fetchAdminStats(): Promise<AdminStats> {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+  const [
+    { data: subs },
+    { count: total_patients },
+    { count: total_doctors },
+    { count: total_consults_this_month },
+    { count: total_ai_consults_this_month },
+  ] = await Promise.all([
+    supabase.from('subscriptions').select('status, plan'),
+    supabase.from('patients').select('*', { count: 'exact', head: true }),
+    supabase.from('profiles').select('*', { count: 'exact', head: true }),
+    supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', monthStart),
+    supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('ai_transcribed', true).gte('created_at', monthStart),
+  ]);
+
+  const s = (subs ?? []) as Array<{ status: string; plan: string }>;
+  const active          = s.filter(x => x.status === 'active').length;
+  const trialing        = s.filter(x => x.status === 'trialing').length;
+  const past_due        = s.filter(x => x.status === 'past_due').length;
+  const canceled        = s.filter(x => x.status === 'canceled').length;
+  const mrr_essencial   = s.filter(x => x.status === 'active' && x.plan === 'essencial').length * 89;
+  const mrr_pro         = s.filter(x => x.status === 'active' && x.plan === 'pro').length * 149;
+  const ai_total        = total_ai_consults_this_month ?? 0;
+
+  return {
+    total_doctors: total_doctors ?? 0,
+    active, trialing, past_due, canceled,
+    no_subscription: (total_doctors ?? 0) - s.length,
+    total_patients: total_patients ?? 0,
+    total_consults_this_month: total_consults_this_month ?? 0,
+    total_ai_consults_this_month: ai_total,
+    estimated_total_ai_cost_brl: parseFloat((ai_total * AI_COST_PER_CONSULT_BRL).toFixed(2)),
+    mrr_brl: mrr_essencial + mrr_pro,
+    mrr_essencial,
+    mrr_pro,
+  };
+}
+
+/** Atualiza plano/status de assinatura — apenas admin */
+export async function adminUpdateSubscription(
+  doctorId: string,
+  updates: { plan?: string; status?: string; trial_ends_at?: string | null },
+): Promise<void> {
+  const { error } = await supabase
+    .from('subscriptions')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('doctor_id', doctorId);
+  if (error) throw error;
+}
+
+/** Suspende conta (status → 'canceled') — apenas admin */
+export async function adminSuspendDoctor(doctorId: string): Promise<void> {
+  await adminUpdateSubscription(doctorId, { status: 'canceled' });
+}
+
+/** Estende trial por N dias a partir da data atual ou da data de trial vigente — apenas admin */
+export async function adminExtendTrial(doctorId: string, days: number): Promise<void> {
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('trial_ends_at')
+    .eq('doctor_id', doctorId)
+    .maybeSingle();
+
+  const base = (sub as { trial_ends_at?: string } | null)?.trial_ends_at
+    ? new Date((sub as { trial_ends_at: string }).trial_ends_at)
+    : new Date();
+  base.setDate(base.getDate() + days);
+  await adminUpdateSubscription(doctorId, { trial_ends_at: base.toISOString(), status: 'trialing' });
 }
