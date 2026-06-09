@@ -4682,7 +4682,9 @@ export default function App() {
   );
 
   // Onboarding: bloqueia o dashboard até o médico configurar o perfil
-  if (needsOnboarding && !isAdmin) return (
+  // Aguarda authProfileLoading para evitar race condition: se isAdmin ainda não carregou,
+  // needsOnboarding=true mostraria esta tela indevidamente para admins (que não têm specialty)
+  if (needsOnboarding && !isAdmin && !authProfileLoading) return (
     <OnboardingPage
       user={user}
       onComplete={(specialty) => {
