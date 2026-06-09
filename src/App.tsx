@@ -178,7 +178,7 @@ function Header({ breadcrumb, onBack, notifications = [], onNotificationClick, o
         ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <MagnifyingGlass size={18} color={MU} style={{ cursor: 'pointer' }} />
+        <MagnifyingGlass size={18} color={MU} style={{ cursor: 'pointer' }} onClick={() => setScreen('patients')} />
         <div ref={ref} style={{ position: 'relative' }}>
           <button onClick={() => setOpen(o => !o)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', borderRadius: 8, color: MU }}>
             <Bell size={18} color={open ? P : MU} />
@@ -379,9 +379,9 @@ function LoginScreen({ onBack }: { onBack?: () => void }) {
             </svg>
             LGPD · CFM compatível
           </span>
-          <a href="#" style={{ color: INK3, textDecoration: 'none' }}>Privacidade</a>
-          <a href="#" style={{ color: INK3, textDecoration: 'none' }}>Termos</a>
-          <a href="#" style={{ color: INK3, textDecoration: 'none' }}>Suporte</a>
+          <a href="#" style={{ color: INK3, textDecoration: 'none' }} onClick={e => { e.preventDefault(); toast.info('Documento em elaboração. Dúvidas: suporte@auri.com.br'); }}>Privacidade</a>
+          <a href="#" style={{ color: INK3, textDecoration: 'none' }} onClick={e => { e.preventDefault(); toast.info('Documento em elaboração. Dúvidas: suporte@auri.com.br'); }}>Termos</a>
+          <a href="mailto:suporte@auri.com.br" style={{ color: INK3, textDecoration: 'none' }}>Suporte</a>
           {onBack && (
             <button onClick={onBack} style={{ background: 'none', border: 'none', color: INK3, fontSize: 12, cursor: 'pointer', padding: 0, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <ArrowLeft size={12} /> Voltar
@@ -444,7 +444,13 @@ function LoginScreen({ onBack }: { onBack?: () => void }) {
                   <input type="checkbox" defaultChecked style={{ width: 16, height: 16, accentColor: P, cursor: 'pointer', margin: 0 }} />
                   Manter conectada
                 </label>
-                <a href="#" style={{ color: P, textDecoration: 'none', fontWeight: 500 }}>Esqueci a senha</a>
+                <a href="#" style={{ color: P, textDecoration: 'none', fontWeight: 500 }} onClick={async e => {
+                  e.preventDefault();
+                  if (!email) { toast.error('Digite seu email acima primeiro.'); return; }
+                  const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
+                  if (resetErr) toast.error('Erro ao enviar email de recuperação.');
+                  else toast.success('Email de recuperação enviado! Verifique sua caixa de entrada.');
+                }}>Esqueci a senha</a>
               </div>
             )}
 
@@ -478,9 +484,9 @@ function LoginScreen({ onBack }: { onBack?: () => void }) {
 
           <div style={{ marginTop: 28, textAlign: 'center' as const, fontSize: 13, color: INK3, lineHeight: 1.6 }}>
             Ao entrar você concorda com os{' '}
-            <a href="#" style={{ color: INK2, textDecoration: 'none' }}>Termos</a>
+            <a href="#" style={{ color: INK2, textDecoration: 'none' }} onClick={e => { e.preventDefault(); toast.info('Documento em elaboração. Dúvidas: suporte@auri.com.br'); }}>Termos</a>
             {' '}e a{' '}
-            <a href="#" style={{ color: INK2, textDecoration: 'none' }}>Política de privacidade</a>.
+            <a href="#" style={{ color: INK2, textDecoration: 'none' }} onClick={e => { e.preventDefault(); toast.info('Documento em elaboração. Dúvidas: suporte@auri.com.br'); }}>Política de privacidade</a>.
           </div>
         </div>
       </main>
@@ -831,9 +837,10 @@ function _LandingPageRemoved_STUB({ onEnter: _onEnter }: { onEnter: () => void }
       {/* ── Footer ───────────────────────────────────────────────────── */}
       <footer style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 32px 48px', display: 'flex', gap: 24, fontSize: 13, color: DS_INK3, flexWrap: 'wrap' as const, alignItems: 'center' }}>
         <div style={{ flex: 1, minWidth: 200 }}>© 2026 Auri Saúde Ltda · CNPJ 00.000.000/0001-00</div>
-        {['LGPD', 'Termos', 'Contato'].map(l => (
-          <a key={l} href="#" style={{ color: DS_INK3, textDecoration: 'none' }} onClick={e => e.preventDefault()}>{l}</a>
+        {(['LGPD', 'Termos'] as const).map(l => (
+          <a key={l} href="#" style={{ color: DS_INK3, textDecoration: 'none' }} onClick={e => { e.preventDefault(); toast.info('Documento em elaboração. Dúvidas: suporte@auri.com.br'); }}>{l}</a>
         ))}
+        <a href="mailto:suporte@auri.com.br" style={{ color: DS_INK3, textDecoration: 'none' }}>Contato</a>
       </footer>
 
     </div>
@@ -893,19 +900,22 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
 
   // Load dashboard-specific data (no patient fetch — comes from PatientContext)
   useEffect(() => {
+    let cancelled = false;
     Promise.all([
       db.fetchTodayAppointments(),
       db.fetchDashboardStats(),
       db.fetchRecentActivity(),
       db.fetchConsultationSummaries(),
     ]).then(([appts, stats, activity, summaries]) => {
+      if (cancelled) return;
       setTodayAppts(appts);
       setOverdueAppts(stats.overdueAppointments);
       setRecentActivity(activity);
       setConsultSummaries(summaries);
       const ids = appts.map((a) => a.patient_id).filter(Boolean);
-      if (ids.length > 0) db.fetchDayBriefing(ids).then(setDayBriefing).catch(() => {});
-    }).catch(() => { toast.error('Erro ao carregar dados do painel'); });
+      if (ids.length > 0) db.fetchDayBriefing(ids).then(b => { if (!cancelled) setDayBriefing(b); }).catch(() => {});
+    }).catch(() => { if (!cancelled) toast.error('Erro ao carregar dados do painel'); });
+    return () => { cancelled = true; };
   }, []);
 
   // Derive lastPatient once both recentActivity and patients are available
@@ -1559,9 +1569,9 @@ function PatientsPage({ go, setActivePatient, specialty = 'Pediatria' }: { go: (
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome ou responsável..."
           style={{ width: '100%', padding: '10px 12px 10px 38px', border: `1px solid ${BO}`, borderRadius: 8, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff' }} />
       </div>
-      <Card style={{ overflow: 'hidden' }}>
+      <Card style={{ overflow: 'hidden', overflowX: 'auto' }}>
         {!isMobile && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 170px 130px 120px 90px', gap: 16, padding: '10px 20px', borderBottom: `1px solid ${BO}`, fontSize: 11, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
+          <div style={{ minWidth: 600, display: 'grid', gridTemplateColumns: '1fr 90px 170px 130px 120px 90px', gap: 16, padding: '10px 20px', borderBottom: `1px solid ${BO}`, fontSize: 11, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
             <span>Paciente</span><span>Idade</span><span>Responsável</span><span>Última consulta</span><span>Próx. retorno</span><span>Ações</span>
           </div>
         )}
@@ -1573,6 +1583,7 @@ function PatientsPage({ go, setActivePatient, specialty = 'Pediatria' }: { go: (
               ? 'auto'
               : Math.min(filtered.length * ROW_H, isMobile ? 520 : 560),
             overflowY: 'auto',
+            minWidth: isMobile ? undefined : 600,
           }}
         >
           {isLoading ? (
@@ -2363,7 +2374,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
       .then(dbVs => {
         const count = PNI_SCHEDULE.filter(pni => {
           const done = dbVs.find((v) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
-          return !done && pni.age_months < ageMonths; // strict: vacinas do mês atual ainda estão no prazo
+          return !done; // alinhado com VaccinesTab: conta atrasadas + pendentes
         }).length;
         setPendingVaccinesCount(count);
       })
@@ -3235,19 +3246,25 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
   const weekStart = weekDays[0].date;
   const weekEnd = weekDays[6].date;
 
+  const loadWeekCancelRef = useRef(false);
   function loadWeek() {
+    loadWeekCancelRef.current = false;
     setLoading(true);
     db.fetchAppointmentsForWeek(weekStart, weekEnd)
       .then(list => {
+        if (loadWeekCancelRef.current) return;
         const byDate: Record<string, any[]> = {};
         list.forEach(a => { (byDate[a.date] = byDate[a.date] || []).push(a); });
         setApptsByDate(byDate);
       })
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => { if (!loadWeekCancelRef.current) setLoading(false); });
   }
 
-  useEffect(() => { loadWeek(); }, [weekStart]);
+  useEffect(() => {
+    loadWeek();
+    return () => { loadWeekCancelRef.current = true; };
+  }, [weekStart]);
 
   const allAppts = Object.values(apptsByDate).flat();
   const todayAppts = apptsByDate[todayIso] || [];
@@ -3377,10 +3394,10 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
                 const appt = (apptsByDate[date] || []).find(a => a.time === time);
                 const isToday = date === todayIso;
                 return (
-                  <div key={date} style={{ borderRight: ci < 4 ? `1px solid ${BO}` : 'none', padding: 8, background: isToday ? `${PL}60` : 'transparent', cursor: appt ? 'pointer' : 'default' }}
-                    onClick={() => appt && setSelectedAppt(appt)}>
+                  <div key={date} style={{ borderRight: ci < 4 ? `1px solid ${BO}` : 'none', padding: 8, background: isToday ? `${PL}60` : 'transparent' }}>
                     {appt && (
-                      <div style={{ borderRadius: 8, padding: '8px 12px', background: apptBg(appt), borderLeft: `3px solid ${apptBorder(appt)}`, minHeight: 60, boxSizing: 'border-box' as const, transition: 'opacity 0.1s' }}
+                      <div style={{ borderRadius: 8, padding: '8px 12px', background: apptBg(appt), borderLeft: `3px solid ${apptBorder(appt)}`, minHeight: 60, boxSizing: 'border-box' as const, transition: 'opacity 0.1s', cursor: 'pointer' }}
+                        onClick={() => setSelectedAppt(appt)}
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.8'}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: INK }}>{appt.patient_name} · {appt.age}</div>
@@ -3641,9 +3658,9 @@ function SettingsPage({ user }: { user: SupabaseUser | null }) {
                 </div>
                 <div style={{ marginBottom: 18 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Especialidade</label>
-                  <div style={{ width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, background: SEC, color: INK, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxSizing: 'border-box' as const }}>
-                    <span style={{ fontWeight: 500 }}>{specialty || '—'}</span>
-                    <span style={{ fontSize: 11, color: MU }}>definido no cadastro</span>
+                  <div style={{ width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, background: SEC, color: INK, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxSizing: 'border-box' as const, gap: 8 }}>
+                    <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, minWidth: 0, flex: 1 }}>{specialty || '—'}</span>
+                    <span style={{ fontSize: 11, color: MU, flexShrink: 0 }}>definido no cadastro</span>
                   </div>
                 </div>
                 <div style={{ marginBottom: 18 }}>
@@ -3813,10 +3830,12 @@ function PainelPage({ go, setActivePatient }: { go: (s: string) => void; setActi
   const isMobile = useIsMobile();
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     db.fetchClinicPanelData(period)
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then(d => { if (!cancelled) { setData(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [period]);
 
   // ── Computed metrics ───────────────────────────────────────────────────────
@@ -4794,16 +4813,17 @@ export default function App() {
     load();
   }, [user, doctorSpecialty]);
 
-  // Recording timer
+  // Recording timer — only starts after microphone is granted (micReady)
+  const [micReady, setMicReady] = useState(false);
   useEffect(() => {
-    if (flow === 'recording') {
+    if (flow === 'recording' && micReady) {
       timerRef.current = setInterval(() => setRecTime(t => t + 1), 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (flow !== 'recording') setRecTime(0);
     }
+    if (flow !== 'recording') { setRecTime(0); setMicReady(false); }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [flow]);
+  }, [flow, micReady]);
 
   // Admin: skip onboarding (admin não tem perfil clínico) + redireciona para tela admin
   useEffect(() => {
@@ -4853,7 +4873,7 @@ export default function App() {
   );
 
   if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => { if (screen === 'dashboard') { go('patient-detail'); } else { setFlow(null); } }} />;
-  if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} />;
+  if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} onCancel={() => { setFlow(null); setRecTime(0); setMicReady(false); }} onMicReady={() => setMicReady(true)} />;
   if (flow === 'processing') return <ProcessingScreen consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese) => {
     setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setFlow('done');
     if (activePatient) {

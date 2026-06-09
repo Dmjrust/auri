@@ -22,7 +22,7 @@ import {
   Baby, FileText, Heartbeat, House, Microphone, Syringe,
   Play, Square, CheckCircle, Warning, CaretUp, CaretDown,
   Star, ArrowCounterClockwise, TrendUp, Stethoscope,
-  Users,
+  Users, ArrowLeft,
 } from '@phosphor-icons/react';
 
 import { P, PL, ACCENTL, ACCENT, INK, MU, BO, BG, SEC, SUCL, SUC, WARNL, WARN, DESL, DES } from '../lib/design';
@@ -406,10 +406,12 @@ export function ConsentScreen({ onOk, onCancel, consultType }: {
 
 // ─── RECORDING SCREEN ─────────────────────────────────────────────────────────
 
-export function RecordingScreen({ time, patient, consultType, onFinish }: {
+export function RecordingScreen({ time, patient, consultType, onFinish, onCancel, onMicReady }: {
   time: number; patient: Patient | null;
   consultType: 'retorno' | 'primeira vez';
   onFinish: (blob: Blob) => void;
+  onCancel: () => void;
+  onMicReady?: () => void;
 }) {
   const [paused, setPaused] = useState(false);
   const [micError, setMicError] = useState('');
@@ -425,6 +427,7 @@ export function RecordingScreen({ time, patient, consultType, onFinish }: {
         recorderRef.current = recorder;
         recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
         recorder.start(1000);
+        onMicReady?.();
       })
       .catch(() => setMicError('Permissão de microfone negada. Clique no cadeado na barra do navegador para liberar.'));
     return () => { streamRef.current?.getTracks().forEach(t => t.stop()); };
@@ -465,8 +468,13 @@ export function RecordingScreen({ time, patient, consultType, onFinish }: {
       </div>
       <div style={{ maxWidth: 640, margin: '0 auto', padding: '60px 24px', textAlign: 'center' as const }}>
         {micError ? (
-          <div style={{ background: DESL, color: DES, borderRadius: 12, padding: 24, fontSize: 14, lineHeight: 1.6 }}>
-            <Warning size={24} style={{ marginBottom: 12 }} /><br />{micError}
+          <div>
+            <div style={{ background: DESL, color: DES, borderRadius: 12, padding: 24, fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+              <Warning size={24} style={{ marginBottom: 12 }} /><br />{micError}
+            </div>
+            <Btn variant="secondary" onClick={onCancel} size="lg">
+              <ArrowLeft size={16} /> Voltar
+            </Btn>
           </div>
         ) : (
           <>
@@ -485,7 +493,10 @@ export function RecordingScreen({ time, patient, consultType, onFinish }: {
                 {[16, 28, 20, 36, 24, 32, 18].map((_, i) => <span key={i} />)}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' as const }}>
+              <Btn variant="secondary" onClick={onCancel} size="lg">
+                <ArrowLeft size={16} /> Cancelar
+              </Btn>
               <Btn variant="secondary" onClick={togglePause} size="lg">
                 {paused ? <><Play size={16} /> Continuar</> : <><Square size={16} /> Pausar</>}
               </Btn>

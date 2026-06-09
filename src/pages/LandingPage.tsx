@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import './LandingPage.css';
 import {
   Microphone, FileText, ShieldCheck, TrendUp, CalendarBlank, Baby,
@@ -764,13 +765,19 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
           <span>· © 2026 Auri Saúde Ltda</span>
         </div>
         <div style={{ display: 'flex', gap: 20 }}>
-          {['LGPD', 'Termos', 'Contato'].map(l => (
+          {(['LGPD', 'Termos'] as const).map(l => (
             <a key={l} href="#" style={{ color: 'rgba(247,243,236,0.35)', textDecoration: 'none', transition: 'color 0.18s' }}
+              onClick={e => { e.preventDefault(); toast.info('Documento em elaboração. Dúvidas: suporte@auri.com.br'); }}
               onMouseEnter={e => (e.currentTarget.style.color = 'rgba(247,243,236,0.70)')}
               onMouseLeave={e => (e.currentTarget.style.color = 'rgba(247,243,236,0.35)')}>
               {l}
             </a>
           ))}
+          <a href="mailto:suporte@auri.com.br" style={{ color: 'rgba(247,243,236,0.35)', textDecoration: 'none', transition: 'color 0.18s' }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'rgba(247,243,236,0.70)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(247,243,236,0.35)')}>
+            Contato
+          </a>
         </div>
       </footer>
 
