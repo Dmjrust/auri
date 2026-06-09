@@ -1613,3 +1613,83 @@ export async function adminExtendTrial(doctorId: string, days: number): Promise<
   base.setDate(base.getDate() + days);
   await adminUpdateSubscription(doctorId, { trial_ends_at: base.toISOString(), status: 'trialing' });
 }
+
+// ── Admin: analytics de série temporal ───────────────────────────────────────
+
+/** Ponto de dado mensal para gráficos de evolução do SaaS */
+export interface AdminChartPoint {
+  /** Label do eixo X, ex: "Jan/26" */
+  month: string;
+  /** Chave para ordenação, ex: "2026-01" */
+  monthKey: string;
+  /** Total de consultas completadas neste mês */
+  consults_total: number;
+  /** Consultas com transcrição IA neste mês (custo driver) */
+  consults_ai: number;
+  /** Custo IA estimado em R$ (consults_ai × R$0,80) */
+  ai_cost_brl: number;
+  /** Novos médicos cadastrados neste mês */
+  new_doctors: number;
+}
+
+/**
+ * Retorna série temporal mensal dos últimos N meses — apenas admin.
+ * Agrega em TypeScript após queries brutas (volume admin é baixo).
+ */
+export async function fetchAdminChartData(months = 6): Promise<AdminChartPoint[]> {
+  // 1. Gera os N buckets mensais (mais antigo → mais recente)
+  const now = new Date();
+  const buckets: AdminChartPoint[] = [];
+
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const monthLabel = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+    // "jan. de 26" → "Jan/26"
+    const month = monthLabel
+      .replace(' de ', '/')
+      .replace('.', '')
+      .replace(/^(\w)/, (c) => c.toUpperCase());
+    buckets.push({ month, monthKey, consults_total: 0, consults_ai: 0, ai_cost_brl: 0, new_doctors: 0 });
+  }
+
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - months + 1, 1).toISOString();
+
+  // 2. Consultas completadas desde o cutoff
+  const { data: consults } = await supabase
+    .from('consultations')
+    .select('created_at, ai_transcribed')
+    .eq('status', 'completed')
+    .gte('created_at', cutoff);
+
+  for (const c of (consults ?? []) as Array<{ created_at: string; ai_transcribed: boolean }>) {
+    const d = new Date(c.created_at);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const bucket = buckets.find(b => b.monthKey === key);
+    if (!bucket) continue;
+    bucket.consults_total += 1;
+    if (c.ai_transcribed) {
+      bucket.consults_ai += 1;
+    }
+  }
+
+  // 3. Novos médicos (profiles) desde o cutoff
+  const { data: doctors } = await supabase
+    .from('profiles')
+    .select('created_at')
+    .gte('created_at', cutoff);
+
+  for (const d of (doctors ?? []) as Array<{ created_at: string }>) {
+    const dt = new Date(d.created_at);
+    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    const bucket = buckets.find(b => b.monthKey === key);
+    if (bucket) bucket.new_doctors += 1;
+  }
+
+  // 4. Calcula custo IA
+  for (const b of buckets) {
+    b.ai_cost_brl = parseFloat((b.consults_ai * AI_COST_PER_CONSULT_BRL).toFixed(2));
+  }
+
+  return buckets;
+}

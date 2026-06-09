@@ -20,7 +20,8 @@ import {
   Star, ArrowCounterClockwise, House, WarningCircle, UserPlus, UsersThree,
 } from '@phosphor-icons/react';
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import {
   INSIGHTS,
@@ -4254,6 +4255,150 @@ function AdminStatsCard({ label, value, sub, subColor }: { label: string; value:
   );
 }
 
+// ── AdminChartsSection — evolução temporal do SaaS ───────────────────────────
+
+function AdminChartsSection() {
+  const isMobile = useIsMobile();
+  const [chartData, setChartData]       = useState<db.AdminChartPoint[]>([]);
+  const [chartLoading, setChartLoading] = useState(true);
+  const [period, setPeriod]             = useState<3 | 6 | 12>(6);
+
+  useEffect(() => {
+    setChartLoading(true);
+    db.fetchAdminChartData(period)
+      .then(setChartData)
+      .catch(() => setChartData([]))
+      .finally(() => setChartLoading(false));
+  }, [period]);
+
+  const axisStyle = { fontSize: 10, fill: MU };
+  const gridProps = { strokeDasharray: '3 3' as const, stroke: BO, vertical: false };
+  const tooltipStyle = { fontSize: 12, borderRadius: 6, border: `1px solid ${BO}`, fontFamily: 'Inter, sans-serif' };
+
+  const periodBtns: Array<3 | 6 | 12> = [3, 6, 12];
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      {/* Header da seção */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>Evolução</div>
+          <div style={{ fontSize: 12, color: MU }}>Série temporal · últimos {period} meses</div>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {periodBtns.map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              style={{
+                padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                background: period === p ? P : 'transparent',
+                color: period === p ? '#fff' : MU,
+                border: `1px solid ${period === p ? P : BO}`,
+              }}
+            >
+              {p}M
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {chartLoading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 180, color: MU, fontSize: 13 }}>
+          Carregando…
+        </div>
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr',
+          gap: 16,
+        }}>
+          {/* Gráfico 1 — Consultas por Mês */}
+          <div style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 10, padding: '16px 16px 8px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 }}>
+              Consultas / mês
+            </div>
+            <ResponsiveContainer width="100%" height={160}>
+              <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="month" tick={axisStyle} axisLine={false} tickLine={false} />
+                <YAxis tick={axisStyle} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(v: number, name: string) => [v, name === 'consults_total' ? 'Total' : 'Com IA']}
+                />
+                <Area
+                  type="monotone" dataKey="consults_total" name="consults_total"
+                  stroke={P} fill={PL} strokeWidth={2}
+                  dot={false} isAnimationActive={false}
+                />
+                <Area
+                  type="monotone" dataKey="consults_ai" name="consults_ai"
+                  stroke={DES} fill={DESL} strokeWidth={2}
+                  dot={false} isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+            <div style={{ display: 'flex', gap: 12, marginTop: 8, justifyContent: 'flex-end' }}>
+              <span style={{ fontSize: 10, color: P, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 12, height: 2, background: P, display: 'inline-block', borderRadius: 1 }} />
+                Total
+              </span>
+              <span style={{ fontSize: 10, color: DES, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 12, height: 2, background: DES, display: 'inline-block', borderRadius: 1 }} />
+                Com IA
+              </span>
+            </div>
+          </div>
+
+          {/* Gráfico 2 — Novos Médicos por Mês */}
+          <div style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 10, padding: '16px 16px 8px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 }}>
+              Novos médicos / mês
+            </div>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={chartData} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="month" tick={axisStyle} axisLine={false} tickLine={false} />
+                <YAxis tick={axisStyle} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(v: number) => [v, 'Novos médicos']}
+                />
+                <Bar dataKey="new_doctors" fill={P} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Gráfico 3 — Custo IA por Mês */}
+          <div style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 10, padding: '16px 16px 8px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 }}>
+              Custo IA estimado / mês
+            </div>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={chartData} margin={{ top: 4, right: 4, left: -12, bottom: 0 }}>
+                <CartesianGrid {...gridProps} />
+                <XAxis dataKey="month" tick={axisStyle} axisLine={false} tickLine={false} />
+                <YAxis tick={axisStyle} axisLine={false} tickLine={false} allowDecimals={false}
+                  tickFormatter={(v: number) => `R$${v}`} width={42} />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(v: number) => [`R$ ${v.toFixed(2)}`, 'Custo IA']}
+                />
+                <Bar dataKey="ai_cost_brl" fill={WARN} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div style={{ fontSize: 10, color: MU, marginTop: 6, textAlign: 'right' as const }}>
+              ≈ R$0,80/consulta transcrita
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminPage({ go: _go }: { go: (s: string) => void }) {
   const [doctors, setDoctors]       = useState<db.AdminDoctorRow[]>([]);
   const [stats, setStats]           = useState<db.AdminStats | null>(null);
@@ -4384,6 +4529,9 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
           />
         </div>
       )}
+
+      {/* Analytics — evolução temporal */}
+      <AdminChartsSection />
 
       {/* Filters + search */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' as const, alignItems: 'center' }}>
