@@ -4406,7 +4406,7 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
   const [filter, setFilter]         = useState<AdminFilter>('all');
   const [search, setSearch]         = useState('');
   const [sortBy, setSortBy]         = useState<AdminSort>('last_active');
-  const [actionTarget, setActionTarget] = useState<string | null>(null);
+  const [actionTarget, setActionTarget] = useState<{ id: string; top: number; right: number } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   const load = async () => {
@@ -4429,7 +4429,12 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
     if (!actionTarget) return;
     const handler = () => setActionTarget(null);
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    // Fecha ao scroll (dropdown é fixed, ficaria deslocado ao rolar)
+    window.addEventListener('scroll', handler, { passive: true, capture: true });
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      window.removeEventListener('scroll', handler, { capture: true });
+    };
   }, [actionTarget]);
 
   const filtered = doctors.filter(d => {
@@ -4617,15 +4622,20 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
                   <div style={{ fontSize: 10, color: MU }}>{fmtLastActive(d.last_consultation_at)}</div>
                 </div>
                 {/* Ações */}
-                <div style={{ position: 'relative' as const }}>
+                <div>
                   <button
-                    onClick={e => { e.stopPropagation(); setActionTarget(actionTarget === d.id ? null : d.id); }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (actionTarget?.id === d.id) { setActionTarget(null); return; }
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setActionTarget({ id: d.id, top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                    }}
                     style={{ padding: '5px 10px', border: `1px solid ${BO}`, borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 13, color: MU, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}>
                     ··· <CaretDown size={11} />
                   </button>
-                  {actionTarget === d.id && (
+                  {actionTarget?.id === d.id && (
                     <div onMouseDown={e => e.stopPropagation()}
-                      style={{ position: 'absolute' as const, right: 0, top: '110%', zIndex: 200, background: '#fff', border: `1px solid ${BO}`, borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,0.12)', minWidth: 200, overflow: 'hidden', padding: '6px 0' }}>
+                      style={{ position: 'fixed' as const, top: actionTarget.top, right: actionTarget.right, zIndex: 9999, background: '#fff', border: `1px solid ${BO}`, borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,0.12)', minWidth: 200, overflow: 'hidden', padding: '6px 0' }}>
                       {[
                         { action: 'activate',  label: 'Marcar como pago',     color: SUC },
                         { action: 'essencial', label: 'Plano Essencial',       color: INK },
