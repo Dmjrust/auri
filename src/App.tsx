@@ -31,6 +31,7 @@ import {
   type AnamnesePrimeiraConsultaData, defaultAnamnesePrimeiraConsulta,
 } from './data/mock';
 import './index.css';
+import { LandingPage } from './pages/LandingPage';
 import { P, PL, ACCENT, ACCENTL, INK, FEMALE, FEMALEL, MU, BO, BG, SEC, SUC, SUCL, WARN, WARNL, DES, DESL } from './lib/design';
 import { calcAge, fmtDate, fmtDateTime, fmtTimer, primaryGuardian } from './lib/auri-utils';
 import { calcZScore, zToPercentile, _getLms } from './lib/zscore';
@@ -481,17 +482,19 @@ function LoginScreen({ onBack }: { onBack?: () => void }) {
   );
 }
 
-// ─── LANDING PAGE ────────────────────────────────────────────────────────────
-// Faithful reimplementation of ui_kits/marketing/index.html
+// ─── LANDING PAGE — componente extraído para src/pages/LandingPage.tsx ───────
+// (importado no topo do arquivo)
 
-// Design-system token aliases (CSS vars → JS constants)
+// Token aliases mantidos para uso residual em outros componentes inline
 const DS_INK2   = '#4A5862';
 const DS_INK3   = '#6F7C84';
 const DS_SAND   = '#E6D5B8';
-const DS_PRISOFT = '#DCE9EC'; // approx oklch(94% 0.025 210)
+const DS_PRISOFT = '#DCE9EC';
 const DS_DANGER = '#B5503D';
 
-function LandingPage({ onEnter }: { onEnter: () => void }) {
+// LandingPage removida deste arquivo — ver src/pages/LandingPage.tsx
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _LandingPageRemoved_STUB({ onEnter: _onEnter }: { onEnter: () => void }) {
   const [mobile, setMobile] = useState(window.innerWidth < 900);
   useEffect(() => {
     const h = () => setMobile(window.innerWidth < 900);
