@@ -9,7 +9,6 @@ import * as ai from './lib/ai';
 import { SmokeyBackground, LoginForm } from './components/ui/login-form';
 import { TodayPatientCard } from './components/TodayPatientCard';
 import { DevelopmentTab } from './components/DevelopmentTab';
-import { TrichologyTreatmentsTab } from './components/TrichologyTreatmentsTab';
 import type { DayBriefingItem } from './lib/db';
 import {
   SquaresFour, Users, CalendarBlank, GearSix, SignOut, Bell, MagnifyingGlass, CaretRight,
@@ -19,7 +18,6 @@ import {
   FloppyDisk, Buildings, Brain, ShieldCheck, PlayCircle, PencilSimple, Trash,
   ChartBar, ArrowUp, ArrowDown, ArrowRight, Lightbulb, Check,
   Star, ArrowCounterClockwise, House, WarningCircle, UserPlus, UsersThree,
-  Leaf,
 } from '@phosphor-icons/react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -2331,14 +2329,9 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
   const isMobile = useIsMobile();
   const isDoctor = useRequireRole(['medico']);
   const { doctorId } = useAuthProfile();
-  // Tabs visíveis por especialidade e role
-  const TABS_BY_SPECIALTY: Record<string, string[]> = {
-    'Pediatria':  ['Resumo', 'Consultas', 'Crescimento', 'Vacinas', 'Desenvolvimento'],
-    'Tricologia': ['Resumo', 'Consultas', 'Avaliação Capilar'],
-  };
-  const visibleTabs = isDoctor
-    ? (TABS_BY_SPECIALTY[specialty] ?? TABS_BY_SPECIALTY['Pediatria'])
-    : (specialty === 'Pediatria' ? ['Resumo', 'Vacinas'] : ['Resumo']);
+  // Tabs visíveis — Pediatria apenas (fase de validação clínica)
+  const TABS_PEDIATRIA = ['Resumo', 'Consultas', 'Crescimento', 'Vacinas', 'Desenvolvimento'];
+  const visibleTabs = isDoctor ? TABS_PEDIATRIA : ['Resumo', 'Vacinas'];
 
   useEffect(() => {
     setLoadingC(true);
@@ -2972,20 +2965,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
             />
           </RequireRole>
         )}
-        {tab === 'Avaliação Capilar' && (
-          <RequireRole roles={['medico']}>
-            <TrichologyTreatmentsTab
-              patientId={patient.id}
-              suggestedTreatments={(() => {
-                // Extract treatments_mentioned from the most recent consultation's specialty_data
-                const latest = consultations.find(c => c.status === 'completed');
-                const sd = (latest?.summary as any)?.specialty_data ?? null;
-                const treatments = sd?.treatments_mentioned;
-                return Array.isArray(treatments) ? treatments.map(String) : [];
-              })()}
-            />
-          </RequireRole>
-        )}
+        {/* Avaliação Capilar (Tricologia) — oculto na fase de validação de Pediatria */}
       </div>
     </div>
   );
@@ -4168,6 +4148,68 @@ function PainelPage({ go, setActivePatient }: { go: (s: string) => void; setActi
 
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── ONBOARDING PAGE ──────────────────────────────────────────────────────────
+// Fase de validação: especialidade fixada em Pediatria, sem escolha de especialidade.
+function OnboardingPage({ user, onComplete }: { user: SupabaseUser; onComplete: (specialty: string) => void }) {
+  const [fullName, setFullName] = useState(user.user_metadata?.full_name || '');
+  const [crm, setCrm] = useState('');
+  const [clinicName, setClinicName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit() {
+    if (!fullName.trim() || !crm.trim()) return;
+    setSaving(true);
+    try {
+      await db.updateProfile({ full_name: fullName.trim(), crm: crm.trim(), clinic_name: clinicName.trim(), specialty: 'Pediatria' });
+      onComplete('Pediatria');
+    } catch {
+      setSaving(false);
+      toast.error('Erro ao salvar perfil. Tente novamente.');
+    }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ maxWidth: 460, width: '100%' }}>
+        <div style={{ textAlign: 'center' as const, marginBottom: 32 }}>
+          <div style={{ fontSize: 24, fontWeight: 700, color: P, fontFamily: '"Fraunces", serif', letterSpacing: '-0.5px' }}>Auri</div>
+          <div style={{ fontSize: 14, color: MU, marginTop: 6 }}>Configure seu perfil para começar</div>
+        </div>
+        <div style={{ background: PL, border: `1.5px solid ${P}40`, borderRadius: 10, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Stethoscope size={20} color={P} />
+          <div>
+            <div style={{ fontWeight: 600, color: P, fontSize: 14 }}>Pediatria</div>
+            <div style={{ fontSize: 12, color: MU }}>Especialidade do sistema nesta fase de validação</div>
+          </div>
+        </div>
+        <Card style={{ padding: 24 }}>
+          {([
+            { label: 'Nome completo *', value: fullName, set: setFullName, placeholder: 'Dr. Nome Sobrenome', type: 'text' },
+            { label: 'CRM *', value: crm, set: setCrm, placeholder: 'CRM-SP 123456', type: 'text' },
+            { label: 'Nome do consultório', value: clinicName, set: setClinicName, placeholder: 'Clínica Pediátrica', type: 'text' },
+          ] as { label: string; value: string; set: (v: string) => void; placeholder: string; type: string }[]).map(({ label, value, set, placeholder, type }) => (
+            <div key={label} style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{label}</label>
+              <input
+                type={type} value={value} onChange={e => set(e.target.value)}
+                placeholder={placeholder}
+                style={{ width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff', color: INK }}
+              />
+            </div>
+          ))}
+          <Btn
+            onClick={handleSubmit}
+            disabled={!fullName.trim() || !crm.trim() || saving}
+            style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
+          >
+            {saving ? 'Salvando…' : 'Começar a usar o Auri'}
+          </Btn>
+        </Card>
+      </div>
     </div>
   );
 }
