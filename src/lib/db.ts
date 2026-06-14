@@ -1491,20 +1491,23 @@ export async function fetchAllDoctorsAdmin(): Promise<AdminDoctorRow[]> {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
   const [
-    { data: profiles, error: pErr },
+    { data: medicos, error: mErr },
+    { data: profiles },
     { data: subs },
-    { data: ups },
   ] = await Promise.all([
+    // user_profiles é a fonte da verdade de "é médico": criada via trigger no signup,
+    // mesmo que o registro em profiles ainda não exista (onboarding incompleto).
+    supabase.from('user_profiles').select('user_id, full_name, email').eq('role', 'medico'),
     supabase.from('profiles').select('id, full_name, crm, clinic_name, specialty'),
     supabase.from('subscriptions').select('doctor_id, status, plan, trial_ends_at, current_period_end, stripe_customer_id'),
-    supabase.from('user_profiles').select('user_id, email').eq('role', 'medico'),
   ]);
-  if (pErr) throw pErr;
+  if (mErr) throw mErr;
 
   const subMap = Object.fromEntries((subs ?? []).map((s: Record<string, string>) => [s.doctor_id, s]));
-  const emailMap = Object.fromEntries((ups ?? []).map((u: Record<string, string>) => [u.user_id, u.email ?? '']));
+  const profileMap = Object.fromEntries((profiles ?? []).map((p: Record<string, string | null>) => [p.id as string, p]));
 
-  const rows = await Promise.all((profiles ?? []).map(async (d: Record<string, string | null>) => {
+  const rows = await Promise.all((medicos ?? []).map(async (m: Record<string, string>) => {
+    const p = profileMap[m.user_id] ?? {};
     const [
       { count: patient_count },
       { count: consults_total },
@@ -1512,22 +1515,22 @@ export async function fetchAllDoctorsAdmin(): Promise<AdminDoctorRow[]> {
       { count: consults_ai_this_month },
       { data: lastConsult },
     ] = await Promise.all([
-      supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', d.id),
-      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', d.id).eq('status', 'completed'),
-      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', d.id).eq('status', 'completed').gte('created_at', monthStart),
-      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', d.id).eq('ai_transcribed', true).gte('created_at', monthStart),
-      supabase.from('consultations').select('created_at').eq('doctor_id', d.id).eq('status', 'completed').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id),
+      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed'),
+      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed').gte('created_at', monthStart),
+      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('ai_transcribed', true).gte('created_at', monthStart),
+      supabase.from('consultations').select('created_at').eq('doctor_id', m.user_id).eq('status', 'completed').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
 
     const ai = consults_ai_this_month ?? 0;
     return {
-      id: d.id as string,
-      full_name: d.full_name ?? '',
-      crm: d.crm ?? '',
-      clinic_name: d.clinic_name ?? null,
-      specialty: d.specialty ?? null,
-      email: emailMap[d.id as string] ?? '',
-      subscription: subMap[d.id as string] ?? { status: null, plan: null, trial_ends_at: null, current_period_end: null, stripe_customer_id: null },
+      id: m.user_id,
+      full_name: p.full_name || m.full_name || '',
+      crm: p.crm ?? '',
+      clinic_name: p.clinic_name ?? null,
+      specialty: p.specialty ?? null,
+      email: m.email ?? '',
+      subscription: subMap[m.user_id] ?? { status: null, plan: null, trial_ends_at: null, current_period_end: null, stripe_customer_id: null },
       patient_count: patient_count ?? 0,
       consults_total: consults_total ?? 0,
       consults_this_month: consults_this_month ?? 0,
@@ -1554,7 +1557,7 @@ export async function fetchAdminStats(): Promise<AdminStats> {
   ] = await Promise.all([
     supabase.from('subscriptions').select('status, plan'),
     supabase.from('patients').select('*', { count: 'exact', head: true }),
-    supabase.from('profiles').select('*', { count: 'exact', head: true }),
+    supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('role', 'medico'),
     supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', monthStart),
     supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('ai_transcribed', true).gte('created_at', monthStart),
   ]);
@@ -1673,10 +1676,11 @@ export async function fetchAdminChartData(months = 6): Promise<AdminChartPoint[]
     }
   }
 
-  // 3. Novos médicos (profiles) desde o cutoff
+  // 3. Novos médicos (user_profiles role='medico') desde o cutoff
   const { data: doctors } = await supabase
-    .from('profiles')
+    .from('user_profiles')
     .select('created_at')
+    .eq('role', 'medico')
     .gte('created_at', cutoff);
 
   for (const d of (doctors ?? []) as Array<{ created_at: string }>) {
