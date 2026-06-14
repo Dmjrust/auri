@@ -144,7 +144,7 @@ export function AnamnesePrimeiraConsulta({ data, onChange }: {
     background: '#fff',
   };
 
-  function Lbl({ text, k }: { text: string; k?: string }) {
+  function Lbl(text: string, k?: string) {
     return (
       <div style={{ fontSize: 12, fontWeight: 600, color: MU, marginBottom: 5, display: 'flex', gap: 5, alignItems: 'center' }}>
         {text}
@@ -155,7 +155,7 @@ export function AnamnesePrimeiraConsulta({ data, onChange }: {
     );
   }
 
-  function Ta({ k, rows = 2 }: { k: keyof AnamnesePrimeiraConsultaData; rows?: number }) {
+  function Ta(k: keyof AnamnesePrimeiraConsultaData, rows = 2) {
     return (
       <textarea rows={rows} value={data[k] as string}
         onChange={e => set(k, e.target.value as AnamnesePrimeiraConsultaData[typeof k])}
@@ -165,7 +165,7 @@ export function AnamnesePrimeiraConsulta({ data, onChange }: {
     );
   }
 
-  function Inp({ k }: { k: keyof AnamnesePrimeiraConsultaData }) {
+  function Inp(k: keyof AnamnesePrimeiraConsultaData) {
     return (
       <input type="text" value={data[k] as string}
         onChange={e => set(k, e.target.value as AnamnesePrimeiraConsultaData[typeof k])}
@@ -175,7 +175,7 @@ export function AnamnesePrimeiraConsulta({ data, onChange }: {
     );
   }
 
-  function SectionHeader({ id, icon: Icon, title }: { id: SecId; icon: IconComponent; title: string }) {
+  function SectionHeader(id: SecId, Icon: IconComponent, title: string) {
     const isOpen = openSecs.has(id);
     const secFieldMap: Record<SecId, string[]> = {
       atual:         ['motivo_consulta','queixa_principal_duracao','sintomas_associados'],
@@ -228,38 +228,38 @@ export function AnamnesePrimeiraConsulta({ data, onChange }: {
 
       {/* 1 — História atual */}
       <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
-        <SectionHeader id="atual" icon={Heartbeat} title="1. História atual" />
+        {SectionHeader('atual', Heartbeat, '1. História atual')}
         {openSecs.has('atual') && (
           <div style={{ ...pad, ...g2 }}>
-            <div><Lbl text="Motivo da consulta" k="motivo_consulta" /><Inp k="motivo_consulta" /></div>
-            <div><Lbl text="Queixa principal e duração" k="queixa_principal_duracao" /><Inp k="queixa_principal_duracao" /></div>
-            <div style={full}><Lbl text="Sintomas associados" k="sintomas_associados" /><Ta k="sintomas_associados" rows={3} /></div>
+            <div>{Lbl('Motivo da consulta', 'motivo_consulta')}{Inp('motivo_consulta')}</div>
+            <div>{Lbl('Queixa principal e duração', 'queixa_principal_duracao')}{Inp('queixa_principal_duracao')}</div>
+            <div style={full}>{Lbl('Sintomas associados', 'sintomas_associados')}{Ta('sintomas_associados', 3)}</div>
           </div>
         )}
       </Card>
 
       {/* 2 — História pregressa */}
       <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
-        <SectionHeader id="pregressa" icon={FileText} title="2. História pregressa" />
+        {SectionHeader('pregressa', FileText, '2. História pregressa')}
         {openSecs.has('pregressa') && (
           <div style={{ ...pad, ...g2 }}>
             <div style={col}>
               <div>
-                <Lbl text="Internações anteriores" k="internacoes" />
+                {Lbl('Internações anteriores', 'internacoes')}
                 <AnamBoolSeg value={data.internacoes} onChange={v => set('internacoes', v)} />
-                {data.internacoes === true && <div style={{ marginTop: 8 }}><Lbl text="Descreva" k="internacoes_desc" /><Ta k="internacoes_desc" /></div>}
+                {data.internacoes === true && <div style={{ marginTop: 8 }}>{Lbl('Descreva', 'internacoes_desc')}{Ta('internacoes_desc')}</div>}
               </div>
               <div>
-                <Lbl text="Cirurgias anteriores" k="cirurgias" />
+                {Lbl('Cirurgias anteriores', 'cirurgias')}
                 <AnamBoolSeg value={data.cirurgias} onChange={v => set('cirurgias', v)} />
-                {data.cirurgias === true && <div style={{ marginTop: 8 }}><Lbl text="Descreva" k="cirurgias_desc" /><Ta k="cirurgias_desc" /></div>}
+                {data.cirurgias === true && <div style={{ marginTop: 8 }}>{Lbl('Descreva', 'cirurgias_desc')}{Ta('cirurgias_desc')}</div>}
               </div>
             </div>
             <div style={col}>
-              <div><Lbl text="Alergias a medicamentos" k="alergias_medicamentos" /><Ta k="alergias_medicamentos" /></div>
-              <div><Lbl text="Alergias alimentares" k="alergias_alimentos" /><Ta k="alergias_alimentos" /></div>
-              <div><Lbl text="Outras alergias" k="alergias_outras" /><Inp k="alergias_outras" /></div>
-              <div><Lbl text="Histórico vacinal prévio" k="historico_vacinal" /><Ta k="historico_vacinal" rows={3} /></div>
+              <div>{Lbl('Alergias a medicamentos', 'alergias_medicamentos')}{Ta('alergias_medicamentos')}</div>
+              <div>{Lbl('Alergias alimentares', 'alergias_alimentos')}{Ta('alergias_alimentos')}</div>
+              <div>{Lbl('Outras alergias', 'alergias_outras')}{Inp('alergias_outras')}</div>
+              <div>{Lbl('Histórico vacinal prévio', 'historico_vacinal')}{Ta('historico_vacinal', 3)}</div>
             </div>
           </div>
         )}
@@ -267,48 +267,48 @@ export function AnamnesePrimeiraConsulta({ data, onChange }: {
 
       {/* 3 — História gestacional */}
       <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
-        <SectionHeader id="gestacional" icon={Baby} title="3. História gestacional" />
+        {SectionHeader('gestacional', Baby, '3. História gestacional')}
         {openSecs.has('gestacional') && (
           <div style={{ ...pad, ...g2 }}>
-            <div><Lbl text="Gestações (G_P_A)" k="gestacoes_gpa" /><Inp k="gestacoes_gpa" /></div>
-            <div><Lbl text="Semanas de gestação ao nascer" k="idade_gestacional_semanas" /><Inp k="idade_gestacional_semanas" /></div>
+            <div>{Lbl('Gestações (G_P_A)', 'gestacoes_gpa')}{Inp('gestacoes_gpa')}</div>
+            <div>{Lbl('Semanas de gestação ao nascer', 'idade_gestacional_semanas')}{Inp('idade_gestacional_semanas')}</div>
             <div>
-              <Lbl text="Tipo de parto" k="tipo_parto" />
+              {Lbl('Tipo de parto', 'tipo_parto')}
               <AnamSelect value={data.tipo_parto} onChange={v => set('tipo_parto', v)} options={['vaginal', 'cesárea']} aiField={aiFields.has('tipo_parto')} />
             </div>
-            <div><Lbl text="Local do parto (maternidade)" k="local_parto" /><Inp k="local_parto" /></div>
+            <div>{Lbl('Local do parto (maternidade)', 'local_parto')}{Inp('local_parto')}</div>
             <div style={{ ...full }}>
-              <Lbl text="Intercorrências na gestação" k="intercorrencias_gestacao" />
+              {Lbl('Intercorrências na gestação', 'intercorrencias_gestacao')}
               <AnamBoolSeg value={data.intercorrencias_gestacao} onChange={v => set('intercorrencias_gestacao', v)} />
               {data.intercorrencias_gestacao === true && (
-                <div style={{ marginTop: 8 }}><Lbl text="Descreva" k="intercorrencias_gestacao_desc" /><Ta k="intercorrencias_gestacao_desc" /></div>
+                <div style={{ marginTop: 8 }}>{Lbl('Descreva', 'intercorrencias_gestacao_desc')}{Ta('intercorrencias_gestacao_desc')}</div>
               )}
             </div>
-            <div><Lbl text="Apgar 1º minuto" k="apgar_1" /><Inp k="apgar_1" /></div>
-            <div><Lbl text="Apgar 5º minuto" k="apgar_5" /><Inp k="apgar_5" /></div>
+            <div>{Lbl('Apgar 1º minuto', 'apgar_1')}{Inp('apgar_1')}</div>
+            <div>{Lbl('Apgar 5º minuto', 'apgar_5')}{Inp('apgar_5')}</div>
           </div>
         )}
       </Card>
 
       {/* 4 — Triagens neonatais */}
       <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
-        <SectionHeader id="triagens" icon={Syringe} title="4. Triagens neonatais" />
+        {SectionHeader('triagens', Syringe, '4. Triagens neonatais')}
         {openSecs.has('triagens') && (
           <div style={{ ...pad, ...g2 }}>
             <div>
-              <Lbl text="Teste do pezinho" k="teste_pezinho" />
+              {Lbl('Teste do pezinho', 'teste_pezinho')}
               <AnamSelect value={data.teste_pezinho} onChange={v => set('teste_pezinho', v)} options={['realizado', 'não realizado', 'aguardando resultado']} aiField={aiFields.has('teste_pezinho')} />
             </div>
             <div>
-              <Lbl text="Teste da orelhinha" k="teste_orelhinha" />
+              {Lbl('Teste da orelhinha', 'teste_orelhinha')}
               <AnamSelect value={data.teste_orelhinha} onChange={v => set('teste_orelhinha', v)} options={['passou', 'falhou', 'não realizado']} aiField={aiFields.has('teste_orelhinha')} />
             </div>
             <div>
-              <Lbl text="Teste do olhinho" k="teste_olhinho" />
+              {Lbl('Teste do olhinho', 'teste_olhinho')}
               <AnamSelect value={data.teste_olhinho} onChange={v => set('teste_olhinho', v)} options={['passou', 'falhou', 'não realizado']} aiField={aiFields.has('teste_olhinho')} />
             </div>
             <div>
-              <Lbl text="Teste do coraçãozinho (oximetria)" k="teste_coracaozinho" />
+              {Lbl('Teste do coraçãozinho (oximetria)', 'teste_coracaozinho')}
               <AnamSelect value={data.teste_coracaozinho} onChange={v => set('teste_coracaozinho', v)} options={['passou', 'falhou', 'não realizado']} aiField={aiFields.has('teste_coracaozinho')} />
             </div>
           </div>
@@ -317,17 +317,17 @@ export function AnamnesePrimeiraConsulta({ data, onChange }: {
 
       {/* 5 — História familiar */}
       <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
-        <SectionHeader id="familiar" icon={Users} title="5. História familiar" />
+        {SectionHeader('familiar', Users, '5. História familiar')}
         {openSecs.has('familiar') && (
           <div style={{ ...pad, ...g2 }}>
-            <div><Lbl text="Doenças crônicas na família (por parente)" k="doencas_familia" /><Ta k="doencas_familia" rows={4} /></div>
+            <div>{Lbl('Doenças crônicas na família (por parente)', 'doencas_familia')}{Ta('doencas_familia', 4)}</div>
             <div style={col}>
               <div>
-                <Lbl text="Histórico de alergias na família" k="alergia_familia" />
+                {Lbl('Histórico de alergias na família', 'alergia_familia')}
                 <AnamBoolSeg value={data.alergia_familia} onChange={v => set('alergia_familia', v)} />
-                {data.alergia_familia === true && <div style={{ marginTop: 8 }}><Lbl text="Descreva" k="alergia_familia_desc" /><Ta k="alergia_familia_desc" /></div>}
+                {data.alergia_familia === true && <div style={{ marginTop: 8 }}>{Lbl('Descreva', 'alergia_familia_desc')}{Ta('alergia_familia_desc')}</div>}
               </div>
-              <div><Lbl text="Outras condições relevantes" k="outras_condicoes_familia" /><Ta k="outras_condicoes_familia" rows={3} /></div>
+              <div>{Lbl('Outras condições relevantes', 'outras_condicoes_familia')}{Ta('outras_condicoes_familia', 3)}</div>
             </div>
           </div>
         )}
@@ -335,22 +335,22 @@ export function AnamnesePrimeiraConsulta({ data, onChange }: {
 
       {/* 6 — História socioeconômica */}
       <Card style={{ marginBottom: 8, overflow: 'hidden' }}>
-        <SectionHeader id="socioeconomica" icon={House} title="6. História socioeconômica" />
+        {SectionHeader('socioeconomica', House, '6. História socioeconômica')}
         {openSecs.has('socioeconomica') && (
           <div style={{ ...pad, ...g2 }}>
-            <div><Lbl text="Profissão dos responsáveis" k="profissao_responsaveis" /><Inp k="profissao_responsaveis" /></div>
-            <div><Lbl text="Renda familiar aproximada (opcional)" k="renda_familiar" /><Inp k="renda_familiar" /></div>
+            <div>{Lbl('Profissão dos responsáveis', 'profissao_responsaveis')}{Inp('profissao_responsaveis')}</div>
+            <div>{Lbl('Renda familiar aproximada (opcional)', 'renda_familiar')}{Inp('renda_familiar')}</div>
             <div>
-              <Lbl text="Tabagismo passivo em casa" k="tabagismo_passivo" />
+              {Lbl('Tabagismo passivo em casa', 'tabagismo_passivo')}
               <AnamBoolSeg value={data.tabagismo_passivo} onChange={v => set('tabagismo_passivo', v)} />
             </div>
             <div>
-              <Lbl text="Animal doméstico em casa" k="animal_domestico" />
+              {Lbl('Animal doméstico em casa', 'animal_domestico')}
               <AnamBoolSeg value={data.animal_domestico} onChange={v => set('animal_domestico', v)} />
-              {data.animal_domestico === true && <div style={{ marginTop: 8 }}><Lbl text="Qual animal" k="animal_domestico_qual" /><Inp k="animal_domestico_qual" /></div>}
+              {data.animal_domestico === true && <div style={{ marginTop: 8 }}>{Lbl('Qual animal', 'animal_domestico_qual')}{Inp('animal_domestico_qual')}</div>}
             </div>
             <div style={full}>
-              <Lbl text="Acesso a água encanada e saneamento básico" k="agua_saneamento" />
+              {Lbl('Acesso a água encanada e saneamento básico', 'agua_saneamento')}
               <AnamBoolSeg value={data.agua_saneamento} onChange={v => set('agua_saneamento', v)} />
             </div>
           </div>
@@ -515,7 +515,7 @@ export function RecordingScreen({ time, patient, consultType, onFinish, onCancel
 
 export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, specialty = 'Pediatria' }: {
   audioBlob: Blob | null;
-  onDone: (summary: StructuredSummary, transcript: string, anamnese?: AnamnesePrimeiraConsultaData) => void;
+  onDone: (summary: StructuredSummary, transcript: string, anamnese?: AnamnesePrimeiraConsultaData, anamneseError?: string | null) => void;
   onRetry: () => void;
   consultType: 'retorno' | 'primeira vez';
   specialty?: string;
@@ -544,12 +544,16 @@ export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, spec
 
         if (isPrimeira) {
           setStep(3);
+          let anamneseError: string | null = null;
           const anamnese = await ai.extractAnamnesePrimeiraConsulta(transcript)
-            .catch(() => defaultAnamnesePrimeiraConsulta());
+            .catch((e: unknown) => {
+              anamneseError = (e as Error)?.message || 'Falha ao extrair a ficha de anamnese.';
+              return defaultAnamnesePrimeiraConsulta();
+            });
           if (cancelled) return;
           setStep(4);
           await new Promise(r => setTimeout(r, 400));
-          if (!cancelled) onDone(summary, transcript, anamnese);
+          if (!cancelled) onDone(summary, transcript, anamnese, anamneseError);
         } else {
           setStep(3);
           await new Promise(r => setTimeout(r, 400));
@@ -609,12 +613,13 @@ export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, spec
 
 // ─── SUMMARY DONE SCREEN ──────────────────────────────────────────────────────
 
-export function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, consultType, anamnese, onSave }: {
+export function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, consultType, anamnese, anamneseError, onSave }: {
   patient: Patient | null; recTime: number;
   summary: StructuredSummary; transcript: string;
   draftId: string | null;
   consultType: 'retorno' | 'primeira vez';
   anamnese: AnamnesePrimeiraConsultaData | null;
+  anamneseError?: string | null;
   onSave: () => void;
 }) {
   const isPrimeira = consultType === 'primeira vez';
@@ -752,6 +757,12 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
         {/* Main form — branches on consultation type */}
         {isPrimeira ? (
           <RequireRole roles={['medico']}>
+            {anamneseError && (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: WARNL, border: `1px solid ${WARN}40`, borderRadius: 8, marginBottom: 12, fontSize: 13, color: WARN }}>
+                <Warning size={16} style={{ flexShrink: 0, marginTop: 1 } as React.CSSProperties} />
+                <span>A ficha de anamnese não pôde ser extraída automaticamente pela IA ({anamneseError}). Preencha os campos abaixo manualmente com base na consulta.</span>
+              </div>
+            )}
             <div style={{ marginBottom: 16 }}>
               <AnamnesePrimeiraConsulta data={editedAnamnese} onChange={setEditedAnamnese} />
             </div>

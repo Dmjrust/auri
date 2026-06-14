@@ -299,6 +299,7 @@ const ANAMNESE_PRIMEIRA_VEZ_SYSTEM_PROMPT = `Você é um assistente médico espe
 Retorne um JSON com as chaves: historia_atual, historia_pregressa, historia_gestacional, triagens_neonatais, historia_familiar, historia_socioeconomica. Cada chave contém os subcampos identificados.
 Campos não mencionados na consulta retornar como null.
 Nunca invente dados não mencionados pelo médico ou responsável.
+Antes de retornar null em qualquer campo, releia a transcrição inteira procurando menções diretas OU indiretas a esse tópico especificamente — mesmo comentários breves dos responsáveis contam.
 
 Use exatamente esta estrutura de subcampos:
 {
@@ -358,13 +359,98 @@ Tipos obrigatórios por campo:
 - gestacoes_gpa: formato "G2P1A0" se informado, senão null
 - Conforme CFM 2.454/2026: extração de apoio à decisão, médico revisará`;
 
+// Structured Outputs (json_schema + strict: true): garante que a resposta da
+// API sempre contenha as 6 seções e os 28 subcampos abaixo (com valor ou
+// null) — nunca uma seção/campo ausente, o que evita que o parser (root.<secao>
+// ?? {}) descarte silenciosamente dados de seções que o modelo omitiu.
+const ANAMNESE_PRIMEIRA_VEZ_SCHEMA = {
+  name: 'anamnese_primeira_consulta',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['historia_atual', 'historia_pregressa', 'historia_gestacional', 'triagens_neonatais', 'historia_familiar', 'historia_socioeconomica'],
+    properties: {
+      historia_atual: {
+        type: 'object', additionalProperties: false,
+        required: ['motivo_consulta', 'queixa_principal_duracao', 'sintomas_associados'],
+        properties: {
+          motivo_consulta: { type: ['string', 'null'] },
+          queixa_principal_duracao: { type: ['string', 'null'] },
+          sintomas_associados: { type: ['string', 'null'] },
+        },
+      },
+      historia_pregressa: {
+        type: 'object', additionalProperties: false,
+        required: ['internacoes', 'internacoes_desc', 'cirurgias', 'cirurgias_desc', 'alergias_medicamentos', 'alergias_alimentos', 'alergias_outras', 'historico_vacinal'],
+        properties: {
+          internacoes: { type: ['boolean', 'null'] },
+          internacoes_desc: { type: ['string', 'null'] },
+          cirurgias: { type: ['boolean', 'null'] },
+          cirurgias_desc: { type: ['string', 'null'] },
+          alergias_medicamentos: { type: ['string', 'null'] },
+          alergias_alimentos: { type: ['string', 'null'] },
+          alergias_outras: { type: ['string', 'null'] },
+          historico_vacinal: { type: ['string', 'null'] },
+        },
+      },
+      historia_gestacional: {
+        type: 'object', additionalProperties: false,
+        required: ['gestacoes_gpa', 'idade_gestacional_semanas', 'intercorrencias', 'intercorrencias_desc', 'tipo_parto', 'local_parto', 'apgar_1', 'apgar_5'],
+        properties: {
+          gestacoes_gpa: { type: ['string', 'null'] },
+          idade_gestacional_semanas: { type: ['string', 'null'] },
+          intercorrencias: { type: ['boolean', 'null'] },
+          intercorrencias_desc: { type: ['string', 'null'] },
+          tipo_parto: { type: ['string', 'null'], enum: ['vaginal', 'cesárea', null] },
+          local_parto: { type: ['string', 'null'] },
+          apgar_1: { type: ['string', 'null'] },
+          apgar_5: { type: ['string', 'null'] },
+        },
+      },
+      triagens_neonatais: {
+        type: 'object', additionalProperties: false,
+        required: ['pezinho', 'orelhinha', 'olhinho', 'coracaozinho'],
+        properties: {
+          pezinho: { type: ['string', 'null'], enum: ['realizado', 'não realizado', 'aguardando resultado', null] },
+          orelhinha: { type: ['string', 'null'], enum: ['passou', 'falhou', 'não realizado', null] },
+          olhinho: { type: ['string', 'null'], enum: ['passou', 'falhou', 'não realizado', null] },
+          coracaozinho: { type: ['string', 'null'], enum: ['passou', 'falhou', 'não realizado', null] },
+        },
+      },
+      historia_familiar: {
+        type: 'object', additionalProperties: false,
+        required: ['doencas_cronicas', 'alergias_familia', 'alergias_familia_desc', 'outras_condicoes'],
+        properties: {
+          doencas_cronicas: { type: ['string', 'null'] },
+          alergias_familia: { type: ['boolean', 'null'] },
+          alergias_familia_desc: { type: ['string', 'null'] },
+          outras_condicoes: { type: ['string', 'null'] },
+        },
+      },
+      historia_socioeconomica: {
+        type: 'object', additionalProperties: false,
+        required: ['profissao_responsaveis', 'renda_familiar', 'tabagismo_passivo', 'animais', 'animais_qual', 'saneamento'],
+        properties: {
+          profissao_responsaveis: { type: ['string', 'null'] },
+          renda_familiar: { type: ['string', 'null'] },
+          tabagismo_passivo: { type: ['boolean', 'null'] },
+          animais: { type: ['boolean', 'null'] },
+          animais_qual: { type: ['string', 'null'] },
+          saneamento: { type: ['boolean', 'null'] },
+        },
+      },
+    },
+  },
+} as const;
+
 export async function extractAnamnesePrimeiraConsulta(transcript: string): Promise<AnamnesePrimeiraConsultaData> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'gpt-4o',
-      response_format: { type: 'json_object' },
+      response_format: { type: 'json_schema', json_schema: ANAMNESE_PRIMEIRA_VEZ_SCHEMA },
       temperature: 0.1,
       messages: [
         { role: 'system', content: ANAMNESE_PRIMEIRA_VEZ_SYSTEM_PROMPT },

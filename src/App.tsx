@@ -4728,6 +4728,7 @@ export default function App() {
   const [realSummary, setRealSummary] = useState<StructuredSummary | null>(null);
   const [realTranscript, setRealTranscript] = useState('');
   const [realAnamnese, setRealAnamnese] = useState<AnamnesePrimeiraConsultaData | null>(null);
+  const [realAnamneseError, setRealAnamneseError] = useState<string | null>(null);
   const [draftConsultationId, setDraftConsultationId] = useState<string | null>(null);
   const [activeAppointmentId, setActiveAppointmentId] = useState<string | null>(null);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
@@ -4874,15 +4875,15 @@ export default function App() {
 
   if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => { if (screen === 'dashboard') { go('patient-detail'); } else { setFlow(null); } }} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} onCancel={() => { setFlow(null); setRecTime(0); setMicReady(false); }} onMicReady={() => setMicReady(true)} />;
-  if (flow === 'processing') return <ProcessingScreen consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese) => {
-    setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setFlow('done');
+  if (flow === 'processing') return <ProcessingScreen consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese, anamneseError) => {
+    setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setRealAnamneseError(anamneseError ?? null); setFlow('done');
     if (activePatient) {
       db.saveDraftConsultation(activePatient.id, summary, recTime, consultType)
         .then(id => setDraftConsultationId(id))
         .catch(err => console.error('Auto-save draft failed:', err));
     }
   }} />;
-  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} anamnese={realAnamnese} onSave={() => { if (activeAppointmentId) db.updateAppointment(activeAppointmentId, { status: 'completed' }).catch(() => {}); setActiveAppointmentId(null); setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRealAnamnese(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
+  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} anamnese={realAnamnese} anamneseError={realAnamneseError} onSave={() => { if (activeAppointmentId) db.updateAppointment(activeAppointmentId, { status: 'completed' }).catch(() => {}); setActiveAppointmentId(null); setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRealAnamnese(null); setRealAnamneseError(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
 
   const breadcrumbs: Record<string, string[]> = {
     dashboard:        ['Início', 'Dashboard'],
@@ -4917,6 +4918,7 @@ export default function App() {
                   ? await db.fetchAnamnesePrimeiraConsultaByPatient(activePatient.id).catch(() => null)
                   : null;
                 setRealAnamnese(anamnese);
+                setRealAnamneseError(null);
                 setFlow('done');
               }} refetchTrigger={refetchTrigger} />}
             {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} />}
