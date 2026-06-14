@@ -1518,7 +1518,7 @@ export async function fetchAllDoctorsAdmin(): Promise<AdminDoctorRow[]> {
       supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id),
       supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed'),
       supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed').gte('created_at', monthStart),
-      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('ai_transcribed', true).gte('created_at', monthStart),
+      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed').eq('ai_transcribed', true).gte('created_at', monthStart),
       supabase.from('consultations').select('created_at').eq('doctor_id', m.user_id).eq('status', 'completed').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
 
@@ -1559,7 +1559,7 @@ export async function fetchAdminStats(): Promise<AdminStats> {
     supabase.from('patients').select('*', { count: 'exact', head: true }),
     supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('role', 'medico'),
     supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', monthStart),
-    supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('ai_transcribed', true).gte('created_at', monthStart),
+    supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('status', 'completed').eq('ai_transcribed', true).gte('created_at', monthStart),
   ]);
 
   const s = (subs ?? []) as Array<{ status: string; plan: string }>;

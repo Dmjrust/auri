@@ -4433,7 +4433,7 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
     try {
       const [d, s] = await Promise.all([db.fetchAllDoctorsAdmin(), db.fetchAdminStats()]);
       setDoctors(d);
-      setStats(s);
+      setStats({ ...s, total_patients: d.reduce((sum, doc) => sum + doc.patient_count, 0) });
     } catch {
       toast.error('Erro ao carregar dados de admin');
     } finally {
