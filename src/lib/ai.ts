@@ -50,9 +50,33 @@ const STRUCTURE_SYSTEM_PROMPT = `Você é um assistente de prontuário pediátri
   "vacinas_mencionadas": ["vacina mencionada 1", "vacina mencionada 2"]
 }
 
+GLOSSÁRIO DE CONVERSÃO (termo leigo → termo técnico) — referência para a regra de normalização de vocabulário abaixo. Lista exemplificativa, não exaustiva:
+- "dor de bruços" / "dor na barriga" → "dor abdominal"
+- "cocô mole" / "cocô líquido" → "fezes pastosas" / "diarreia"
+- "intestino preso" / "preso pra fazer cocô" → "constipação intestinal"
+- "gripezinha" / "gripe forte" → "quadro de infecção de vias aéreas superiores (IVAS)"
+- "garganta inflamada" / "garganta vermelha" → "orofaringe hiperemiada"
+- "olho vermelho" / "olho remelando" → "hiperemia conjuntival" / "secreção conjuntival"
+- "tossindo muito" / "tosse que não passa" → "tosse persistente" (especificar produtiva/seca se mencionado)
+- "ouvido doendo" / "dor de ouvido" → "otalgia"
+- "não quer comer" / "tá comendo pouco" → "hiporexia" / "inapetência"
+- "babando muito" → "sialorreia"
+- "assadura" → "dermatite de fralda"
+- "brotoeja" → "miliária"
+- "mancha vermelha na pele" / "pele cheia de bolinha" → "lesão eritematosa" / "exantema"
+- "bolinha" / "caroço" (linfonodo) → "linfonodomegalia" / "nódulo palpável"
+- "inchaço" → "edema"
+- "roncando" / "ronco à noite" → "ressonar" / "respiração ruidosa"
+- "cansadinho" / "respiração ruim" / "respirando rápido" → "desconforto respiratório" / "taquipneia" (especificar conforme relatado)
+- "febre alta" → "hipertermia" (manter valor numérico se informado)
+- "coceira" / "tá se arranhando muito" → "prurido"
+- "calombo na cabeça" / "caroço na cabeça" → "tumefação" / "edema local em região cefálica"
+
 REGRAS:
 - Responda APENAS com o JSON, sem markdown ou explicações
 - Use terminologia médica pediátrica brasileira
+- Ao escrever queixa_principal, hda, exame_fisico e conduta, converta termos coloquiais usados pelos pais/responsáveis, pelo paciente ou pelo médico para a terminologia técnica equivalente, usando o GLOSSÁRIO acima como referência e generalizando o mesmo princípio para termos análogos. Essa conversão é apenas de vocabulário/registro: preserve integralmente sentido, intensidade, localização, duração e gravidade exatamente como relatados. NÃO infira diagnósticos, NÃO adicione achados não mencionados e NÃO altere a gravidade. Em termo ambíguo (mais de uma interpretação técnica plausível), mantenha a expressão original entre aspas ao lado do termo técnico mais provável. Não use termos coloquiais como base para criar hipóteses em "hipoteses" que não tenham sido ditas ou sugeridas pelo médico — hipoteses reflete apenas o raciocínio clínico do médico.
+- Para termos coloquiais que NÃO estejam no glossário: só converta se existir um equivalente técnico padrão, único e amplamente consensual em português do Brasil (ex.: "dor de cabeça" → "cefaleia"). Se a conversão exigir qualquer suposição clínica, ou houver mais de um equivalente plausível sem contexto suficiente para desambiguar, mantenha a expressão original do relato sem alteração — nunca crie, aproxime ou "invente" um termo técnico, e nunca substitua por um termo que implique achado/diagnóstico mais específico do que o relatado.
 - Se um campo não for mencionado, use string vazia ou array vazio
 - Conforme CFM 2.454/2026: você é apoio à decisão, o médico revisará e validará`;
 
@@ -67,6 +91,7 @@ REGRAS:
 - Não invente dados clínicos.
 - Não feche diagnóstico definitivo.
 - Use linguagem de hipótese: "compatível com", "sugestivo de", "hipótese de".
+- Ao escrever queixa_principal, hda, exame_fisico e conduta, converta termos coloquiais usados pelo paciente ou pelo médico para a terminologia tricológica/dermatológica técnica equivalente em português do Brasil (ex.: "queda de cabelo" → "alopecia" / "eflúvio"; "caspa" → "descamação do couro cabeludo" / "dermatite seborreica"), usando o GLOSSÁRIO DE CONVERSÃO abaixo como referência. Preserve integralmente sentido, intensidade, localização e tempo de evolução relatados — NÃO infira diagnósticos, classificações (Ludwig, Norwood, SALT) ou achados não mencionados. Para termos fora do glossário, só converta se houver equivalente técnico único e consensual em português do Brasil; caso contrário, mantenha a expressão original sem alteração.
 - Se uma informação não for mencionada, retorne "" ou null.
 - Não retorne markdown.
 - Não retorne texto fora do JSON.
@@ -107,6 +132,18 @@ Retorne exatamente este schema:
     "exams_mentioned": []
   }
 }
+
+GLOSSÁRIO DE CONVERSÃO (termo leigo → termo técnico tricológico) — lista exemplificativa, não exaustiva:
+- "queda de cabelo" / "cabelo caindo muito" → "alopecia" / "eflúvio" (especificar agudo/crônico se informado)
+- "cabelo ralo" / "fio fino" → "miniaturização capilar" / "rarefação"
+- "caspa" → "descamação do couro cabeludo" / "dermatite seborreica"
+- "couro cabeludo gorduroso" / "cabelo oleoso" → "seborreia"
+- "entradas" → "recessão da linha frontal de implantação"
+- "calvície" → "alopecia androgenética"
+- "falha" / "falha no cabelo" / "área sem cabelo" → "placa de alopecia" / "área de rarefação"
+- "couro cabeludo coçando" → "prurido do couro cabeludo"
+- "couro cabeludo vermelho/irritado" → "eritema do couro cabeludo"
+- "cabelo quebrando muito" → "fragilidade capilar" / "tricorrexe"
 
 ORIENTAÇÕES DE EXTRAÇÃO:
 - queixa_principal: motivo principal da consulta.
