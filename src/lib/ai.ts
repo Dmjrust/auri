@@ -39,7 +39,7 @@ const STRUCTURE_SYSTEM_PROMPT = `Você é um assistente de prontuário pediátri
 
 {
   "queixa_principal": "motivo principal da consulta em uma frase",
-  "hda": "história da doença atual detalhada — contexto, evolução, sintomas associados",
+  "hda": "anamnese narrativa completa da consulta, incluindo todos os dados subjetivos clinicamente relevantes mencionados na transcrição",
   "exame_fisico": "achados do exame físico com sinais vitais se mencionados (peso, altura, FC, FR, Temp)",
   "hipoteses": ["hipótese diagnóstica principal", "hipótese secundária se houver"],
   "conduta": "conduta clínica e plano terapêutico detalhado",
@@ -75,6 +75,9 @@ GLOSSÁRIO DE CONVERSÃO (termo leigo → termo técnico) — referência para a
 REGRAS:
 - Responda APENAS com o JSON, sem markdown ou explicações
 - Use terminologia médica pediátrica brasileira
+- O campo "hda" é o card de Anamnese do prontuário. Ele deve considerar a transcrição inteira e consolidar a anamnese completa, não apenas a história da doença atual.
+- Em "hda", inclua quando mencionados: queixa e evolução, sintomas associados, antecedentes pessoais, internações/cirurgias, alergias, medicações em uso, alimentação, sono, eliminações, desenvolvimento, comportamento, escola/creche, adesão a tratamentos, intercorrências desde a última consulta, histórico familiar relevante, contexto social/familiar e dúvidas ou preocupações dos responsáveis.
+- Se uma informação subjetiva foi obtida na consulta e é clinicamente relevante, ela deve aparecer em "hda" mesmo que não faça parte da queixa principal. Não descarte informações por falta de um campo específico.
 - Ao escrever queixa_principal, hda, exame_fisico e conduta, converta termos coloquiais usados pelos pais/responsáveis, pelo paciente ou pelo médico para a terminologia técnica equivalente, usando o GLOSSÁRIO acima como referência e generalizando o mesmo princípio para termos análogos. Essa conversão é apenas de vocabulário/registro: preserve integralmente sentido, intensidade, localização, duração e gravidade exatamente como relatados. NÃO infira diagnósticos, NÃO adicione achados não mencionados e NÃO altere a gravidade. Em termo ambíguo (mais de uma interpretação técnica plausível), mantenha a expressão original entre aspas ao lado do termo técnico mais provável. Não use termos coloquiais como base para criar hipóteses em "hipoteses" que não tenham sido ditas ou sugeridas pelo médico — hipoteses reflete apenas o raciocínio clínico do médico.
 - Para termos coloquiais que NÃO estejam no glossário: só converta se existir um equivalente técnico padrão, único e amplamente consensual em português do Brasil (ex.: "dor de cabeça" → "cefaleia"). Se a conversão exigir qualquer suposição clínica, ou houver mais de um equivalente plausível sem contexto suficiente para desambiguar, mantenha a expressão original do relato sem alteração — nunca crie, aproxime ou "invente" um termo técnico, e nunca substitua por um termo que implique achado/diagnóstico mais específico do que o relatado.
 - Se um campo não for mencionado, use string vazia ou array vazio

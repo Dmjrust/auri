@@ -37,6 +37,7 @@ describe('getStructurePrompt', () => {
   });
 });
 
+
 describe('structureSummary — parser do retorno GPT-4o', () => {
   // Salva o fetch real e restaura após cada teste
   const originalFetch = global.fetch;
@@ -155,5 +156,41 @@ describe('structureSummary — parser do retorno GPT-4o', () => {
     // Prompt pediátrico deve conter referência pediátrica, não tricológica
     expect(systemMsg.content).toContain('pediátrico');
     expect(systemMsg.content).not.toContain('scalp_condition');
+  });
+
+  it('Pediatria instrui hda como anamnese completa baseada na transcricao inteira', async () => {
+    const capturedBodies: string[] = [];
+    global.fetch = vi.fn().mockImplementation((_url: unknown, opts: RequestInit) => {
+      capturedBodies.push(opts.body as string);
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify({
+            queixa_principal: 'Consulta de rotina',
+            hda: 'Anamnese completa com alimentacao, sono e desenvolvimento.',
+            exame_fisico: '',
+            hipoteses: [],
+            conduta: '',
+            retorno: '',
+            peso: '',
+            altura: '',
+            perimetro_cefalico: '',
+            vacinas_mencionadas: [],
+          }) } }],
+        }),
+      });
+    });
+
+    await structureSummary('Mae relata boa alimentacao, sono preservado, evacuacoes diarias e desenvolvimento adequado.', 'Pediatria');
+
+    const body = JSON.parse(capturedBodies[0]);
+    const systemMsg = body.messages.find((m: { role: string }) => m.role === 'system');
+    expect(systemMsg.content).toContain('anamnese completa');
+    expect(systemMsg.content).toContain('transcri');
+    expect(systemMsg.content).toContain('alimenta');
+    expect(systemMsg.content).toContain('sono');
+    expect(systemMsg.content).toContain('desenvolvimento');
+    expect(systemMsg.content).toContain('N');
+    expect(systemMsg.content).toContain('descarte informa');
   });
 });

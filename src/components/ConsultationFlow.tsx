@@ -641,8 +641,8 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
   function buildEdited(): StructuredSummary {
     return {
       ...summary,
-      queixa_principal: isPrimeira ? (editedAnamnese.motivo_consulta || queixaPrincipal) : queixaPrincipal,
-      hda: isPrimeira ? (editedAnamnese.sintomas_associados || hda) : hda,
+      queixa_principal: queixaPrincipal,
+      hda,
       exame_fisico: exameFisico,
       hipoteses: hipoteses.split('\n').map(h => h.trim()).filter(Boolean),
       conduta,
@@ -757,6 +757,25 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
         {/* Main form — branches on consultation type */}
         {isPrimeira ? (
           <RequireRole roles={['medico']}>
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileText size={15} color={P} />
+                <span style={{ fontWeight: 600, fontSize: 15 }}>Anamnese narrativa</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: MU }}>Revise a anamnese completa extraída da consulta</span>
+              </div>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: MU, paddingTop: 10 }}>Queixa principal</span>
+                <textarea value={queixaPrincipal} onChange={e => setQueixaPrincipal(e.target.value)} rows={2} style={taStyle}
+                  onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = P; }}
+                  onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = BO; }} />
+              </div>
+              <div style={{ padding: '14px 20px', display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: MU, paddingTop: 10 }}>Anamnese</span>
+                <textarea value={hda} onChange={e => setHda(e.target.value)} rows={7} style={taStyle}
+                  onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = P; }}
+                  onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = BO; }} />
+              </div>
+            </Card>
             {anamneseError && (
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: WARNL, border: `1px solid ${WARN}40`, borderRadius: 8, marginBottom: 12, fontSize: 13, color: WARN }}>
                 <Warning size={16} style={{ flexShrink: 0, marginTop: 1 } as React.CSSProperties} />
@@ -776,7 +795,7 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
             </div>
             {([
               { label: 'Queixa principal', value: queixaPrincipal, onChange: setQueixaPrincipal, rows: 2 },
-              { label: 'HDA', value: hda, onChange: setHda, rows: 5 },
+              { label: 'Anamnese', value: hda, onChange: setHda, rows: 7 },
               { label: 'Exame físico', value: exameFisico, onChange: setExameFisico, rows: 4 },
               { label: 'Hipóteses (uma por linha)', value: hipoteses, onChange: setHipoteses, rows: 3 },
               { label: 'Conduta', value: conduta, onChange: setConduta, rows: 4 },
