@@ -2,7 +2,10 @@ import type { StructuredSummary, ScannableSummary, AnamnesePrimeiraConsultaData 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VALIDAÇÃO CLÍNICA: chama OpenAI diretamente do browser via VITE_OPENAI_API_KEY.
-// Simples, sem proxy, sem limite de tamanho — funciona para qualquer duração.
+// Simples, sem proxy — mas a API do Whisper impõe um limite rígido de 25MB por
+// requisição. A gravação usa Opus a 24kbps (~180KB/min), o que cobre até ~2h20
+// de consulta dentro desse limite. Acima disso, transcribeAudio() lança um erro
+// tratável antes que a OpenAI retorne 413.
 //
 // TODO pós-validação: mover para proxy server-side (Vercel Pro + maxDuration 300s)
 //   para não expor a chave no bundle de produção.
@@ -10,11 +13,22 @@ import type { StructuredSummary, ScannableSummary, AnamnesePrimeiraConsultaData 
 
 const KEY = () => import.meta.env.VITE_OPENAI_API_KEY as string;
 
+// Limite documentado da API Whisper (corpo multipart/form-data, ~25MB).
+// https://platform.openai.com/docs/guides/speech-to-text
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 26214400 bytes
+
 // ── Whisper: áudio → transcrição ─────────────────────────────────────────────
 export async function transcribeAudio(blob: Blob): Promise<string> {
   const key = KEY();
   if (!key || key === 'undefined') throw new Error('VITE_OPENAI_API_KEY não configurada. Adicione nas variáveis de ambiente do Vercel e faça redeploy.');
   if (blob.size === 0) throw new Error('O áudio gravado está vazio. Tente gravar novamente.');
+  if (blob.size > MAX_AUDIO_BYTES) {
+    const sizeMb = (blob.size / (1024 * 1024)).toFixed(1);
+    throw new Error(
+      `O áudio gravado (${sizeMb} MB) excede o limite de 25 MB da transcrição automática. ` +
+      `Use "Continuar sem IA" para preencher o prontuário manualmente com base na consulta.`
+    );
+  }
 
   const form = new FormData();
   const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';

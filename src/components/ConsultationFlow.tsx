@@ -423,7 +423,9 @@ export function RecordingScreen({ time, patient, consultType, onFinish, onCancel
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then(stream => {
         streamRef.current = stream;
-        const recorder = new MediaRecorder(stream);
+        // Opus a 24kbps mantém boa qualidade de voz e cobre ~2h20 de consulta
+        // dentro do limite de 25MB da API Whisper (ver MAX_AUDIO_BYTES em ai.ts).
+        const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 24000 });
         recorderRef.current = recorder;
         recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
         recorder.start(1000);
@@ -567,6 +569,20 @@ export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, spec
     return () => { cancelled = true; };
   }, [specialty]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Escape hatch: quando a IA falha (ex.: áudio acima de 25MB) e o paciente já
+  // foi embora, "Tentar novamente" volta para a gravação — sem utilidade. Esta
+  // opção segue para a revisão do prontuário em branco, para o médico preencher
+  // manualmente com base na consulta.
+  function handleContinueWithoutAI() {
+    const emptySummary: StructuredSummary = {
+      queixa_principal: '', hda: '', exame_fisico: '',
+      hipoteses: [], conduta: '', retorno: '',
+      peso: '', altura: '', perimetro_cefalico: '', vacinas_mencionadas: [],
+      specialty_data: null,
+    };
+    onDone(emptySummary, '', isPrimeira ? defaultAnamnesePrimeiraConsulta() : undefined, null);
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' as const, maxWidth: 420 }}>
@@ -588,7 +604,8 @@ export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, spec
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <Btn size="sm" onClick={onRetry} style={{ flex: 1 }}>Tentar novamente</Btn>
+              <Btn size="sm" variant="secondary" onClick={onRetry} style={{ flex: 1 }}>Tentar novamente</Btn>
+              <Btn size="sm" onClick={handleContinueWithoutAI} style={{ flex: 1 }}>Continuar sem IA</Btn>
             </div>
           </div>
         ) : (
