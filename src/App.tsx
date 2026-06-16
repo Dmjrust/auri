@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useContext, useCallback, useDeferredValue } from 'react';
+import React, { useState, useEffect, useRef, useContext, useCallback, useDeferredValue, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { toast } from 'sonner';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
@@ -4276,11 +4276,10 @@ function AdminStatsCard({ label, value, sub, subColor }: { label: string; value:
 
 // ── AdminChartsSection — evolução temporal do SaaS ───────────────────────────
 
-function AdminChartsSection() {
+function AdminChartsSection({ period }: { period: number }) {
   const isMobile = useIsMobile();
   const [chartData, setChartData]       = useState<db.AdminChartPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(true);
-  const [period, setPeriod]             = useState<3 | 6 | 12>(6);
 
   useEffect(() => {
     setChartLoading(true);
@@ -4294,33 +4293,12 @@ function AdminChartsSection() {
   const gridProps = { strokeDasharray: '3 3' as const, stroke: BO, vertical: false };
   const tooltipStyle = { fontSize: 12, borderRadius: 6, border: `1px solid ${BO}`, fontFamily: 'Inter, sans-serif' };
 
-  const periodBtns: Array<3 | 6 | 12> = [3, 6, 12];
-
   return (
     <div style={{ marginBottom: 28 }}>
       {/* Header da seção */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>Evolução</div>
-          <div style={{ fontSize: 12, color: MU }}>Série temporal · últimos {period} meses</div>
-        </div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {periodBtns.map(p => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              style={{
-                padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-                cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
-                background: period === p ? P : 'transparent',
-                color: period === p ? '#fff' : MU,
-                border: `1px solid ${period === p ? P : BO}`,
-              }}
-            >
-              {p}M
-            </button>
-          ))}
-        </div>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>Evolução</div>
+        <div style={{ fontSize: 12, color: MU }}>Série temporal · últimos {period} {period === 1 ? 'mês' : 'meses'}</div>
       </div>
 
       {chartLoading ? (
@@ -4418,6 +4396,31 @@ function AdminChartsSection() {
   );
 }
 
+type PeriodPreset = 'hoje' | '3M' | '6M' | '12M' | 'custom';
+
+function computeDateRange(
+  preset: PeriodPreset,
+  customFrom: string,
+  customTo: string,
+): { from: string; to: string; chartMonths: number } {
+  const now = new Date();
+  const toISO = now.toISOString();
+  if (preset === 'hoje') {
+    const from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    return { from, to: toISO, chartMonths: 1 };
+  }
+  if (preset !== 'custom') {
+    const months = preset === '3M' ? 3 : preset === '6M' ? 6 : 12;
+    const from = new Date(now.getFullYear(), now.getMonth() - months, 1).toISOString();
+    return { from, to: toISO, chartMonths: months };
+  }
+  const f = customFrom || new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const t = customTo   || toISO;
+  const diffMs = new Date(t).getTime() - new Date(f).getTime();
+  const chartMonths = Math.max(1, Math.min(12, Math.round(diffMs / (1000 * 60 * 60 * 24 * 30))));
+  return { from: f, to: t, chartMonths };
+}
+
 function AdminPage({ go: _go }: { go: (s: string) => void }) {
   const [doctors, setDoctors]       = useState<db.AdminDoctorRow[]>([]);
   const [stats, setStats]           = useState<db.AdminStats | null>(null);
@@ -4427,11 +4430,18 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
   const [sortBy, setSortBy]         = useState<AdminSort>('last_active');
   const [actionTarget, setActionTarget] = useState<{ id: string; top: number; right: number } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [preset, setPreset]           = useState<PeriodPreset>('3M');
+  const [customFrom, setCustomFrom]   = useState('');
+  const [customTo,   setCustomTo]     = useState('');
+  const dateRange = useMemo(
+    () => computeDateRange(preset, customFrom, customTo),
+    [preset, customFrom, customTo],
+  );
 
-  const load = async () => {
+  const load = async (range: { from: string; to: string } = dateRange) => {
     setLoading(true);
     try {
-      const [d, s] = await Promise.all([db.fetchAllDoctorsAdmin(), db.fetchAdminStats()]);
+      const [d, s] = await Promise.all([db.fetchAllDoctorsAdmin(range), db.fetchAdminStats(range)]);
       setDoctors(d);
       setStats({ ...s, total_patients: d.reduce((sum, doc) => sum + doc.patient_count, 0) });
     } catch {
@@ -4441,7 +4451,7 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(dateRange); }, [dateRange]);
 
   // Fechar dropdown ao clicar fora
   useEffect(() => {
@@ -4514,16 +4524,44 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
   return (
     <div style={{ padding: isMobile ? 16 : 32, maxWidth: 1400 }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 16, flexWrap: 'wrap' as const }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, gap: 16, flexWrap: 'wrap' as const }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 700, color: INK, fontFamily: '"Fraunces", serif', letterSpacing: '-0.5px' }}>
             Gestão de Assinantes
           </div>
-          <div style={{ fontSize: 13, color: MU, marginTop: 3 }}>Visão operacional do SaaS · Mês atual</div>
+          <div style={{ fontSize: 13, color: MU, marginTop: 3 }}>
+            Visão operacional do SaaS ·{' '}
+            {preset === 'hoje' ? 'Hoje' : preset === 'custom' ? 'Período personalizado' : `Últimos ${preset}`}
+          </div>
         </div>
-        <Btn variant="secondary" onClick={load} disabled={loading} style={{ flexShrink: 0 }}>
+        <Btn variant="secondary" onClick={() => load()} disabled={loading} style={{ flexShrink: 0 }}>
           <ArrowCounterClockwise size={14} /> {loading ? 'Carregando…' : 'Atualizar'}
         </Btn>
+      </div>
+
+      {/* Filtro de período global */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, flexWrap: 'wrap' as const }}>
+        {(['hoje', '3M', '6M', '12M', 'custom'] as PeriodPreset[]).map(p => (
+          <button key={p} onClick={() => setPreset(p)}
+            style={{
+              padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+              border: `1.5px solid ${preset === p ? P : BO}`,
+              background: preset === p ? P : '#fff',
+              color: preset === p ? '#fff' : MU,
+              cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s',
+            }}>
+            {p === 'custom' ? 'Personalizado' : p === 'hoje' ? 'Hoje' : p}
+          </button>
+        ))}
+        {preset === 'custom' && (
+          <>
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+              style={{ padding: '5px 8px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit', color: INK, background: '#fff', outline: 'none' }} />
+            <span style={{ fontSize: 12, color: MU }}>até</span>
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+              style={{ padding: '5px 8px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit', color: INK, background: '#fff', outline: 'none' }} />
+          </>
+        )}
       </div>
 
       {/* Stats cards */}
@@ -4541,7 +4579,7 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
             subColor={stats.mrr_brl > 0 ? SUC : MU}
           />
           <AdminStatsCard
-            label="Consultas este mês"
+            label="Consultas no período"
             value={stats.total_consults_this_month}
             sub={`${stats.total_ai_consults_this_month} com IA · ${stats.total_patients} pacientes total`}
           />
@@ -4555,7 +4593,7 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
       )}
 
       {/* Analytics — evolução temporal */}
-      <AdminChartsSection />
+      <AdminChartsSection period={dateRange.chartMonths} />
 
       {/* Filters + search */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' as const, alignItems: 'center' }}>

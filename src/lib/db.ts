@@ -1483,12 +1483,15 @@ export interface AdminStats {
 }
 
 /** Lista todos os médicos com status de assinatura + métricas de uso — apenas admin */
-export async function fetchAllDoctorsAdmin(): Promise<AdminDoctorRow[]> {
+export async function fetchAllDoctorsAdmin(
+  opts?: { from: string; to: string },
+): Promise<AdminDoctorRow[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Não autenticado');
 
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const from = opts?.from ?? new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const to   = opts?.to   ?? now.toISOString();
 
   const [
     { data: medicos, error: mErr },
@@ -1517,8 +1520,8 @@ export async function fetchAllDoctorsAdmin(): Promise<AdminDoctorRow[]> {
     ] = await Promise.all([
       supabase.from('patients').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id),
       supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed'),
-      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed').gte('created_at', monthStart),
-      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed').eq('ai_transcribed', true).gte('created_at', monthStart),
+      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed').gte('created_at', from).lte('created_at', to),
+      supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('doctor_id', m.user_id).eq('status', 'completed').eq('ai_transcribed', true).gte('created_at', from).lte('created_at', to),
       supabase.from('consultations').select('created_at').eq('doctor_id', m.user_id).eq('status', 'completed').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
 
@@ -1544,9 +1547,12 @@ export async function fetchAllDoctorsAdmin(): Promise<AdminDoctorRow[]> {
 }
 
 /** Estatísticas globais do SaaS — apenas admin */
-export async function fetchAdminStats(): Promise<AdminStats> {
+export async function fetchAdminStats(
+  opts?: { from: string; to: string },
+): Promise<AdminStats> {
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const from = opts?.from ?? new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const to   = opts?.to   ?? now.toISOString();
 
   const [
     { data: subs },
@@ -1558,8 +1564,8 @@ export async function fetchAdminStats(): Promise<AdminStats> {
     supabase.from('subscriptions').select('status, plan'),
     supabase.from('patients').select('*', { count: 'exact', head: true }),
     supabase.from('user_profiles').select('*', { count: 'exact', head: true }).eq('role', 'medico'),
-    supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', monthStart),
-    supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('status', 'completed').eq('ai_transcribed', true).gte('created_at', monthStart),
+    supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', from).lte('created_at', to),
+    supabase.from('consultations').select('*', { count: 'exact', head: true }).eq('status', 'completed').eq('ai_transcribed', true).gte('created_at', from).lte('created_at', to),
   ]);
 
   const s = (subs ?? []) as Array<{ status: string; plan: string }>;
