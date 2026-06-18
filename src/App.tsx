@@ -9,6 +9,7 @@ import * as ai from './lib/ai';
 import { SmokeyBackground, LoginForm } from './components/ui/login-form';
 import { TodayPatientCard } from './components/TodayPatientCard';
 import { DevelopmentTab } from './components/DevelopmentTab';
+import { OnboardingSetup } from './components/OnboardingSetup';
 import type { DayBriefingItem, ChronicDashboardData } from './lib/db';
 import {
   SquaresFour, Users, CalendarBlank, GearSix, SignOut, Bell, MagnifyingGlass, CaretRight,
@@ -5048,68 +5049,6 @@ function PainelPage({ go, setActivePatient }: { go: (s: string) => void; setActi
   );
 }
 
-// ─── ONBOARDING PAGE ──────────────────────────────────────────────────────────
-// Fase de validação: especialidade fixada em Pediatria, sem escolha de especialidade.
-const ESPECIALIDADES = ['Pediatria', 'Clínica Geral'];
-
-function OnboardingPage({ user, onComplete }: { user: SupabaseUser; onComplete: (specialty: string) => void }) {
-  const [fullName, setFullName] = useState(user.user_metadata?.full_name || '');
-  const [crm, setCrm] = useState('');
-  const [clinicName, setClinicName] = useState('');
-  const [chosenSpecialty, setChosenSpecialty] = useState('Pediatria');
-  const [saving, setSaving] = useState(false);
-
-  async function handleSubmit() {
-    if (!fullName.trim() || !crm.trim()) return;
-    setSaving(true);
-    try {
-      await db.updateProfile({ full_name: fullName.trim(), crm: crm.trim(), clinic_name: clinicName.trim(), specialty: chosenSpecialty });
-      onComplete(chosenSpecialty);
-    } catch {
-      setSaving(false);
-      toast.error('Erro ao salvar perfil. Tente novamente.');
-    }
-  }
-
-  const inputStyle = { width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff', color: INK };
-
-  return (
-    <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ maxWidth: 460, width: '100%' }}>
-        <div style={{ textAlign: 'center' as const, marginBottom: 32 }}>
-          <div style={{ fontSize: 24, fontWeight: 700, color: P, fontFamily: '"Fraunces", serif', letterSpacing: '-0.5px' }}>Auri</div>
-          <div style={{ fontSize: 14, color: MU, marginTop: 6 }}>Configure seu perfil para começar</div>
-        </div>
-        <Card style={{ padding: 24 }}>
-          {([
-            { label: 'Nome completo *', value: fullName, set: setFullName, placeholder: 'Dr. Nome Sobrenome', type: 'text' },
-            { label: 'CRM *', value: crm, set: setCrm, placeholder: 'CRM-SP 123456', type: 'text' },
-            { label: 'Nome do consultório', value: clinicName, set: setClinicName, placeholder: 'Consultório Dr. ...', type: 'text' },
-          ] as { label: string; value: string; set: (v: string) => void; placeholder: string; type: string }[]).map(({ label, value, set, placeholder, type }) => (
-            <div key={label} style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{label}</label>
-              <input type={type} value={value} onChange={e => set(e.target.value)} placeholder={placeholder} style={inputStyle} />
-            </div>
-          ))}
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Especialidade *</label>
-            <select value={chosenSpecialty} onChange={e => setChosenSpecialty(e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
-              {ESPECIALIDADES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <Btn
-            onClick={handleSubmit}
-            disabled={!fullName.trim() || !crm.trim() || saving}
-            style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
-          >
-            {saving ? 'Salvando…' : 'Começar a usar o Auri'}
-          </Btn>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
 // ─── ADMIN PAGE ──────────────────────────────────────────────────────────────
 
 type AdminFilter = 'all' | 'active' | 'trialing' | 'past_due' | 'canceled' | 'none';
@@ -5771,7 +5710,7 @@ export default function App() {
   // Aguarda authProfileLoading para evitar race condition: se isAdmin ainda não carregou,
   // needsOnboarding=true mostraria esta tela indevidamente para admins (que não têm specialty)
   if (needsOnboarding && !isAdmin && !authProfileLoading) return (
-    <OnboardingPage
+    <OnboardingSetup
       user={user}
       onComplete={(specialty) => {
         setDoctorSpecialty(specialty);
