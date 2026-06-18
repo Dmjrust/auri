@@ -92,6 +92,129 @@ export interface Appointment {
   status: 'completed' | 'in_progress' | 'scheduled'; guardian: string;
 }
 export interface Insight { type: 'alert' | 'pattern' | 'info'; title: string; body: string; }
+
+// ─── CLÍNICA GERAL — TIPOS ADULTO ─────────────────────────────────────────────
+
+export interface VitaisAdulto {
+  pressao_arterial?: string;    // "130/85 mmHg"
+  frequencia_cardiaca?: string; // "78 bpm"
+  saturacao?: string;           // "97%"
+  temperatura?: string;         // "36.8°C"
+  peso?: string;                // "82 kg"
+  altura?: string;              // "172 cm"
+  imc?: string;                 // "27.7"
+}
+
+export interface ProblemaAtivo {
+  name: string;
+  status: 'ativo' | 'controlado' | 'resolvido';
+  since?: string;
+  updated_at: string;
+}
+
+export interface Medication {
+  name: string;
+  dosage?: string;
+  frequency?: string;
+  indication?: string;
+  start_date?: string;
+  status?: 'active' | 'paused' | 'discontinued';
+}
+
+export interface Allergy {
+  allergen: string;
+  reaction?: string;
+  severity?: 'leve' | 'moderada' | 'grave';
+}
+
+export interface ConsultaAdultoData {
+  vitals?: VitaisAdulto;
+  active_problems?: ProblemaAtivo[];
+  current_medications?: Medication[];
+  allergies?: Allergy[];
+  risk_factors?: string[];
+  adult_intake?: AnamneseAdultaData;
+  exams_requested?: string;
+  follow_up?: string;
+  clinical_insights?: string[];
+}
+
+export interface AnamneseAdultaData {
+  // Motivo
+  motivo_consulta: string;
+  queixa_duracao: string;
+  // Condições crônicas
+  hipertensao: boolean | null;
+  diabetes: boolean | null;
+  dislipidemia: boolean | null;
+  cardiopatia: boolean | null;
+  outras_comorbidades: string;
+  // Cirurgias e internações
+  cirurgias_previas: boolean | null;
+  cirurgias_desc: string;
+  internacoes_previas: boolean | null;
+  internacoes_desc: string;
+  // Hábitos
+  tabagismo: 'nunca' | 'ex-fumante' | 'fumante' | null;
+  tabagismo_pack_years: string;
+  etilismo: 'nunca' | 'ocasional' | 'regular' | null;
+  atividade_fisica: boolean | null;
+  atividade_fisica_desc: string;
+  // Medicamentos e alergias
+  medicamentos_em_uso: string;
+  alergias_medicamentos: string;
+  alergias_outras: string;
+  // Familiar
+  historico_familiar: string;
+  // Preventiva
+  ultima_mamografia: string;
+  ultimo_papanicolau: string;
+  ultima_colonoscopia: string;
+  vacinacao_adulto: string;
+}
+
+export function defaultAnamneseAdulta(): AnamneseAdultaData {
+  return {
+    motivo_consulta: '', queixa_duracao: '',
+    hipertensao: null, diabetes: null, dislipidemia: null, cardiopatia: null, outras_comorbidades: '',
+    cirurgias_previas: null, cirurgias_desc: '', internacoes_previas: null, internacoes_desc: '',
+    tabagismo: null, tabagismo_pack_years: '', etilismo: null,
+    atividade_fisica: null, atividade_fisica_desc: '',
+    medicamentos_em_uso: '', alergias_medicamentos: '', alergias_outras: '',
+    historico_familiar: '',
+    ultima_mamografia: '', ultimo_papanicolau: '', ultima_colonoscopia: '', vacinacao_adulto: '',
+  };
+}
+
+export type ClinicalDocumentType = 'laboratorio' | 'imagem' | 'laudo' | 'relatorio';
+
+export interface ClinicalDocument {
+  id: string;
+  patient_id: string;
+  document_type: ClinicalDocumentType;
+  result_date: string;
+  lab_name: string | null;
+  source_type: 'upload_pdf' | 'upload_image' | 'manual';
+  file_url: string | null;
+  raw_text: string | null;
+  ai_summary: string | null;
+  created_at: string;
+}
+
+export interface LabMarker {
+  id: string;
+  clinical_document_id: string;
+  patient_id: string;
+  result_date: string;
+  marker_name: string;
+  value: number;
+  unit: string;
+  reference_text: string | null;
+  reference_min: number | null;
+  reference_max: number | null;
+  status: 'normal' | 'alto' | 'baixo' | 'critico';
+}
+
 export interface ScannableSummary {
   quick_summary: string[];
   subjective_bullets: string[];

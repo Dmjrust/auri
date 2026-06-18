@@ -9,7 +9,7 @@ import * as ai from './lib/ai';
 import { SmokeyBackground, LoginForm } from './components/ui/login-form';
 import { TodayPatientCard } from './components/TodayPatientCard';
 import { DevelopmentTab } from './components/DevelopmentTab';
-import type { DayBriefingItem } from './lib/db';
+import type { DayBriefingItem, ChronicDashboardData } from './lib/db';
 import {
   SquaresFour, Users, CalendarBlank, GearSix, SignOut, Bell, MagnifyingGlass, CaretRight,
   Play, Square, CheckCircle, Clock, Warning, Info, ArrowLeft, Plus,
@@ -28,6 +28,9 @@ import {
   OMS_WEIGHT_BOY, OMS_HEIGHT_BOY, OMS_WEIGHT_GIRL, OMS_HEIGHT_GIRL,
   type Patient, type Consultation, type StructuredSummary, type ScannableSummary,
   type AnamnesePrimeiraConsultaData, defaultAnamnesePrimeiraConsulta,
+  type AnamneseAdultaData, defaultAnamneseAdulta,
+  type ConsultaAdultoData, type ProblemaAtivo, type Medication, type Allergy,
+  type ClinicalDocument, type LabMarker,
 } from './data/mock';
 import './index.css';
 import { LandingPage } from './pages/LandingPage';
@@ -869,6 +872,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
   const [consultSummaries, setConsultSummaries] = useState<Record<string, { count: number; lastDate: string | null }>>({});
   const [dayBriefing, setDayBriefing] = useState<Record<string, DayBriefingItem>>({});
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
+  const [chronicData, setChronicData] = useState<ChronicDashboardData | null>(null);
   const [expandedPriority, setExpandedPriority] = useState<'retorno' | 'vacinas' | 'sem-consulta' | null>(null);
   const [showAttentionPoints, setShowAttentionPoints] = useState(true);
   const [dismissedPriorities, setDismissedPriorities] = useState<Set<string>>(() => {
@@ -925,6 +929,12 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
       if (lp) setLastPatient(lp);
     }
   }, [recentActivity, patients]);
+
+  // Chronic dashboard data — Clínica Geral only
+  useEffect(() => {
+    if (specialty === 'Pediatria') return;
+    db.fetchChronicDashboardData().then(data => setChronicData(data)).catch(() => {});
+  }, [specialty]);
 
   // Batch vaccine overdue calc — Pediatria only
   useEffect(() => {
@@ -1133,7 +1143,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
                     <div style={{ fontSize: 28, fontWeight: 700, color: displayedOverdueAppts.length > 0 ? DES : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>{displayedOverdueAppts.length}</div>
                     <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>retorno{displayedOverdueAppts.length !== 1 ? 's' : ''} vencido{displayedOverdueAppts.length !== 1 ? 's' : ''}</div>
                   </div>
-                  {/* Vacinas em atraso (Pediatria) / Sem retorno há 60d (Tricologia) */}
+                  {/* Vacinas em atraso (Pediatria) / Sem retorno há 60d (Clínica Geral) */}
                   {specialty === 'Pediatria' ? (
                     <div onClick={() => setExpandedPriority(expandedPriority === 'vacinas' ? null : 'vacinas')}
                       style={{ border: `1.5px solid ${displayedOverdueVaccPatients.length > 0 ? ACCENT+'40' : BO}`, borderRadius: 10, padding: '12px 14px', background: displayedOverdueVaccPatients.length > 0 ? ACCENTL : '#fff', cursor: displayedOverdueVaccPatients.length > 0 ? 'pointer' : 'default', textAlign: 'center' as const, transition: 'opacity 0.15s', opacity: expandedPriority && expandedPriority !== 'vacinas' ? 0.5 : 1 }}>
@@ -1141,10 +1151,15 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
                       <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>paciente{displayedOverdueVaccPatients.length !== 1 ? 's' : ''} c/ vacina em atraso</div>
                     </div>
                   ) : (
-                    <div style={{ border: `1.5px solid ${BO}`, borderRadius: 10, padding: '12px 14px', background: '#fff', textAlign: 'center' as const }}>
-                      <div style={{ fontSize: 28, fontWeight: 700, color: MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>—</div>
-                      <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>sem retorno há 60d</div>
-                    </div>
+                    (() => {
+                      const noReturn = chronicData?.patientsWithoutReturn.length ?? 0;
+                      return (
+                        <div style={{ border: `1.5px solid ${noReturn > 0 ? DES+'40' : BO}`, borderRadius: 10, padding: '12px 14px', background: noReturn > 0 ? DESL : '#fff', textAlign: 'center' as const }}>
+                          <div style={{ fontSize: 28, fontWeight: 700, color: noReturn > 0 ? DES : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace' }}>{noReturn}</div>
+                          <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>crônico{noReturn !== 1 ? 's' : ''} sem retorno</div>
+                        </div>
+                      );
+                    })()
                   )}
                   {/* Sem consulta */}
                   <div onClick={() => setExpandedPriority(expandedPriority === 'sem-consulta' ? null : 'sem-consulta')}
@@ -1199,6 +1214,34 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
               </div>
             )}
           </Card>
+
+          {/* 3b. Distribuição de condições — Clínica Geral */}
+          {specialty !== 'Pediatria' && chronicData && chronicData.conditionDistribution.length > 0 && (
+            <Card>
+              <SectionHeader icon={ChartBar} title="Condições mais frequentes" />
+              <div style={{ padding: '8px 20px 16px' }}>
+                {chronicData.conditionDistribution.map((cond, i) => {
+                  const maxCount = chronicData.conditionDistribution[0].count;
+                  const pct = Math.round((cond.count / maxCount) * 100);
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < chronicData.conditionDistribution.length - 1 ? `1px solid ${BO}` : 'none' }}>
+                      <span style={{ fontSize: 13, color: INK, width: 160, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{cond.name}</span>
+                      <div style={{ flex: 1, height: 8, background: BO, borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: P, borderRadius: 4, transition: 'width 0.5s ease' }} />
+                      </div>
+                      <span style={{ fontSize: 12, color: MU, fontFamily: '"JetBrains Mono", monospace', width: 28, textAlign: 'right' as const }}>{cond.count}</span>
+                    </div>
+                  );
+                })}
+                {chronicData.patientsWithoutReturn.length > 0 && (
+                  <div style={{ marginTop: 14, padding: '10px 14px', background: DESL, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Warning size={14} color={DES} />
+                    <span style={{ fontSize: 13, color: DES, fontWeight: 500 }}>{chronicData.patientsWithoutReturn.length} paciente{chronicData.patientsWithoutReturn.length !== 1 ? 's' : ''} crônico{chronicData.patientsWithoutReturn.length !== 1 ? 's' : ''} sem retorno agendado</span>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
 
           {/* 3. Alertas clínicos por paciente */}
           {alertGroups.length > 0 && (
@@ -1396,7 +1439,7 @@ const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated
                 autoFocus
                 value={form.full_name}
                 onChange={e => set('full_name', e.target.value)}
-                placeholder="Nome completo da criança"
+                placeholder={specialty === 'Pediatria' ? 'Nome completo da criança' : 'Nome completo do paciente'}
                 style={inputStyle}
               />
             </FRow>
@@ -1713,6 +1756,8 @@ function ConsultationDetail({ consult, onBack }: { consult: Consultation; onBack
   }
 
   const s = consult.summary;
+  const adultData = (s?.specialty_data as ConsultaAdultoData | null) ?? null;
+  const isAdultConsult = !!(adultData && (adultData.vitals || adultData.active_problems || adultData.adult_intake));
   const dt = new Date(consult.scheduled_at);
   const dateStr = dt.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -1736,7 +1781,7 @@ function ConsultationDetail({ consult, onBack }: { consult: Consultation; onBack
         <div style={{ background: P, padding: '20px 28px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
             <div style={{ color: '#fff', fontSize: 13, fontWeight: 500, opacity: 0.8, textTransform: 'uppercase' as const, letterSpacing: 1 }}>Prontuário de Consulta</div>
-            <div style={{ color: '#fff', fontSize: 11, marginTop: 4, opacity: 0.7 }}>Auri · Sistema Pediátrico</div>
+            <div style={{ color: '#fff', fontSize: 11, marginTop: 4, opacity: 0.7 }}>{isAdultConsult ? 'Auri · Clínica Geral' : 'Auri · Pediatria'}</div>
           </div>
           <div style={{ textAlign: 'right' as const }}>
             <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{dateStr}</div>
@@ -1749,7 +1794,7 @@ function ConsultationDetail({ consult, onBack }: { consult: Consultation; onBack
           {[
             { l: 'Tipo de consulta', v: consult.type === 'retorno' ? 'Retorno' : 'Primeira consulta' },
             { l: 'Médico responsável', v: 'Dr. Daniel — CRM-SP 000000' },
-            { l: 'Especialidade', v: 'Pediatria' },
+            { l: 'Especialidade', v: isAdultConsult ? 'Clínica Geral' : 'Pediatria' },
           ].map(({ l, v }) => (
             <div key={l}>
               <div style={{ fontSize: 10, color: MU, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{l}</div>
@@ -1781,13 +1826,23 @@ function ConsultationDetail({ consult, onBack }: { consult: Consultation; onBack
             <SectionLabel abbrev="EF" full="Exame Físico" />
             {/* Vitals chips */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' as const }}>
-              {[
-                { l: 'Peso', v: s.peso },
-                { l: 'Altura', v: s.altura },
-                ...(consult.physical_exam.includes('FR') ? [{ l: 'FR', v: consult.physical_exam.match(/FR\s+([\d]+)\s*irpm/)?.[1] ? `${consult.physical_exam.match(/FR\s+([\d]+)\s*irpm/)![1]} irpm` : '—' }] : []),
-                ...(consult.physical_exam.includes('FC') ? [{ l: 'FC', v: consult.physical_exam.match(/FC\s+([\d]+)\s*bpm/)?.[1] ? `${consult.physical_exam.match(/FC\s+([\d]+)\s*bpm/)![1]} bpm` : '—' }] : []),
-                ...(consult.physical_exam.includes('Temp') || consult.physical_exam.includes('T ') ? [{ l: 'Temp', v: consult.physical_exam.match(/T(?:emp)?\s+([\d,\.]+)°?C/)?.[1] ? `${consult.physical_exam.match(/T(?:emp)?\s+([\d,\.]+)°?C/)![1]}°C` : '—' }] : []),
-              ].filter(x => x.v && x.v !== '—').map(({ l, v }) => (
+              {(isAdultConsult
+                ? [
+                    { l: 'PA', v: adultData?.vitals?.pressao_arterial },
+                    { l: 'FC', v: adultData?.vitals?.frequencia_cardiaca },
+                    { l: 'SpO₂', v: adultData?.vitals?.saturacao },
+                    { l: 'Temp', v: adultData?.vitals?.temperatura },
+                    { l: 'Peso', v: adultData?.vitals?.peso },
+                    { l: 'IMC', v: adultData?.vitals?.imc },
+                  ]
+                : [
+                    { l: 'Peso', v: s.peso },
+                    { l: 'Altura', v: s.altura },
+                    ...(consult.physical_exam.includes('FR') ? [{ l: 'FR', v: consult.physical_exam.match(/FR\s+([\d]+)\s*irpm/)?.[1] ? `${consult.physical_exam.match(/FR\s+([\d]+)\s*irpm/)![1]} irpm` : '—' }] : []),
+                    ...(consult.physical_exam.includes('FC') ? [{ l: 'FC', v: consult.physical_exam.match(/FC\s+([\d]+)\s*bpm/)?.[1] ? `${consult.physical_exam.match(/FC\s+([\d]+)\s*bpm/)![1]} bpm` : '—' }] : []),
+                    ...(consult.physical_exam.includes('Temp') || consult.physical_exam.includes('T ') ? [{ l: 'Temp', v: consult.physical_exam.match(/T(?:emp)?\s+([\d,\.]+)°?C/)?.[1] ? `${consult.physical_exam.match(/T(?:emp)?\s+([\d,\.]+)°?C/)![1]}°C` : '—' }] : []),
+                  ]
+              ).filter(x => x.v && x.v !== '—').map(({ l, v }) => (
                 <div key={l} style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 8, padding: '6px 14px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center' }}>
                   <span style={{ fontSize: 10, color: MU, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{l}</span>
                   <span style={{ fontSize: 15, fontWeight: 700, color: INK, fontFamily: 'monospace', marginTop: 1 }}>{v}</span>
@@ -1842,8 +1897,8 @@ function ConsultationDetail({ consult, onBack }: { consult: Consultation; onBack
             </div>
           )}
 
-          {/* ── Vacinas ── */}
-          {s.vacinas_mencionadas.length > 0 && (
+          {/* ── Vacinas (Pediatria only) ── */}
+          {!isAdultConsult && s.vacinas_mencionadas.length > 0 && (
             <div>
               <SectionLabel abbrev="VAC" full="Vacinas — Registro desta consulta" />
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6, paddingLeft: 4 }}>
@@ -1853,6 +1908,24 @@ function ConsultationDetail({ consult, onBack }: { consult: Consultation; onBack
                     <span style={{ fontSize: 14 }}>{v}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Alertas Clínicos (Clínica Geral) ── */}
+          {isAdultConsult && adultData?.clinical_insights && adultData.clinical_insights.length > 0 && (
+            <div>
+              <SectionLabel abbrev="AI" full="Alertas Clínicos — Gerado por IA" />
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, paddingLeft: 4 }}>
+                {adultData.clinical_insights.map((insight, i) => {
+                  const isPositive = insight.startsWith('✓') || insight.toLowerCase().includes('melhora') || insight.toLowerCase().includes('controla');
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', borderRadius: 8, background: isPositive ? '#f0faf4' : '#fff8f0', border: `1px solid ${isPositive ? '#c3e6cb' : '#ffd6a5'}` }}>
+                      <span style={{ fontSize: 16, flexShrink: 0, marginTop: -1 }}>{isPositive ? '✓' : '⚠'}</span>
+                      <span style={{ fontSize: 13, lineHeight: 1.5, color: isPositive ? '#2d6a4f' : '#7d4e00' }}>{insight.replace(/^[✓⚠]\s*/, '')}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1889,6 +1962,8 @@ function ScannableConsultationDetail({ consult, onBack }: { consult: Consultatio
   const dateStr = dt.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const s = consult.summary;
+  const adultDataS = (s?.specialty_data as ConsultaAdultoData | null) ?? null;
+  const isAdultConsultS = !!(adultDataS && (adultDataS.vitals || adultDataS.active_problems || adultDataS.adult_intake));
 
   useEffect(() => {
     ai.generateScannableSummary({
@@ -1939,7 +2014,7 @@ function ScannableConsultationDetail({ consult, onBack }: { consult: Consultatio
         <div style={{ background: P, padding: '20px 28px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
             <div style={{ color: '#fff', fontSize: 13, fontWeight: 500, opacity: 0.8, textTransform: 'uppercase' as const, letterSpacing: 1 }}>Prontuário de Consulta</div>
-            <div style={{ color: '#fff', fontSize: 11, marginTop: 4, opacity: 0.7 }}>Auri · Sistema Pediátrico · Formato Escaneável</div>
+            <div style={{ color: '#fff', fontSize: 11, marginTop: 4, opacity: 0.7 }}>{isAdultConsultS ? 'Auri · Clínica Geral · Formato Escaneável' : 'Auri · Pediatria · Formato Escaneável'}</div>
           </div>
           <div style={{ textAlign: 'right' as const }}>
             <div style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{dateStr}</div>
@@ -1952,7 +2027,7 @@ function ScannableConsultationDetail({ consult, onBack }: { consult: Consultatio
           {[
             { l: 'Tipo de consulta', v: consult.type === 'retorno' ? 'Retorno' : 'Primeira consulta' },
             { l: 'Médico responsável', v: 'Dr. Daniel — CRM-SP 000000' },
-            { l: 'Especialidade', v: 'Pediatria' },
+            { l: 'Especialidade', v: isAdultConsultS ? 'Clínica Geral' : 'Pediatria' },
           ].map(({ l, v }) => (
             <div key={l}>
               <div style={{ fontSize: 10, color: MU, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{l}</div>
@@ -2336,6 +2411,522 @@ function PrimeiraConsultaCard({ patientId, refetchTrigger = 0 }: { patientId: st
   );
 }
 
+// ─── CLÍNICA GERAL — COMPONENTES ─────────────────────────────────────────────
+
+const inputStyle2 = { width: '100%', padding: '9px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff', color: INK };
+
+function AnamneseAdultaModal({ onClose, onSaved, existingData, consultaId }: {
+  onClose: () => void;
+  onSaved: (data: AnamneseAdultaData) => void;
+  existingData: AnamneseAdultaData | null;
+  consultaId: string | null;
+}) {
+  const [form, setForm] = useState<AnamneseAdultaData>(existingData ?? defaultAnamneseAdulta());
+  const [saving, setSaving] = useState(false);
+  const set = (k: keyof AnamneseAdultaData, v: unknown) => setForm(f => ({ ...f, [k]: v }));
+  const BoolRow = ({ label, field }: { label: string; field: keyof AnamneseAdultaData }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${BO}` }}>
+      <span style={{ fontSize: 13, color: INK }}>{label}</span>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {(['Sim', 'Não'] as const).map(opt => (
+          <button key={opt} onClick={() => set(field, opt === 'Sim' ? true : false)}
+            style={{ padding: '4px 12px', borderRadius: 5, border: `1px solid ${BO}`, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+              background: form[field] === (opt === 'Sim') ? P : '#fff', color: form[field] === (opt === 'Sim') ? '#fff' : INK }}>
+            {opt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      if (consultaId) await db.saveAnamneseAdulta(consultaId, form);
+      onSaved(form);
+      onClose();
+    } catch { toast.error('Erro ao salvar anamnese.'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+      <Card style={{ width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto' }}>
+        <div style={{ padding: '18px 24px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+          <span style={{ fontWeight: 700, fontSize: 16 }}>Anamnese — 1ª consulta</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU }}><X size={18} /></button>
+        </div>
+        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {/* Motivo */}
+          <section>
+            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Motivo da consulta</p>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Motivo</label>
+              <input value={form.motivo_consulta} onChange={e => set('motivo_consulta', e.target.value)} placeholder="Ex: controle de hipertensão" style={inputStyle2} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Duração da queixa</label>
+              <input value={form.queixa_duracao} onChange={e => set('queixa_duracao', e.target.value)} placeholder="Ex: 2 anos" style={inputStyle2} />
+            </div>
+          </section>
+
+          {/* Condições crônicas */}
+          <section>
+            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Condições crônicas</p>
+            <BoolRow label="Hipertensão arterial" field="hipertensao" />
+            <BoolRow label="Diabetes" field="diabetes" />
+            <BoolRow label="Dislipidemia" field="dislipidemia" />
+            <BoolRow label="Cardiopatia" field="cardiopatia" />
+            <div style={{ marginTop: 10 }}>
+              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Outras comorbidades</label>
+              <input value={form.outras_comorbidades} onChange={e => set('outras_comorbidades', e.target.value)} placeholder="Ex: hipotireoidismo, obesidade" style={inputStyle2} />
+            </div>
+          </section>
+
+          {/* Hábitos */}
+          <section>
+            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Hábitos de vida</p>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Tabagismo</label>
+              <select value={form.tabagismo ?? ''} onChange={e => set('tabagismo', e.target.value || null)} style={{ ...inputStyle2, background: '#fff' }}>
+                <option value="">Não informado</option>
+                <option value="nunca">Nunca fumou</option>
+                <option value="ex-fumante">Ex-fumante</option>
+                <option value="fumante">Fumante</option>
+              </select>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Etilismo</label>
+              <select value={form.etilismo ?? ''} onChange={e => set('etilismo', e.target.value || null)} style={{ ...inputStyle2, background: '#fff' }}>
+                <option value="">Não informado</option>
+                <option value="nunca">Nunca</option>
+                <option value="ocasional">Ocasional</option>
+                <option value="regular">Regular</option>
+              </select>
+            </div>
+            <BoolRow label="Atividade física regular" field="atividade_fisica" />
+            {form.atividade_fisica && (
+              <div style={{ marginTop: 8 }}>
+                <input value={form.atividade_fisica_desc} onChange={e => set('atividade_fisica_desc', e.target.value)} placeholder="Ex: caminhada 3x/semana" style={inputStyle2} />
+              </div>
+            )}
+          </section>
+
+          {/* Medicamentos e alergias */}
+          <section>
+            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Medicamentos e alergias</p>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Medicamentos em uso</label>
+              <textarea value={form.medicamentos_em_uso} onChange={e => set('medicamentos_em_uso', e.target.value)} placeholder="Liste os medicamentos atuais..." rows={3} style={{ ...inputStyle2, resize: 'vertical' as const }} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Alergias a medicamentos</label>
+              <input value={form.alergias_medicamentos} onChange={e => set('alergias_medicamentos', e.target.value)} placeholder="Ex: penicilina, dipirona" style={inputStyle2} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Outras alergias</label>
+              <input value={form.alergias_outras} onChange={e => set('alergias_outras', e.target.value)} placeholder="Ex: frutos do mar, látex" style={inputStyle2} />
+            </div>
+          </section>
+
+          {/* Histórico familiar */}
+          <section>
+            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Histórico familiar</p>
+            <textarea value={form.historico_familiar} onChange={e => set('historico_familiar', e.target.value)} placeholder="Ex: DM2 materno, IAM paterno, CA de cólon" rows={2} style={{ ...inputStyle2, resize: 'vertical' as const }} />
+          </section>
+
+          {/* Preventiva */}
+          <section>
+            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Saúde preventiva</p>
+            {[
+              { label: 'Última mamografia', field: 'ultima_mamografia' as keyof AnamneseAdultaData, placeholder: 'Ex: 2024 / não realizado' },
+              { label: 'Último Papanicolau', field: 'ultimo_papanicolau' as keyof AnamneseAdultaData, placeholder: 'Ex: 2024' },
+              { label: 'Última colonoscopia', field: 'ultima_colonoscopia' as keyof AnamneseAdultaData, placeholder: 'Ex: 2022 / nunca realizou' },
+              { label: 'Vacinação adulto', field: 'vacinacao_adulto' as keyof AnamneseAdultaData, placeholder: 'Ex: gripe, pneumo 23V' },
+            ].map(({ label, field, placeholder }) => (
+              <div key={String(field)} style={{ marginBottom: 10 }}>
+                <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>{label}</label>
+                <input value={(form[field] as string) || ''} onChange={e => set(field, e.target.value)} placeholder={placeholder} style={inputStyle2} />
+              </div>
+            ))}
+          </section>
+        </div>
+        <div style={{ padding: '16px 24px', borderTop: `1px solid ${BO}`, display: 'flex', gap: 12 }}>
+          <Btn variant="secondary" onClick={onClose} style={{ flex: 1, justifyContent: 'center' }}>Cancelar</Btn>
+          <Btn onClick={handleSave} disabled={saving} style={{ flex: 1, justifyContent: 'center' }}>
+            {saving ? 'Salvando…' : <><FloppyDisk size={15} /> Salvar anamnese</>}
+          </Btn>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function SaudeTab({ patientId, activeProblems, lastConsultId, anamneseAdulta, onAnamneseSaved, onProblemsUpdated }: {
+  patientId: string;
+  activeProblems: ProblemaAtivo[];
+  lastConsultId: string | null;
+  anamneseAdulta: (AnamneseAdultaData & { consulta_id: string; created_at: string }) | null;
+  onAnamneseSaved: (data: AnamneseAdultaData) => void;
+  onProblemsUpdated: (problems: ProblemaAtivo[]) => void;
+}) {
+  const [showAnamneseModal, setShowAnamneseModal] = useState(false);
+  const [problems, setProblems] = useState<ProblemaAtivo[]>(activeProblems);
+  const [showAddProblem, setShowAddProblem] = useState(false);
+  const [newProblemName, setNewProblemName] = useState('');
+
+  useEffect(() => { setProblems(activeProblems); }, [activeProblems]);
+
+  function addProblem() {
+    if (!newProblemName.trim()) return;
+    const updated: ProblemaAtivo[] = [...problems, { name: newProblemName.trim(), status: 'ativo', updated_at: new Date().toISOString() }];
+    setProblems(updated);
+    onProblemsUpdated(updated);
+    setNewProblemName('');
+    setShowAddProblem(false);
+    toast.success('Condição adicionada.');
+  }
+
+  function toggleStatus(idx: number) {
+    const next = [...problems];
+    next[idx] = { ...next[idx], status: next[idx].status === 'ativo' ? 'controlado' : next[idx].status === 'controlado' ? 'resolvido' : 'ativo', updated_at: new Date().toISOString() };
+    setProblems(next);
+    onProblemsUpdated(next);
+  }
+
+  const SH = ({ title, right }: { title: string; right?: React.ReactNode }) => (
+    <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <span style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>{title}</span>
+      {right}
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Condições Ativas */}
+      <Card>
+        <SH title="Condições Ativas" right={
+          <Btn variant="secondary" onClick={() => setShowAddProblem(true)} style={{ fontSize: 12, padding: '4px 10px' }}>
+            <Plus size={13} /> Adicionar
+          </Btn>
+        } />
+        {showAddProblem && (
+          <div style={{ padding: '12px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', gap: 8 }}>
+            <input autoFocus value={newProblemName} onChange={e => setNewProblemName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addProblem()}
+              placeholder="Nome da condição (ex: Hipertensão Arterial Sistêmica)"
+              style={{ ...inputStyle2, flex: 1 }} />
+            <Btn onClick={addProblem} style={{ flexShrink: 0 }}><Check size={14} /></Btn>
+            <Btn variant="secondary" onClick={() => setShowAddProblem(false)} style={{ flexShrink: 0 }}><X size={14} /></Btn>
+          </div>
+        )}
+        <div style={{ padding: '14px 20px' }}>
+          {problems.length === 0 ? (
+            <p style={{ margin: 0, fontSize: 13, color: MU }}>Nenhuma condição registrada. Clique em "Adicionar" para começar.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {problems.map((prob, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: BG, borderRadius: 8, border: `1px solid ${BO}` }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: INK }}>{prob.name}</div>
+                    {prob.since && <div style={{ fontSize: 11, color: MU }}>Desde {fmtDate(prob.since)}</div>}
+                    <div style={{ fontSize: 11, color: MU }}>Atualizado {fmtDate(prob.updated_at.slice(0, 10))}</div>
+                  </div>
+                  <button onClick={() => toggleStatus(i)} style={{ cursor: 'pointer', fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 5, border: 'none',
+                    background: prob.status === 'ativo' ? WARNL : prob.status === 'controlado' ? SUCL : SEC,
+                    color: prob.status === 'ativo' ? WARN : prob.status === 'controlado' ? SUC : MU }}>
+                    {prob.status.charAt(0).toUpperCase() + prob.status.slice(1)}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Anamnese */}
+      <Card>
+        <SH title="Anamnese — 1ª consulta" right={
+          <Btn variant="secondary" onClick={() => setShowAnamneseModal(true)} style={{ fontSize: 12, padding: '4px 10px' }}>
+            <PencilSimple size={13} /> {anamneseAdulta ? 'Editar' : 'Preencher'}
+          </Btn>
+        } />
+        <div style={{ padding: '14px 20px' }}>
+          {!anamneseAdulta ? (
+            <p style={{ margin: 0, fontSize: 13, color: MU }}>Anamnese não registrada. Preencha após a primeira consulta.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {anamneseAdulta.motivo_consulta && (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Motivo</div>
+                  <p style={{ margin: 0, fontSize: 13, color: INK }}>{anamneseAdulta.motivo_consulta}</p>
+                </div>
+              )}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {[
+                  { l: 'HAS', v: anamneseAdulta.hipertensao },
+                  { l: 'DM', v: anamneseAdulta.diabetes },
+                  { l: 'Dislipidemia', v: anamneseAdulta.dislipidemia },
+                  { l: 'Cardiopatia', v: anamneseAdulta.cardiopatia },
+                ].filter(x => x.v === true).map(({ l }) => (
+                  <span key={l} style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 5, background: WARNL, color: WARN }}>{l}</span>
+                ))}
+                {anamneseAdulta.tabagismo === 'fumante' && <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 5, background: DESL, color: DES }}>Tabagista</span>}
+              </div>
+              {anamneseAdulta.outras_comorbidades && <p style={{ margin: 0, fontSize: 12, color: MU }}>{anamneseAdulta.outras_comorbidades}</p>}
+              {anamneseAdulta.medicamentos_em_uso && (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Medicamentos em uso</div>
+                  <p style={{ margin: 0, fontSize: 13, color: INK, whiteSpace: 'pre-wrap' }}>{anamneseAdulta.medicamentos_em_uso}</p>
+                </div>
+              )}
+              {anamneseAdulta.historico_familiar && (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Histórico familiar</div>
+                  <p style={{ margin: 0, fontSize: 13, color: INK }}>{anamneseAdulta.historico_familiar}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {showAnamneseModal && (
+        <AnamneseAdultaModal
+          onClose={() => setShowAnamneseModal(false)}
+          onSaved={onAnamneseSaved}
+          existingData={anamneseAdulta}
+          consultaId={anamneseAdulta?.consulta_id ?? lastConsultId}
+        />
+      )}
+    </div>
+  );
+}
+
+function MedicacoesAdultaTab({ medications }: { medications: Medication[] }) {
+  const statusLabel: Record<string, string> = { active: 'Ativo', paused: 'Suspenso', discontinued: 'Descontinuado' };
+  const statusColors: Record<string, { bg: string; color: string }> = {
+    active: { bg: SUCL, color: SUC },
+    paused: { bg: WARNL, color: WARN },
+    discontinued: { bg: SEC, color: MU },
+  };
+
+  if (medications.length === 0) {
+    return (
+      <Card>
+        <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+          <Heartbeat size={28} color={MU} />
+          <p style={{ margin: '10px 0 0', fontSize: 13, color: MU }}>Nenhuma medicação registrada para este paciente.</p>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: MU }}>As medicações são registradas durante a consulta.</p>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {medications.map((med, i) => {
+        const s = med.status ?? 'active';
+        const sc = statusColors[s] ?? statusColors.active;
+        return (
+          <Card key={i}>
+            <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 15, color: INK }}>{med.name}</div>
+                {med.dosage && <div style={{ fontSize: 13, color: MU, marginTop: 2 }}>{med.dosage}{med.frequency ? ` · ${med.frequency}` : ''}</div>}
+                {med.indication && <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>Indicação: {med.indication}</div>}
+                {med.start_date && <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>Início: {fmtDate(med.start_date)}</div>}
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 5, background: sc.bg, color: sc.color, flexShrink: 0 }}>
+                {statusLabel[s] ?? s}
+              </span>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentSaved }: {
+  patientId: string;
+  documents: ClinicalDocument[];
+  latestMarkers: Record<string, LabMarker>;
+  onDocumentSaved: () => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadStep, setUploadStep] = useState('');
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualDate, setManualDate] = useState('');
+  const [manualLab, setManualLab] = useState('');
+  const [manualText, setManualText] = useState('');
+  const [savingManual, setSavingManual] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function handleFileUpload(file: File) {
+    if (!file) return;
+    setUploading(true);
+    setUploadStep('Enviando arquivo…');
+    try {
+      // Stub: mostra o pipeline sem chamar APIs externas (tabela lab_results pode não existir ainda)
+      await new Promise(r => setTimeout(r, 800));
+      setUploadStep('Extraindo texto…');
+      await new Promise(r => setTimeout(r, 800));
+      setUploadStep('Analisando marcadores…');
+      await new Promise(r => setTimeout(r, 800));
+      toast.success('Arquivo processado. Configure o endpoint de IA para extração automática.');
+      onDocumentSaved();
+    } catch {
+      toast.error('Erro ao processar arquivo.');
+    } finally {
+      setUploading(false);
+      setUploadStep('');
+    }
+  }
+
+  async function saveManual() {
+    if (!manualDate || !manualText.trim()) return;
+    setSavingManual(true);
+    try {
+      await db.saveLabResult(patientId, 'laboratorio', manualDate, manualLab || null, 'manual', null, manualText, null, []);
+      toast.success('Resultado salvo.');
+      setManualOpen(false);
+      setManualDate(''); setManualLab(''); setManualText('');
+      onDocumentSaved();
+    } catch {
+      toast.error('Erro ao salvar. Verifique se as tabelas foram criadas no Supabase.');
+    } finally { setSavingManual(false); }
+  }
+
+  const markerEntries = Object.entries(latestMarkers);
+  const statusColor = (s: string) => s === 'alto' ? WARN : s === 'critico' ? DES : s === 'baixo' ? '#3B82F6' : SUC;
+  const statusBg = (s: string) => s === 'alto' ? WARNL : s === 'critico' ? DESL : s === 'baixo' ? '#EFF6FF' : SUCL;
+
+  const SH = ({ title, right }: { title: string; right?: React.ReactNode }) => (
+    <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <span style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>{title}</span>
+      {right}
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Upload */}
+      <Card>
+        <SH title="Adicionar resultado" />
+        <div style={{ padding: '20px' }}>
+          {uploading ? (
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div style={{ fontSize: 13, color: P, fontWeight: 500 }}>{uploadStep}</div>
+              <div style={{ marginTop: 10, height: 4, background: BO, borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: P, width: '60%', borderRadius: 2 }} />
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const }}>
+              <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); }} />
+              <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
+                <FileText size={15} /> PDF
+              </Btn>
+              <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
+                <Brain size={15} /> Imagem
+              </Btn>
+              <Btn variant="secondary" onClick={() => setManualOpen(v => !v)} style={{ gap: 6 }}>
+                <PencilSimple size={15} /> Manual
+              </Btn>
+            </div>
+          )}
+          {manualOpen && (
+            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Data do resultado *</label>
+                  <input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} style={inputStyle2} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Laboratório</label>
+                  <input value={manualLab} onChange={e => setManualLab(e.target.value)} placeholder="Ex: Fleury, DASA" style={inputStyle2} />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Resultados (texto livre) *</label>
+                <textarea value={manualText} onChange={e => setManualText(e.target.value)} placeholder="Cole aqui os resultados dos exames…" rows={4} style={{ ...inputStyle2, resize: 'vertical' as const }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn onClick={saveManual} disabled={!manualDate || !manualText.trim() || savingManual} style={{ flex: 1, justifyContent: 'center' }}>
+                  {savingManual ? 'Salvando…' : <><FloppyDisk size={14} /> Salvar</>}
+                </Btn>
+                <Btn variant="secondary" onClick={() => setManualOpen(false)} style={{ flexShrink: 0 }}><X size={14} /></Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Últimos marcadores */}
+      {markerEntries.length > 0 && (
+        <Card>
+          <SH title="Últimos marcadores" />
+          <div style={{ padding: '14px 20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {markerEntries.map(([name, marker]) => (
+                <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${BO}` }}>
+                  <div style={{ fontSize: 13, color: INK, fontWeight: 500 }}>{name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontSize: 11, color: MU }}>{fmtDate(marker.result_date)}</div>
+                    <span style={{ fontSize: 13, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: statusColor(marker.status) }}>
+                      {marker.value} {marker.unit}
+                    </span>
+                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: statusBg(marker.status), color: statusColor(marker.status), fontWeight: 600 }}>
+                      {marker.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Histórico de documentos */}
+      {documents.length > 0 && (
+        <Card>
+          <SH title="Documentos anteriores" />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {documents.map(doc => (
+              <div key={doc.id} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: INK }}>
+                    {doc.document_type.charAt(0).toUpperCase() + doc.document_type.slice(1)}
+                    {doc.lab_name ? ` — ${doc.lab_name}` : ''}
+                  </div>
+                  <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>{fmtDate(doc.result_date)}</div>
+                  {doc.ai_summary && <div style={{ fontSize: 12, color: MU, marginTop: 4, fontStyle: 'italic' }}>{doc.ai_summary}</div>}
+                </div>
+                {doc.file_url && (
+                  <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: P, textDecoration: 'none' }}>Ver arquivo</a>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {documents.length === 0 && markerEntries.length === 0 && (
+        <Card>
+          <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+            <FileText size={28} color={MU} />
+            <p style={{ margin: '10px 0 0', fontSize: 13, color: MU }}>Nenhum documento clínico registrado.</p>
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: MU }}>Adicione resultados de exames acima.</p>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ─── PATIENT DETAIL ───────────────────────────────────────────────────────────
 function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTrigger = 0, specialty = 'Pediatria' }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; onOpenDraft: (draft: Consultation) => void; refetchTrigger?: number; specialty?: string }) {
   const [tab, setTab] = useState('Resumo');
@@ -2344,13 +2935,19 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
   const [loadingC, setLoadingC] = useState(true);
   const [pendingVaccinesCount, setPendingVaccinesCount] = useState(0);
   const [growthRecords, setGrowthRecords] = useState<any[]>([]);
+  const [anamneseAdulta, setAnamneseAdulta] = useState<(AnamneseAdultaData & { consulta_id: string; created_at: string }) | null>(null);
+  const [clinicalDocs, setClinicalDocs] = useState<ClinicalDocument[]>([]);
+  const [latestMarkers, setLatestMarkers] = useState<Record<string, LabMarker>>({});
   const guardian = primaryGuardian(patient);
   const isMobile = useIsMobile();
   const isDoctor = useRequireRole(['medico']);
   const { doctorId } = useAuthProfile();
-  // Tabs visíveis — Pediatria apenas (fase de validação clínica)
-  const TABS_PEDIATRIA = ['Resumo', 'Consultas', 'Crescimento', 'Vacinas', 'Desenvolvimento'];
-  const visibleTabs = isDoctor ? TABS_PEDIATRIA : ['Resumo', 'Vacinas'];
+  const isPediatria = specialty === 'Pediatria';
+  const TABS_PEDIATRIA     = ['Resumo', 'Consultas', 'Crescimento', 'Vacinas', 'Desenvolvimento'];
+  const TABS_CLINICA_GERAL = ['Resumo', 'Consultas', 'Saúde', 'Medicações', 'Exames'];
+  const visibleTabs = isDoctor
+    ? (isPediatria ? TABS_PEDIATRIA : TABS_CLINICA_GERAL)
+    : (isPediatria ? ['Resumo', 'Vacinas'] : ['Resumo']);
 
   useEffect(() => {
     setLoadingC(true);
@@ -2361,12 +2958,14 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
   }, [patient.id, refetchTrigger]);
 
   useEffect(() => {
+    if (!isPediatria) return;
     db.fetchGrowthRecords(patient.id)
       .then(setGrowthRecords)
       .catch(() => setGrowthRecords([]));
-  }, [patient.id, refetchTrigger]);
+  }, [patient.id, refetchTrigger, isPediatria]);
 
   useEffect(() => {
+    if (!isPediatria) return;
     const bd = new Date(patient.birth_date);
     const now = new Date();
     const ageMonths = (now.getFullYear() - bd.getFullYear()) * 12 + (now.getMonth() - bd.getMonth());
@@ -2374,19 +2973,25 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
       .then(dbVs => {
         const count = PNI_SCHEDULE.filter(pni => {
           const done = dbVs.find((v) => v.name === pni.name && v.dose === pni.dose && v.status === 'done');
-          return !done; // alinhado com VaccinesTab: conta atrasadas + pendentes
+          return !done;
         }).length;
         setPendingVaccinesCount(count);
       })
       .catch(() => setPendingVaccinesCount(0));
-  }, [patient.id, refetchTrigger]);
+  }, [patient.id, refetchTrigger, isPediatria]);
+
+  // Clínica Geral: carrega anamnese adulta + documentos clínicos
+  useEffect(() => {
+    if (isPediatria) return;
+    db.fetchAnamneseAdulta(patient.id).then(setAnamneseAdulta).catch(() => null);
+    db.fetchClinicalDocuments(patient.id).then(setClinicalDocs).catch(() => setClinicalDocs([]));
+    db.fetchLatestMarkers(patient.id).then(setLatestMarkers).catch(() => setLatestMarkers({}));
+  }, [patient.id, refetchTrigger, isPediatria]);
 
   // Drafts: awaiting doctor confirmation
   const draftConsultations = consultations.filter(c => c.status === 'draft');
   // consultations agora é tabela exclusiva de prontuários clínicos — todos os completed são reais
   const pastConsultations = consultations.filter(c => c.status === 'completed');
-
-  const lastConsult = pastConsultations[0];
 
   // Última medida: growth_records primeiro; fallback para sum_peso/sum_altura do prontuário mais recente
   const lastMeasurement = (() => {
@@ -2406,6 +3011,15 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
   })();
   const pend = pendingVaccinesCount;
 
+  // Clínica Geral: extrai condições ativas da última consulta
+  const lastConsultAdultData = !isPediatria && pastConsultations[0]
+    ? (pastConsultations[0].summary?.specialty_data as ConsultaAdultoData | null)
+    : null;
+  const activeProblems = lastConsultAdultData?.active_problems?.filter(p => p.status === 'ativo') ?? [];
+  const currentMedications = lastConsultAdultData?.current_medications ?? [];
+
+  const lastConsult = pastConsultations[0];
+
   return (
     <div>
       <Card style={{ padding: isMobile ? '14px 16px' : '20px 24px', marginBottom: 16 }}>
@@ -2424,10 +3038,11 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                 { l: 'Nascimento', v: fmtDate(patient.birth_date) },
                 ...(!isMobile ? [
                   { l: 'Tipo sanguíneo', v: patient.blood_type || '—' },
-                  { l: 'Responsável', v: guardian?.name || '—' },
-                  { l: 'Telefone', v: guardian?.phone || '—' },
+                  ...(isPediatria || guardian
+                    ? [{ l: isPediatria ? 'Responsável' : 'Contato', v: guardian?.name || '—' }, { l: 'Telefone', v: guardian?.phone || '—' }]
+                    : []),
                 ] : [
-                  { l: 'Responsável', v: guardian?.name || '—' },
+                  ...(guardian ? [{ l: isPediatria ? 'Responsável' : 'Contato', v: guardian.name }] : []),
                 ]),
               ].map(({ l, v }) => (
                 <div key={l}>
@@ -2451,12 +3066,20 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
           </Btn>
         )}
         <div style={{ display: 'flex', gap: isMobile ? 8 : 16, marginTop: 14, paddingTop: 14, borderTop: `1px solid ${BO}`, flexWrap: 'wrap' as const }}>
-          {[
-            { l: 'Consultas', v: loadingC ? '…' : pastConsultations.length },
-            { l: 'Última', v: lastConsult ? fmtDate(lastConsult.scheduled_at.split('T')[0]) : '—' },
-            { l: 'Retorno', v: fmtDate(patient.next_return) },
-            { l: 'Vacinas pend.', v: pend, warn: pend > 0 },
-          ].map(({ l, v, warn }) => (
+          {(isPediatria
+            ? [
+                { l: 'Consultas', v: loadingC ? '…' : pastConsultations.length },
+                { l: 'Última', v: lastConsult ? fmtDate(lastConsult.scheduled_at.split('T')[0]) : '—' },
+                { l: 'Retorno', v: fmtDate(patient.next_return) },
+                { l: 'Vacinas pend.', v: pend, warn: pend > 0 },
+              ]
+            : [
+                { l: 'Consultas', v: loadingC ? '…' : pastConsultations.length },
+                { l: 'Última', v: lastConsult ? fmtDate(lastConsult.scheduled_at.split('T')[0]) : '—' },
+                { l: 'Retorno', v: fmtDate(patient.next_return) },
+                { l: 'Condições', v: activeProblems.length, warn: activeProblems.length > 0 },
+              ]
+          ).map(({ l, v, warn }) => (
             <div key={l} style={{ textAlign: 'center', padding: isMobile ? '6px 12px' : '8px 20px', background: BG, borderRadius: 6, border: `1px solid ${BO}`, flex: isMobile ? 1 : undefined }}>
               <div style={{ fontSize: isMobile ? 16 : 20, fontWeight: 700, color: warn ? WARN : INK, fontFamily: '"JetBrains Mono", monospace', letterSpacing: '-0.02em' }}>{v}</div>
               <div style={{ fontSize: 11, color: MU, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{l}</div>
@@ -2471,7 +3094,222 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
       <div style={{ paddingTop: isMobile ? 14 : 24 }}>
 
         {tab === 'Resumo' && (() => {
-          // ── Helpers ──────────────────────────────────────────────────────────
+          // ── Resumo Clínica Geral (adulto) ─────────────────────────────────────
+          if (!isPediatria) {
+            const adultData = lastConsult
+              ? (lastConsult.summary?.specialty_data as ConsultaAdultoData | null)
+              : null;
+            const vitals = adultData?.vitals;
+            const insights = adultData?.clinical_insights ?? [];
+            const returnDate = patient.next_return ? new Date(patient.next_return) : null;
+            const today = new Date();
+            const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const returnDays = returnDate
+              ? Math.floor((new Date(returnDate.getFullYear(), returnDate.getMonth(), returnDate.getDate()).getTime() - todayMidnight.getTime()) / 86400000)
+              : null;
+
+            const SH = ({ title, right }: { title: string; right?: React.ReactNode }) => (
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif', letterSpacing: '-0.01em' }}>{title}</span>
+                {right}
+              </div>
+            );
+
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '3fr 2fr', gap: 16 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                  {/* Últimos sinais vitais */}
+                  {vitals && Object.values(vitals).some(Boolean) && (
+                    <Card>
+                      <SH title="Últimos sinais vitais" right={lastConsult ? <span style={{ fontSize: 11, color: MU }}>{fmtDate(lastConsult.scheduled_at.split('T')[0])}</span> : undefined} />
+                      <div style={{ padding: '14px 20px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {[
+                          { l: 'PA', v: vitals.pressao_arterial },
+                          { l: 'FC', v: vitals.frequencia_cardiaca },
+                          { l: 'SpO₂', v: vitals.saturacao },
+                          { l: 'Temp', v: vitals.temperatura },
+                          { l: 'Peso', v: vitals.peso },
+                          { l: 'Altura', v: vitals.altura },
+                          { l: 'IMC', v: vitals.imc },
+                        ].filter(item => item.v).map(({ l, v }) => (
+                          <div key={l} style={{ background: BG, border: `1px solid ${BO}`, borderRadius: 8, padding: '8px 14px', textAlign: 'center' }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{v}</div>
+                            <div style={{ fontSize: 10, color: MU, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{l}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Condições ativas */}
+                  <Card>
+                    <SH title="Condições ativas" right={
+                      <span style={{ fontSize: 11, color: MU, background: activeProblems.length > 0 ? WARNL : SUCL, color: activeProblems.length > 0 ? WARN : SUC, borderRadius: 5, padding: '2px 8px', fontWeight: 600 }}>
+                        {activeProblems.length} ativa{activeProblems.length !== 1 ? 's' : ''}
+                      </span>
+                    } />
+                    <div style={{ padding: '14px 20px' }}>
+                      {activeProblems.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: 13, color: MU }}>Nenhuma condição ativa registrada.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {activeProblems.map((prob, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: BG, borderRadius: 8, border: `1px solid ${BO}` }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: INK }}>{prob.name}</div>
+                                {prob.since && <div style={{ fontSize: 11, color: MU }}>Desde {fmtDate(prob.since)}</div>}
+                              </div>
+                              <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: prob.status === 'ativo' ? WARNL : prob.status === 'controlado' ? SUCL : SEC, color: prob.status === 'ativo' ? WARN : prob.status === 'controlado' ? SUC : MU }}>
+                                {prob.status.charAt(0).toUpperCase() + prob.status.slice(1)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
+                  {/* Plano atual */}
+                  {lastConsult && (lastConsult.plan || lastConsult.prescription) && (
+                    <Card>
+                      <SH title="Plano atual" right={<span style={{ fontSize: 11, color: MU }}>{fmtDate(lastConsult.scheduled_at.split('T')[0])}</span>} />
+                      <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {lastConsult.plan && (
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Conduta</div>
+                            <p style={{ margin: 0, fontSize: 13, color: INK, lineHeight: 1.5 }}>{lastConsult.plan}</p>
+                          </div>
+                        )}
+                        {lastConsult.prescription?.trim() && (
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Medicações prescritas</div>
+                            <p style={{ margin: 0, fontSize: 13, color: INK, lineHeight: 1.5, fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'pre-wrap' }}>{lastConsult.prescription}</p>
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Anamnese adulta */}
+                  {anamneseAdulta && (
+                    <Card>
+                      <SH title="Anamnese — 1ª consulta" right={<span style={{ fontSize: 11, color: MU }}>{fmtDate(anamneseAdulta.created_at.slice(0, 10))}</span>} />
+                      <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {anamneseAdulta.motivo_consulta && (
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Motivo</div>
+                            <p style={{ margin: 0, fontSize: 13, color: INK }}>{anamneseAdulta.motivo_consulta}</p>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {[
+                            { l: 'HAS', v: anamneseAdulta.hipertensao },
+                            { l: 'DM', v: anamneseAdulta.diabetes },
+                            { l: 'Dislipidemia', v: anamneseAdulta.dislipidemia },
+                            { l: 'Cardiopatia', v: anamneseAdulta.cardiopatia },
+                          ].filter(x => x.v === true).map(({ l }) => (
+                            <span key={l} style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 5, background: WARNL, color: WARN }}>{l}</span>
+                          ))}
+                          {anamneseAdulta.tabagismo === 'fumante' && <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 5, background: DESL, color: DES }}>Tabagista</span>}
+                        </div>
+                        {anamneseAdulta.outras_comorbidades && (
+                          <p style={{ margin: 0, fontSize: 12, color: MU }}>{anamneseAdulta.outras_comorbidades}</p>
+                        )}
+                      </div>
+                    </Card>
+                  )}
+
+                  {!anamneseAdulta && consultations.length > 0 && (
+                    <Card>
+                      <div style={{ padding: '20px', textAlign: 'center' }}>
+                        <FileText size={24} color={MU} />
+                        <p style={{ margin: '8px 0 0', fontSize: 13, color: MU }}>Anamnese da 1ª consulta não registrada.</p>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+
+                {/* Coluna direita */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                  {/* Alertas clínicos */}
+                  {insights.length > 0 && (
+                    <Card>
+                      <SH title="Alertas clínicos" />
+                      <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {insights.map((ins, i) => (
+                          <div key={i} style={{ fontSize: 13, color: INK, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                            <Warning size={14} color={WARN} style={{ flexShrink: 0, marginTop: 1 }} />
+                            {ins}
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Retorno */}
+                  {returnDays !== null && (
+                    <Card style={{ borderLeft: `3px solid ${returnDays < 0 ? DES : returnDays <= 7 ? WARN : P}` }}>
+                      <div style={{ padding: '14px 20px' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Retorno</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: returnDays < 0 ? DES : returnDays <= 7 ? WARN : INK }}>
+                          {returnDays < 0
+                            ? `Vencido há ${Math.abs(returnDays)} dia${Math.abs(returnDays) !== 1 ? 's' : ''}`
+                            : returnDays === 0 ? 'Hoje'
+                            : `Em ${returnDays} dia${returnDays !== 1 ? 's' : ''}`}
+                        </div>
+                        <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>{fmtDate(patient.next_return!)}</div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Últimos marcadores laboratoriais */}
+                  {Object.keys(latestMarkers).length > 0 && (
+                    <Card>
+                      <SH title="Últimos exames" />
+                      <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {Object.entries(latestMarkers).slice(0, 6).map(([name, marker]) => (
+                          <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ fontSize: 13, color: INK }}>{name}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, fontFamily: '"JetBrains Mono", monospace', color: marker.status === 'alto' ? WARN : marker.status === 'critico' ? DES : marker.status === 'baixo' ? '#3B82F6' : SUC }}>
+                                {marker.value} {marker.unit}
+                              </span>
+                              <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: marker.status === 'alto' ? WARNL : marker.status === 'critico' ? DESL : marker.status === 'baixo' ? '#EFF6FF' : SUCL, color: marker.status === 'alto' ? WARN : marker.status === 'critico' ? DES : marker.status === 'baixo' ? '#3B82F6' : SUC, fontWeight: 600 }}>
+                                {marker.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Alergias */}
+                  {patient.notes && (
+                    <Card style={{ borderLeft: `3px solid ${WARN}` }}>
+                      <div style={{ padding: '14px 20px' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: WARN, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Alergias</div>
+                        <div style={{ fontSize: 13, color: INK }}>{patient.notes}</div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {consultations.length === 0 && (
+                    <Card>
+                      <div style={{ padding: '20px', textAlign: 'center' }}>
+                        <Stethoscope size={24} color={MU} />
+                        <p style={{ margin: '8px 0 0', fontSize: 13, color: MU }}>Realize a primeira consulta para gerar o resumo clínico.</p>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          // ── Helpers (Pediatria) ───────────────────────────────────────────────
           const today = new Date();
           const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
@@ -2984,6 +3822,37 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
             />
           </RequireRole>
         )}
+
+        {/* ── Clínica Geral tabs ─────────────────────────────────────────────── */}
+        {tab === 'Saúde' && !isPediatria && (
+          <SaudeTab
+            patientId={patient.id}
+            activeProblems={activeProblems}
+            lastConsultId={lastConsult?.id ?? null}
+            anamneseAdulta={anamneseAdulta}
+            onAnamneseSaved={(data) => db.fetchAnamneseAdulta(patient.id).then(setAnamneseAdulta)}
+            onProblemsUpdated={(problems) => {
+              if (lastConsult?.id) db.updatePatientProblems(lastConsult.id, problems);
+            }}
+          />
+        )}
+
+        {tab === 'Medicações' && !isPediatria && (
+          <MedicacoesAdultaTab medications={currentMedications} />
+        )}
+
+        {tab === 'Exames' && !isPediatria && (
+          <ClinicalDocumentsTab
+            patientId={patient.id}
+            documents={clinicalDocs}
+            latestMarkers={latestMarkers}
+            onDocumentSaved={() => {
+              db.fetchClinicalDocuments(patient.id).then(setClinicalDocs);
+              db.fetchLatestMarkers(patient.id).then(setLatestMarkers);
+            }}
+          />
+        )}
+
         {/* Avaliação Capilar (Tricologia) — oculto na fase de validação de Pediatria */}
       </div>
     </div>
@@ -4181,23 +5050,28 @@ function PainelPage({ go, setActivePatient }: { go: (s: string) => void; setActi
 
 // ─── ONBOARDING PAGE ──────────────────────────────────────────────────────────
 // Fase de validação: especialidade fixada em Pediatria, sem escolha de especialidade.
+const ESPECIALIDADES = ['Pediatria', 'Clínica Geral'];
+
 function OnboardingPage({ user, onComplete }: { user: SupabaseUser; onComplete: (specialty: string) => void }) {
   const [fullName, setFullName] = useState(user.user_metadata?.full_name || '');
   const [crm, setCrm] = useState('');
   const [clinicName, setClinicName] = useState('');
+  const [chosenSpecialty, setChosenSpecialty] = useState('Pediatria');
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit() {
     if (!fullName.trim() || !crm.trim()) return;
     setSaving(true);
     try {
-      await db.updateProfile({ full_name: fullName.trim(), crm: crm.trim(), clinic_name: clinicName.trim(), specialty: 'Pediatria' });
-      onComplete('Pediatria');
+      await db.updateProfile({ full_name: fullName.trim(), crm: crm.trim(), clinic_name: clinicName.trim(), specialty: chosenSpecialty });
+      onComplete(chosenSpecialty);
     } catch {
       setSaving(false);
       toast.error('Erro ao salvar perfil. Tente novamente.');
     }
   }
+
+  const inputStyle = { width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff', color: INK };
 
   return (
     <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -4206,28 +5080,23 @@ function OnboardingPage({ user, onComplete }: { user: SupabaseUser; onComplete: 
           <div style={{ fontSize: 24, fontWeight: 700, color: P, fontFamily: '"Fraunces", serif', letterSpacing: '-0.5px' }}>Auri</div>
           <div style={{ fontSize: 14, color: MU, marginTop: 6 }}>Configure seu perfil para começar</div>
         </div>
-        <div style={{ background: PL, border: `1.5px solid ${P}40`, borderRadius: 10, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Stethoscope size={20} color={P} />
-          <div>
-            <div style={{ fontWeight: 600, color: P, fontSize: 14 }}>Pediatria</div>
-            <div style={{ fontSize: 12, color: MU }}>Especialidade do sistema nesta fase de validação</div>
-          </div>
-        </div>
         <Card style={{ padding: 24 }}>
           {([
             { label: 'Nome completo *', value: fullName, set: setFullName, placeholder: 'Dr. Nome Sobrenome', type: 'text' },
             { label: 'CRM *', value: crm, set: setCrm, placeholder: 'CRM-SP 123456', type: 'text' },
-            { label: 'Nome do consultório', value: clinicName, set: setClinicName, placeholder: 'Clínica Pediátrica', type: 'text' },
+            { label: 'Nome do consultório', value: clinicName, set: setClinicName, placeholder: 'Consultório Dr. ...', type: 'text' },
           ] as { label: string; value: string; set: (v: string) => void; placeholder: string; type: string }[]).map(({ label, value, set, placeholder, type }) => (
             <div key={label} style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{label}</label>
-              <input
-                type={type} value={value} onChange={e => set(e.target.value)}
-                placeholder={placeholder}
-                style={{ width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff', color: INK }}
-              />
+              <input type={type} value={value} onChange={e => set(e.target.value)} placeholder={placeholder} style={inputStyle} />
             </div>
           ))}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Especialidade *</label>
+            <select value={chosenSpecialty} onChange={e => setChosenSpecialty(e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+              {ESPECIALIDADES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
           <Btn
             onClick={handleSubmit}
             disabled={!fullName.trim() || !crm.trim() || saving}

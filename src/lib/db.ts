@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { Patient, Consultation, StructuredSummary, AnamnesePrimeiraConsultaData } from '../data/mock';
+import type { Patient, Consultation, StructuredSummary, AnamnesePrimeiraConsultaData, AnamneseAdultaData, ClinicalDocument, ClinicalDocumentType, LabMarker, ConsultaAdultoData } from '../data/mock';
 
 // ── Raw Supabase row shapes (internal) ────────────────────────────────────────
 // Represent the exact shape returned by Supabase before mapping.
@@ -1702,4 +1702,201 @@ export async function fetchAdminChartData(months = 6): Promise<AdminChartPoint[]
   }
 
   return buckets;
+}
+
+// ─── CLÍNICA GERAL — ANAMNESE ADULTA ─────────────────────────────────────────
+
+export async function saveAnamneseAdulta(consultaId: string, data: AnamneseAdultaData): Promise<void> {
+  // Lê specialty_data atual para não sobrescrever outros campos
+  const { data: row } = await supabase
+    .from('consultations')
+    .select('specialty_data')
+    .eq('id', consultaId)
+    .single();
+
+  const existing = (row?.specialty_data as ConsultaAdultoData | null) ?? {};
+  await supabase
+    .from('consultations')
+    .update({ specialty_data: { ...existing, adult_intake: data } })
+    .eq('id', consultaId);
+}
+
+export async function fetchAnamneseAdulta(
+  patientId: string
+): Promise<(AnamneseAdultaData & { consulta_id: string; created_at: string }) | null> {
+  const { data } = await supabase
+    .from('consultations')
+    .select('id, created_at, specialty_data')
+    .eq('patient_id', patientId)
+    .eq('status', 'completed')
+    .order('scheduled_at', { ascending: false })
+    .limit(10);
+
+  if (!data) return null;
+  for (const row of data as Array<{ id: string; created_at: string; specialty_data: ConsultaAdultoData | null }>) {
+    const intake = row.specialty_data?.adult_intake;
+    if (intake) return { ...intake, consulta_id: row.id, created_at: row.created_at };
+  }
+  return null;
+}
+
+export async function updatePatientProblems(
+  consultaId: string,
+  problems: ConsultaAdultoData['active_problems']
+): Promise<void> {
+  const { data: row } = await supabase
+    .from('consultations')
+    .select('specialty_data')
+    .eq('id', consultaId)
+    .single();
+
+  const existing = (row?.specialty_data as ConsultaAdultoData | null) ?? {};
+  await supabase
+    .from('consultations')
+    .update({ specialty_data: { ...existing, active_problems: problems } })
+    .eq('id', consultaId);
+}
+
+// ─── CLÍNICA GERAL — DOCUMENTOS CLÍNICOS ─────────────────────────────────────
+
+export async function fetchClinicalDocuments(patientId: string): Promise<ClinicalDocument[]> {
+  const { data, error } = await supabase
+    .from('clinical_documents')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('result_date', { ascending: false });
+
+  if (error || !data) return [];
+  return data as ClinicalDocument[];
+}
+
+export async function fetchLabMarkerHistory(patientId: string, markerName: string): Promise<LabMarker[]> {
+  const { data, error } = await supabase
+    .from('lab_markers')
+    .select('*')
+    .eq('patient_id', patientId)
+    .eq('marker_name', markerName)
+    .order('result_date', { ascending: true });
+
+  if (error || !data) return [];
+  return data as LabMarker[];
+}
+
+export async function fetchLatestMarkers(patientId: string): Promise<Record<string, LabMarker>> {
+  const { data, error } = await supabase
+    .from('lab_markers')
+    .select('*')
+    .eq('patient_id', patientId)
+    .order('result_date', { ascending: false });
+
+  if (error || !data) return {};
+  const result: Record<string, LabMarker> = {};
+  for (const row of data as LabMarker[]) {
+    if (!result[row.marker_name]) result[row.marker_name] = row;
+  }
+  return result;
+}
+
+export async function saveLabResult(
+  patientId: string,
+  docType: ClinicalDocumentType,
+  resultDate: string,
+  labName: string | null,
+  sourceType: 'upload_pdf' | 'upload_image' | 'manual',
+  fileUrl: string | null,
+  rawText: string | null,
+  aiSummary: string | null,
+  markers: Omit<LabMarker, 'id' | 'clinical_document_id' | 'patient_id' | 'created_at'>[]
+): Promise<ClinicalDocument | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: doc, error } = await supabase
+    .from('clinical_documents')
+    .insert({
+      patient_id: patientId,
+      doctor_id: user.id,
+      document_type: docType,
+      result_date: resultDate,
+      lab_name: labName,
+      source_type: sourceType,
+      file_url: fileUrl,
+      raw_text: rawText,
+      ai_summary: aiSummary,
+    })
+    .select()
+    .single();
+
+  if (error || !doc) return null;
+
+  if (markers.length > 0) {
+    await supabase.from('lab_markers').insert(
+      markers.map(m => ({ ...m, clinical_document_id: doc.id, patient_id: patientId, doctor_id: user.id }))
+    );
+  }
+
+  return doc as ClinicalDocument;
+}
+
+// ─── CLÍNICA GERAL — DASHBOARD ────────────────────────────────────────────────
+
+export interface ChronicDashboardData {
+  patientsWithConditions: number;
+  conditionDistribution: { name: string; count: number }[];
+  patientsWithoutReturn: { id: string; full_name: string; conditions: string[] }[];
+  pendingExams: { patient_id: string; full_name: string; exams: string }[];
+}
+
+export async function fetchChronicDashboardData(): Promise<ChronicDashboardData> {
+  const { data: consults } = await supabase
+    .from('consultations')
+    .select('patient_id, specialty_data, patients!inner(full_name, next_return)')
+    .eq('status', 'completed')
+    .order('scheduled_at', { ascending: false });
+
+  if (!consults) return { patientsWithConditions: 0, conditionDistribution: [], patientsWithoutReturn: [], pendingExams: [] };
+
+  // Deduplica: mantém só a consulta mais recente por paciente
+  const seenPatients = new Set<string>();
+  const latest: Array<{ patient_id: string; specialty_data: ConsultaAdultoData | null; full_name: string; next_return: string | null }> = [];
+  for (const c of consults as Array<{ patient_id: string; specialty_data: ConsultaAdultoData | null; patients: { full_name: string; next_return: string | null } | null }>) {
+    if (!seenPatients.has(c.patient_id)) {
+      seenPatients.add(c.patient_id);
+      latest.push({ patient_id: c.patient_id, specialty_data: c.specialty_data, full_name: c.patients?.full_name ?? '', next_return: c.patients?.next_return ?? null });
+    }
+  }
+
+  const now = new Date();
+  const conditionCount: Record<string, number> = {};
+  const patientsWithConditions = new Set<string>();
+  const patientsWithoutReturn: ChronicDashboardData['patientsWithoutReturn'] = [];
+  const pendingExams: ChronicDashboardData['pendingExams'] = [];
+
+  for (const row of latest) {
+    const problems = row.specialty_data?.active_problems?.filter(p => p.status === 'ativo') ?? [];
+    if (problems.length > 0) {
+      patientsWithConditions.add(row.patient_id);
+      problems.forEach(p => { conditionCount[p.name] = (conditionCount[p.name] ?? 0) + 1; });
+      const hasRetorno = row.next_return && new Date(row.next_return) >= now;
+      if (!hasRetorno) {
+        patientsWithoutReturn.push({ id: row.patient_id, full_name: row.full_name, conditions: problems.map(p => p.name) });
+      }
+    }
+    const examsReq = row.specialty_data?.exams_requested?.trim();
+    if (examsReq) {
+      pendingExams.push({ patient_id: row.patient_id, full_name: row.full_name, exams: examsReq });
+    }
+  }
+
+  const conditionDistribution = Object.entries(conditionCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  return {
+    patientsWithConditions: patientsWithConditions.size,
+    conditionDistribution,
+    patientsWithoutReturn: patientsWithoutReturn.slice(0, 20),
+    pendingExams: pendingExams.slice(0, 20),
+  };
 }

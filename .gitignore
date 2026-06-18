@@ -43,3 +43,9 @@ supabase/.temp/
 # Arquivos gerados por ferramentas (não fazem parte do produto)
 SAAS_RECOMMENDATIONS.md
 output_saas_without_skill.md
+
+# Playwright
+playwright/.auth/
+playwright-report/
+test-results/
+.env.test
