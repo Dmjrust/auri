@@ -600,9 +600,12 @@ const EXAM_EXTRACTION_SYSTEM_PROMPT = `Você é um assistente de apoio à leitur
   ]
 }
 
-REGRAS:
-- Use apenas valores explicitamente presentes no documento — nunca invente marcadores ou resultados.
-- "value" deve ser numérico (use ponto decimal). Se o valor não puder ser convertido para número, omita o marcador.
+REGRAS DE EXAUSTIVIDADE (MUITO IMPORTANTE):
+- O array "markers" deve conter TODOS os resultados numéricos presentes no documento, sejam normais ou alterados. NÃO filtre, NÃO resuma, NÃO inclua apenas os valores fora da referência. O campo "summary" é o ÚNICO lugar onde você deve destacar o que está alterado — "markers" é uma transcrição completa e literal de cada linha de resultado, normal ou não.
+- Exames de sangue completos costumam ter entre 15 e 40 marcadores. Por exemplo, um hemograma completo sozinho já tem cerca de 15 (hemoglobina, hematócrito, eritrócitos, VCM, HCM, CHCM, RDW, leucócitos totais e diferencial — bastonetes, segmentados, eosinófilos, basófilos, linfócitos, monócitos —, plaquetas). Se o documento tiver múltiplas seções/tabelas/páginas (ex.: hemograma + bioquímica + lipidograma + hormônios + urina), processe TODAS elas — não pare na primeira tabela.
+- Antes de responder, releia o documento inteiro e confirme que nenhuma linha de resultado numérico de nenhuma seção/página foi omitida do array "markers".
+- Use apenas valores explicitamente presentes no documento — nunca invente marcadores ou resultados que não estejam impressos.
+- "value" deve ser numérico, com PONTO decimal (ex.: exame impresso como "12,5" deve virar 12.5, nunca a string "12,5"). Se o valor não puder ser convertido para número, omita apenas esse marcador (resultados qualitativos como "negativo"/"reagente" não entram em "markers", mas podem ser citados em "summary").
 - "reference_min"/"reference_max": extraia da faixa de referência impressa no exame; use null se não houver faixa numérica clara.
 - "status": compare o valor com a faixa de referência. Use "critico" apenas se o próprio exame marcar o valor como crítico/pânico, ou se estiver muito fora da faixa (>30% acima/abaixo). Caso contrário "alto"/"baixo"/"normal".
 - "summary": linguagem de apoio à decisão, conservadora, sem fechar diagnóstico — conforme CFM 2.454/2026 o médico revisará e validará.
@@ -622,11 +625,12 @@ export async function extractExamData(base64: string, mimeType: string): Promise
       model: 'gpt-4o',
       response_format: { type: 'json_object' },
       temperature: 0.1,
+      max_tokens: 4096,
       messages: [
         { role: 'system', content: EXAM_EXTRACTION_SYSTEM_PROMPT },
         {
           role: 'user',
-          content: [fileContent, { type: 'text', text: 'Extraia os dados deste exame conforme as instruções.' }],
+          content: [fileContent, { type: 'text', text: 'Extraia os dados deste exame conforme as instruções. Lembre-se: o array "markers" deve incluir TODOS os resultados numéricos do documento, não apenas os alterados.' }],
         },
       ],
     }),
