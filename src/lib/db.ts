@@ -1847,6 +1847,27 @@ export async function saveLabResult(
   return doc as ClinicalDocument;
 }
 
+// Sobe o arquivo original (PDF/imagem) ao bucket privado "clinical-documents" e
+// retorna uma signed URL de longa duração para popular clinical_documents.file_url.
+// Pasta "<doctor_id>/<patient_id>/..." é exigida pela RLS policy do bucket.
+export async function uploadClinicalDocumentFile(patientId: string, file: File): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const path = `${user.id}/${patientId}/${Date.now()}-${file.name}`;
+  const { error: uploadError } = await supabase.storage
+    .from('clinical-documents')
+    .upload(path, file, { contentType: file.type });
+  if (uploadError) return null;
+
+  const { data, error } = await supabase.storage
+    .from('clinical-documents')
+    .createSignedUrl(path, 60 * 60 * 24 * 365 * 10); // 10 anos
+  if (error || !data) return null;
+
+  return data.signedUrl;
+}
+
 // ─── CLÍNICA GERAL — DASHBOARD ────────────────────────────────────────────────
 
 export interface ChronicDashboardData {

@@ -2909,14 +2909,53 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
     if (!file) return;
     setUploading(true);
     setUploadStep('Enviando arquivo…');
+    const sourceType = file.type.startsWith('image/') ? 'upload_image' : 'upload_pdf';
     try {
-      // Stub: mostra o pipeline sem chamar APIs externas (tabela lab_results pode não existir ainda)
-      await new Promise(r => setTimeout(r, 800));
-      setUploadStep('Extraindo texto…');
-      await new Promise(r => setTimeout(r, 800));
-      setUploadStep('Analisando marcadores…');
-      await new Promise(r => setTimeout(r, 800));
-      toast.success('Arquivo processado. Configure o endpoint de IA para extração automática.');
+      const fileUrl = await db.uploadClinicalDocumentFile(patientId, file);
+
+      let lab_name: string | null = null;
+      let result_date: string | null = null;
+      let summary: string | null = null;
+      let markers: Omit<LabMarker, 'id' | 'clinical_document_id' | 'patient_id' | 'created_at'>[] = [];
+      let extractionFailed = false;
+
+      try {
+        setUploadStep('Extraindo texto…');
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        setUploadStep('Analisando marcadores…');
+        const extracted = await ai.extractExamData(base64, file.type);
+        lab_name = extracted.lab_name;
+        result_date = extracted.result_date;
+        summary = extracted.summary || null;
+        markers = extracted.markers;
+      } catch {
+        extractionFailed = true;
+      }
+
+      const saved = await db.saveLabResult(
+        patientId,
+        'laboratorio',
+        result_date ?? new Date().toISOString().slice(0, 10),
+        lab_name,
+        sourceType,
+        fileUrl,
+        null,
+        summary,
+        markers
+      );
+
+      if (!saved) {
+        toast.error('Erro ao salvar o exame. Verifique se as tabelas foram criadas no Supabase.');
+      } else if (extractionFailed) {
+        toast.success('Arquivo salvo, mas a extração automática falhou — revise manualmente.');
+      } else {
+        toast.success('Exame processado — marcadores extraídos automaticamente.');
+      }
       onDocumentSaved();
     } catch {
       toast.error('Erro ao processar arquivo.');

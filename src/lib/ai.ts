@@ -1,4 +1,4 @@
-import type { StructuredSummary, ScannableSummary, AnamnesePrimeiraConsultaData } from '../data/mock';
+import type { StructuredSummary, ScannableSummary, AnamnesePrimeiraConsultaData, LabMarker } from '../data/mock';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VALIDAÇÃO CLÍNICA: chama OpenAI diretamente do browser via VITE_OPENAI_API_KEY.
@@ -570,5 +570,92 @@ export async function extractAnamnesePrimeiraConsulta(transcript: string): Promi
     animal_domestico:             bl(hs.animais),
     animal_domestico_qual:        str(hs.animais_qual),
     agua_saneamento:              bl(hs.saneamento),
+  };
+}
+
+// ── GPT-4o: documento de exame (PDF/imagem) → marcadores estruturados ──────────
+export interface ExtractedExamData {
+  lab_name: string | null;
+  result_date: string | null; // YYYY-MM-DD
+  summary: string;
+  markers: Array<Omit<LabMarker, 'id' | 'clinical_document_id' | 'patient_id' | 'created_at'>>;
+}
+
+const EXAM_EXTRACTION_SYSTEM_PROMPT = `Você é um assistente de apoio à leitura de exames laboratoriais brasileiros. Analise o documento (PDF ou imagem de resultado de exame) e retorne APENAS um JSON com exatamente este formato:
+
+{
+  "lab_name": "nome do laboratório, ou null se não identificado",
+  "result_date": "data de coleta/resultado no formato YYYY-MM-DD, ou null se não identificada",
+  "summary": "breve análise clínica em 2-4 frases, em português, destacando valores fora da referência",
+  "markers": [
+    {
+      "marker_name": "nome do marcador (ex: Hemoglobina, Glicose, TSH)",
+      "value": 0,
+      "unit": "unidade (ex: g/dL, mg/dL)",
+      "reference_text": "faixa de referência como aparece no exame, ex: '12.0 - 16.0 g/dL'",
+      "reference_min": 0,
+      "reference_max": 0,
+      "status": "normal | alto | baixo | critico"
+    }
+  ]
+}
+
+REGRAS:
+- Use apenas valores explicitamente presentes no documento — nunca invente marcadores ou resultados.
+- "value" deve ser numérico (use ponto decimal). Se o valor não puder ser convertido para número, omita o marcador.
+- "reference_min"/"reference_max": extraia da faixa de referência impressa no exame; use null se não houver faixa numérica clara.
+- "status": compare o valor com a faixa de referência. Use "critico" apenas se o próprio exame marcar o valor como crítico/pânico, ou se estiver muito fora da faixa (>30% acima/abaixo). Caso contrário "alto"/"baixo"/"normal".
+- "summary": linguagem de apoio à decisão, conservadora, sem fechar diagnóstico — conforme CFM 2.454/2026 o médico revisará e validará.
+- Se nenhum marcador puder ser extraído com confiança, retorne "markers": [].
+- Responda APENAS com o JSON, sem markdown ou explicações.`;
+
+export async function extractExamData(base64: string, mimeType: string): Promise<ExtractedExamData> {
+  const isImage = mimeType.startsWith('image/');
+  const fileContent = isImage
+    ? { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }
+    : { type: 'file', file: { filename: 'exame.pdf', file_data: `data:${mimeType};base64,${base64}` } };
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: EXAM_EXTRACTION_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: [fileContent, { type: 'text', text: 'Extraia os dados deste exame conforme as instruções.' }],
+        },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `GPT-4o exame ${res.status}`);
+  }
+  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
+
+  const markers = Array.isArray(raw.markers)
+    ? raw.markers
+        .filter((m: any) => m && typeof m.marker_name === 'string' && !isNaN(Number(m.value)))
+        .map((m: any) => ({
+          result_date: String(raw.result_date ?? new Date().toISOString().slice(0, 10)),
+          marker_name: String(m.marker_name),
+          value: Number(m.value),
+          unit: String(m.unit ?? ''),
+          reference_text: m.reference_text != null ? String(m.reference_text) : null,
+          reference_min: m.reference_min != null && !isNaN(Number(m.reference_min)) ? Number(m.reference_min) : null,
+          reference_max: m.reference_max != null && !isNaN(Number(m.reference_max)) ? Number(m.reference_max) : null,
+          status: (['normal', 'alto', 'baixo', 'critico'].includes(m.status) ? m.status : 'normal') as LabMarker['status'],
+        }))
+    : [];
+
+  return {
+    lab_name: raw.lab_name != null ? String(raw.lab_name) : null,
+    result_date: raw.result_date != null ? String(raw.result_date) : null,
+    summary: String(raw.summary ?? ''),
+    markers,
   };
 }
