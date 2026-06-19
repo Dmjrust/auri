@@ -100,6 +100,7 @@ interface RawDayBriefingConsultRow {
   sum_peso: string | null;
   sum_altura: string | null;
   status: string;
+  specialty_data: ConsultaAdultoData | null;
 }
 
 interface RawRecentActivityRow {
@@ -627,6 +628,10 @@ export interface DayBriefingItem {
   overdueVaccines: string[];
   lastVaccine: { name: string; appliedAt: string } | null;
   lastGrowth: { weight: number | null; height: number | null; date: string } | null;
+  // Clínica Geral — derivados da consulta mais recente (specialty_data)
+  activeProblems?: string[];
+  medicationsCount?: number;
+  hasRecentExam?: boolean;
 }
 
 export async function fetchDayBriefing(patientIds: string[]): Promise<Record<string, DayBriefingItem>> {
@@ -635,7 +640,7 @@ export async function fetchDayBriefing(patientIds: string[]): Promise<Record<str
   const [consultsRes, vaccinesRes, growthRes] = await Promise.all([
     supabase
       .from('consultations')
-      .select('id, patient_id, scheduled_at, type, chief_complaint, diagnosis, plan, sum_retorno, sum_peso, sum_altura, status')
+      .select('id, patient_id, scheduled_at, type, chief_complaint, diagnosis, plan, sum_retorno, sum_peso, sum_altura, status, specialty_data')
       .in('patient_id', patientIds)
       .eq('status', 'completed')
       .order('scheduled_at', { ascending: false }),
@@ -671,6 +676,9 @@ export async function fetchDayBriefing(patientIds: string[]): Promise<Record<str
         peso: c.sum_peso || '',
         altura: c.sum_altura || '',
       };
+      item.activeProblems = (c.specialty_data?.active_problems ?? []).filter(p => p.status === 'ativo').map(p => p.name);
+      item.medicationsCount = c.specialty_data?.current_medications?.length ?? 0;
+      item.hasRecentExam = !!c.specialty_data?.exams_requested?.trim();
     }
   });
 
@@ -1846,6 +1854,7 @@ export interface ChronicDashboardData {
   conditionDistribution: { name: string; count: number }[];
   patientsWithoutReturn: { id: string; full_name: string; conditions: string[] }[];
   pendingExams: { patient_id: string; full_name: string; exams: string }[];
+  upcomingReturns: { id: string; full_name: string; conditions: string[]; next_return: string }[];
 }
 
 export async function fetchChronicDashboardData(): Promise<ChronicDashboardData> {
@@ -1855,7 +1864,7 @@ export async function fetchChronicDashboardData(): Promise<ChronicDashboardData>
     .eq('status', 'completed')
     .order('scheduled_at', { ascending: false });
 
-  if (!consults) return { patientsWithConditions: 0, conditionDistribution: [], patientsWithoutReturn: [], pendingExams: [] };
+  if (!consults) return { patientsWithConditions: 0, conditionDistribution: [], patientsWithoutReturn: [], pendingExams: [], upcomingReturns: [] };
 
   // Deduplica: mantém só a consulta mais recente por paciente
   const seenPatients = new Set<string>();
@@ -1872,6 +1881,7 @@ export async function fetchChronicDashboardData(): Promise<ChronicDashboardData>
   const patientsWithConditions = new Set<string>();
   const patientsWithoutReturn: ChronicDashboardData['patientsWithoutReturn'] = [];
   const pendingExams: ChronicDashboardData['pendingExams'] = [];
+  const upcomingReturns: ChronicDashboardData['upcomingReturns'] = [];
 
   for (const row of latest) {
     const problems = row.specialty_data?.active_problems?.filter(p => p.status === 'ativo') ?? [];
@@ -1881,6 +1891,8 @@ export async function fetchChronicDashboardData(): Promise<ChronicDashboardData>
       const hasRetorno = row.next_return && new Date(row.next_return) >= now;
       if (!hasRetorno) {
         patientsWithoutReturn.push({ id: row.patient_id, full_name: row.full_name, conditions: problems.map(p => p.name) });
+      } else if (row.next_return) {
+        upcomingReturns.push({ id: row.patient_id, full_name: row.full_name, conditions: problems.map(p => p.name), next_return: row.next_return });
       }
     }
     const examsReq = row.specialty_data?.exams_requested?.trim();
@@ -1894,10 +1906,42 @@ export async function fetchChronicDashboardData(): Promise<ChronicDashboardData>
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
 
+  upcomingReturns.sort((a, b) => new Date(a.next_return).getTime() - new Date(b.next_return).getTime());
+
   return {
     patientsWithConditions: patientsWithConditions.size,
     conditionDistribution,
     patientsWithoutReturn: patientsWithoutReturn.slice(0, 20),
     pendingExams: pendingExams.slice(0, 20),
+    upcomingReturns: upcomingReturns.slice(0, 20),
   };
+}
+
+// ─── CLÍNICA GERAL — EXAMES RECENTES (cross-paciente) ────────────────────────
+
+export interface RecentClinicalDocument {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  document_type: ClinicalDocumentType;
+  lab_name: string | null;
+  created_at: string;
+}
+
+export async function fetchRecentClinicalDocuments(limit = 5): Promise<RecentClinicalDocument[]> {
+  const { data, error } = await supabase
+    .from('clinical_documents')
+    .select('id, patient_id, document_type, lab_name, created_at, patients(full_name)')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error || !data) return [];
+  return (data as Array<{ id: string; patient_id: string; document_type: ClinicalDocumentType; lab_name: string | null; created_at: string; patients: { full_name: string } | null }>).map(d => ({
+    id: d.id,
+    patient_id: d.patient_id,
+    patient_name: d.patients?.full_name || 'Paciente',
+    document_type: d.document_type,
+    lab_name: d.lab_name,
+    created_at: d.created_at,
+  }));
 }

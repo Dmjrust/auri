@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   CaretDown, CaretUp, Stethoscope, FileText, Warning,
   Phone, Syringe, ArrowClockwise, CalendarBlank,
-  CheckCircle, Info,
+  CheckCircle, Info, Pill, Flask, HeartHalf,
 } from '@phosphor-icons/react';
 import type { DayBriefingItem } from '../lib/db';
 import type { Patient } from '../data/mock';
@@ -42,7 +42,19 @@ interface Props {
   defaultExpanded: boolean;
   onStart: () => void;
   onRecord: () => void;
+  specialty?: string;
+  onImportExams?: () => void;
+  onCreateProblem?: () => void;
 }
+
+const CLINICA_GERAL_CHECKLIST = [
+  'Queixa principal e história da doença atual',
+  'Antecedentes pessoais e cirúrgicos',
+  'Medicações em uso',
+  'Alergias',
+  'Hábitos de vida (atividade física, alimentação, sono, tabagismo, álcool)',
+  'Histórico familiar relevante',
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(iso: string) {
@@ -107,12 +119,13 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 // ── TodayPatientCard ──────────────────────────────────────────────────────────
-export function TodayPatientCard({ appt, patient, briefing, defaultExpanded, onStart, onRecord }: Props) {
+export function TodayPatientCard({ appt, patient, briefing, defaultExpanded, onStart, onRecord, specialty = 'Pediatria', onImportExams, onCreateProblem }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   const isDone       = appt.status === 'completed';
   const isInProgress = appt.status === 'in_progress';
   const isPrimeira   = appt.type === 'primeira vez';
+  const isClinicaGeral = specialty !== 'Pediatria';
   const allergy      = detectAllergy(patient?.notes || '');
 
   // Alertas clínicos
@@ -282,7 +295,7 @@ export function TodayPatientCard({ appt, patient, briefing, defaultExpanded, onS
           )}
 
           {/* BLOCO 3 — Primeira vez */}
-          {isPrimeira && (
+          {isPrimeira && !isClinicaGeral && (
             <>
               <BlockTitle label="Primeira consulta" />
               <div style={{
@@ -292,6 +305,27 @@ export function TodayPatientCard({ appt, patient, briefing, defaultExpanded, onS
               }}>
                 📋 Este é o primeiro atendimento de {appt.patient_name.split(' ')[0]} no consultório.
                 Colete anamnese completa e registre histórico familiar.
+              </div>
+            </>
+          )}
+          {isPrimeira && isClinicaGeral && (
+            <>
+              <BlockTitle label="IA sugere coletar" />
+              <div style={{
+                padding: '10px 12px', background: WARNL,
+                border: `1px solid ${WARN}33`, borderRadius: 7,
+              }}>
+                <div style={{ fontSize: 12, color: WARN, fontWeight: 600, marginBottom: 6 }}>
+                  Primeira consulta — Clínica Geral
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {CLINICA_GERAL_CHECKLIST.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: INK }}>
+                      <CheckCircle size={12} color={WARN} style={{ flexShrink: 0, marginTop: 2 }} />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -349,33 +383,95 @@ export function TodayPatientCard({ appt, patient, briefing, defaultExpanded, onS
           {/* BLOCO 4 — Contexto rápido */}
           <BlockTitle label="Contexto" />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
-            <ContextChip
-              icon={<Stethoscope size={11} />}
-              label={briefing ? `${briefing.totalConsults} consulta${briefing.totalConsults !== 1 ? 's' : ''}` : '—'}
-              color={P} bg={PL}
-            />
-            {briefing?.lastVaccine && (
-              <ContextChip
-                icon={<Syringe size={11} />}
-                label={`${briefing.lastVaccine.name} em ${fmtDate(briefing.lastVaccine.appliedAt)}`}
-                color={SUC} bg={SUCL}
-              />
+            {!isClinicaGeral && (
+              <>
+                <ContextChip
+                  icon={<Stethoscope size={11} />}
+                  label={briefing ? `${briefing.totalConsults} consulta${briefing.totalConsults !== 1 ? 's' : ''}` : '—'}
+                  color={P} bg={PL}
+                />
+                {briefing?.lastVaccine && (
+                  <ContextChip
+                    icon={<Syringe size={11} />}
+                    label={`${briefing.lastVaccine.name} em ${fmtDate(briefing.lastVaccine.appliedAt)}`}
+                    color={SUC} bg={SUCL}
+                  />
+                )}
+                {!briefing?.lastVaccine && (
+                  <ContextChip
+                    icon={<Syringe size={11} />}
+                    label="Nenhuma vacina registrada"
+                    color={MU} bg="#F3F4F6"
+                  />
+                )}
+                {briefing?.lastGrowth?.weight && (
+                  <ContextChip
+                    icon={<Info size={11} />}
+                    label={`Último peso: ${briefing.lastGrowth.weight.toFixed(1)} kg`}
+                    color={MU} bg="#F3F4F6"
+                  />
+                )}
+              </>
             )}
-            {!briefing?.lastVaccine && (
-              <ContextChip
-                icon={<Syringe size={11} />}
-                label="Nenhuma vacina registrada"
-                color={MU} bg="#F3F4F6"
-              />
-            )}
-            {briefing?.lastGrowth?.weight && (
-              <ContextChip
-                icon={<Info size={11} />}
-                label={`Último peso: ${briefing.lastGrowth.weight.toFixed(1)} kg`}
-                color={MU} bg="#F3F4F6"
-              />
+            {isClinicaGeral && (
+              <>
+                <ContextChip
+                  icon={<Stethoscope size={11} />}
+                  label={isPrimeira ? 'Primeira consulta no consultório' : (briefing ? `${briefing.totalConsults} consulta${briefing.totalConsults !== 1 ? 's' : ''}` : '—')}
+                  color={P} bg={PL}
+                />
+                <ContextChip
+                  icon={<HeartHalf size={11} />}
+                  label={briefing?.activeProblems && briefing.activeProblems.length > 0 ? briefing.activeProblems.join(', ') : 'Sem problemas ativos registrados'}
+                  color={briefing?.activeProblems?.length ? WARN : MU}
+                  bg={briefing?.activeProblems?.length ? WARNL : '#F3F4F6'}
+                />
+                <ContextChip
+                  icon={<Pill size={11} />}
+                  label={briefing?.medicationsCount ? `${briefing.medicationsCount} medicação${briefing.medicationsCount !== 1 ? 'ões' : ''} em uso` : 'Sem medicações registradas'}
+                  color={briefing?.medicationsCount ? P : MU}
+                  bg={briefing?.medicationsCount ? PL : '#F3F4F6'}
+                />
+                <ContextChip
+                  icon={<Flask size={11} />}
+                  label={briefing?.hasRecentExam ? 'Exame recente registrado' : 'Sem exames registrados'}
+                  color={briefing?.hasRecentExam ? SUC : MU}
+                  bg={briefing?.hasRecentExam ? SUCL : '#F3F4F6'}
+                />
+              </>
             )}
           </div>
+
+          {/* BLOCO 5 — Ações rápidas (Clínica Geral) */}
+          {isClinicaGeral && (onImportExams || onCreateProblem) && (
+            <>
+              <BlockTitle label="Ações rápidas" />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+                <button
+                  onClick={e => { e.stopPropagation(); onRecord(); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'none', border: `1px solid ${BO}`, borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+                >
+                  <FileText size={13} /> Anamnese completa
+                </button>
+                {onImportExams && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onImportExams(); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'none', border: `1px solid ${BO}`, borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+                  >
+                    <Flask size={13} /> Importar exames
+                  </button>
+                )}
+                {onCreateProblem && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onCreateProblem(); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'none', border: `1px solid ${BO}`, borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
+                  >
+                    <HeartHalf size={13} /> Criar problema ativo
+                  </button>
+                )}
+              </div>
+            </>
+          )}
 
         </div>
       )}

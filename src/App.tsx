@@ -19,6 +19,7 @@ import {
   FloppyDisk, Buildings, Brain, ShieldCheck, PlayCircle, PencilSimple, Trash,
   ChartBar, ArrowUp, ArrowDown, ArrowRight, Lightbulb, Check,
   Star, ArrowCounterClockwise, House, WarningCircle, UserPlus, UsersThree,
+  Flask, ClockCounterClockwise, Sparkle,
 } from '@phosphor-icons/react';
 import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
@@ -863,9 +864,18 @@ const SectionHeader = ({ icon: Icon, title, action, onAction }: { icon: IconComp
   </div>
 );
 
-function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName: doctorNameProp, specialty = 'Pediatria' }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez', apptId?: string) => void; user: SupabaseUser | null; doctorName: string; specialty?: string }) {
+const KpiCard = ({ label, value, sub, isMobile, bg, border, valueColor }: { label: string; value: React.ReactNode; sub: string; isMobile: boolean; bg?: string; border?: string; valueColor?: string }) => (
+  <div style={{ background: bg ?? '#fff', border: `1px solid ${border ?? BO}`, borderRadius: 12, padding: isMobile ? '12px 14px' : '16px 20px' }}>
+    <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>{label}</div>
+    <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, color: valueColor ?? P, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' as const }}>{value}</div>
+    <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>{sub}</div>
+  </div>
+);
+
+function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName: doctorNameProp, specialty = 'Pediatria', setPresetPatientSearch, setPendingDetailTab }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez', apptId?: string) => void; user: SupabaseUser | null; doctorName: string; specialty?: string; setPresetPatientSearch?: (s: string) => void; setPendingDetailTab?: (t: string | null) => void }) {
   // patients come from shared PatientContext (no individual fetch needed here)
   const { patients } = usePatients();
+  const isClinicaGeral = specialty !== 'Pediatria';
   const [todayAppts, setTodayAppts] = useState<any[]>([]);
   const [overdueAppts, setOverdueAppts] = useState<{ patient_id: string; patient_name: string; scheduled_at: string }[]>([]);
   const [overdueVaccPatients, setOverdueVaccPatients] = useState<{ id: string; full_name: string; overdueCount: number; overdueNames: string[] }[]>([]);
@@ -874,6 +884,8 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
   const [dayBriefing, setDayBriefing] = useState<Record<string, DayBriefingItem>>({});
   const [lastPatient, setLastPatient] = useState<Patient | null>(null);
   const [chronicData, setChronicData] = useState<ChronicDashboardData | null>(null);
+  const [recentExams, setRecentExams] = useState<db.RecentClinicalDocument[]>([]);
+  const [thisMonthPatients, setThisMonthPatients] = useState(0);
   const [expandedPriority, setExpandedPriority] = useState<'retorno' | 'vacinas' | 'sem-consulta' | null>(null);
   const [showAttentionPoints, setShowAttentionPoints] = useState(true);
   const [dismissedPriorities, setDismissedPriorities] = useState<Set<string>>(() => {
@@ -915,6 +927,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
       if (cancelled) return;
       setTodayAppts(appts);
       setOverdueAppts(stats.overdueAppointments);
+      setThisMonthPatients(stats.thisMonthPatients);
       setRecentActivity(activity);
       setConsultSummaries(summaries);
       const ids = appts.map((a) => a.patient_id).filter(Boolean);
@@ -935,6 +948,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
   useEffect(() => {
     if (specialty === 'Pediatria') return;
     db.fetchChronicDashboardData().then(data => setChronicData(data)).catch(() => {});
+    db.fetchRecentClinicalDocuments(5).then(setRecentExams).catch(() => {});
   }, [specialty]);
 
   // Batch vaccine overdue calc — Pediatria only
@@ -999,6 +1013,30 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
     if (!s?.lastDate) return false;
     return (now.getTime() - new Date(s.lastDate).getTime()) / 86400000 > 30;
   });
+  // Clínica Geral — pacientes sem consulta há muito tempo (>180d), com dias calculados
+  const longInactivePatients = patients
+    .map(p => {
+      const lastDate = consultSummaries[p.id]?.lastDate;
+      if (!lastDate) return null;
+      const days = Math.floor((now.getTime() - new Date(lastDate).getTime()) / 86400000);
+      return days > 180 ? { id: p.id, full_name: p.full_name, days } : null;
+    })
+    .filter((x): x is { id: string; full_name: string; days: number } => x !== null)
+    .sort((a, b) => b.days - a.days);
+  const longInactiveOver365 = longInactivePatients.filter(p => p.days > 365).length;
+
+  // Clínica Geral — insights computáveis a partir de dados reais
+  const clinicalInsights: string[] = [];
+  if (chronicData) {
+    const conditionNoReturnCount: Record<string, number> = {};
+    chronicData.patientsWithoutReturn.forEach(p => p.conditions.forEach(c => { conditionNoReturnCount[c] = (conditionNoReturnCount[c] ?? 0) + 1; }));
+    Object.entries(conditionNoReturnCount).sort((a, b) => b[1] - a[1]).slice(0, 2).forEach(([cond, n]) => {
+      clinicalInsights.push(`${n} paciente${n !== 1 ? 's' : ''} com ${cond} sem retorno agendado`);
+    });
+  }
+  if (recentExams.length > 0) clinicalInsights.push(`${recentExams.length} exame${recentExams.length !== 1 ? 's' : ''} aguardando revisão`);
+  if (longInactiveOver365 > 0) clinicalInsights.push(`${longInactiveOver365} paciente${longInactiveOver365 !== 1 ? 's' : ''} sem consulta há mais de 12 meses`);
+
   const attentionPoints: string[] = [];
   overdueVaccPatients.slice(0, 3).forEach(v => attentionPoints.push(`${v.full_name} — ${v.overdueCount} vacina${v.overdueCount > 1 ? 's' : ''} em atraso no PNI`));
   if (overdueVaccPatients.length > 3) attentionPoints.push(`+${overdueVaccPatients.length - 3} outros pacientes com vacinas em atraso`);
@@ -1045,32 +1083,22 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
       </div>
 
       {/* ── KPI strip ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
-        {/* Consultas hoje */}
-        <div style={{ background: PL, border: `1px solid ${P}20`, borderRadius: 12, padding: isMobile ? '12px 14px' : '16px 20px' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>Hoje</div>
-          <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, color: P, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' as const }}>{todayAppts.length}</div>
-          <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>consulta{todayAppts.length !== 1 ? 's' : ''} agendada{todayAppts.length !== 1 ? 's' : ''}</div>
+      {!isClinicaGeral ? (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
+          <KpiCard label="Hoje" value={todayAppts.length} sub={`consulta${todayAppts.length !== 1 ? 's' : ''} agendada${todayAppts.length !== 1 ? 's' : ''}`} isMobile={isMobile} bg={PL} border={`${P}20`} />
+          <KpiCard label="Realizadas" value={completedToday} sub={`de ${todayAppts.length} hoje`} isMobile={isMobile} bg={completedToday > 0 ? SUCL : '#fff'} border={completedToday > 0 ? `${SUC}30` : BO} valueColor={completedToday > 0 ? SUC : MU} />
+          <KpiCard label="Prioridades" value={totalPrioridades} sub={totalPrioridades === 0 ? 'tudo em dia ✓' : `pendência${totalPrioridades !== 1 ? 's' : ''}`} isMobile={isMobile} bg={totalPrioridades > 0 ? DESL : SUCL} border={totalPrioridades > 0 ? `${DES}30` : `${SUC}30`} valueColor={totalPrioridades > 0 ? DES : SUC} />
+          <KpiCard label="Próxima" value={nextPending?.time || '—'} sub={nextPending ? nextPending.patient_name.split(' ')[0] : 'sem pendentes'} isMobile={isMobile} valueColor={nextPending ? P : MU} />
         </div>
-        {/* Realizadas */}
-        <div style={{ background: completedToday > 0 ? SUCL : '#fff', border: `1px solid ${completedToday > 0 ? SUC+'30' : BO}`, borderRadius: 12, padding: isMobile ? '12px 14px' : '16px 20px' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>Realizadas</div>
-          <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, color: completedToday > 0 ? SUC : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' as const }}>{completedToday}</div>
-          <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>de {todayAppts.length} hoje</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(5,1fr)', gap: 12, marginBottom: 24 }}>
+          <KpiCard label="Pacientes ativos" value={patients.length} sub={thisMonthPatients > 0 ? `+${thisMonthPatients} este mês` : 'sem novos este mês'} isMobile={isMobile} bg={PL} border={`${P}20`} />
+          <KpiCard label="Crônicos acompanhados" value={chronicData?.patientsWithConditions ?? 0} sub={patients.length > 0 ? `${Math.round(((chronicData?.patientsWithConditions ?? 0) / patients.length) * 100)}% dos ativos` : '—'} isMobile={isMobile} />
+          <KpiCard label="Exames pendentes" value={recentExams.length} sub="aguardando revisão" isMobile={isMobile} valueColor={recentExams.length > 0 ? WARN : MU} bg={recentExams.length > 0 ? WARNL : '#fff'} border={recentExams.length > 0 ? `${WARN}30` : BO} />
+          <KpiCard label="Retornos vencidos" value={overdueAppts.length} sub="precisam de atenção" isMobile={isMobile} valueColor={overdueAppts.length > 0 ? DES : SUC} bg={overdueAppts.length > 0 ? DESL : SUCL} border={overdueAppts.length > 0 ? `${DES}30` : `${SUC}30`} />
+          <KpiCard label="Próxima" value={nextPending?.time || '—'} sub={nextPending ? nextPending.patient_name.split(' ')[0] : 'sem pendentes'} isMobile={isMobile} valueColor={nextPending ? P : MU} />
         </div>
-        {/* Prioridades */}
-        <div style={{ background: totalPrioridades > 0 ? DESL : SUCL, border: `1px solid ${totalPrioridades > 0 ? DES+'30' : SUC+'30'}`, borderRadius: 12, padding: isMobile ? '12px 14px' : '16px 20px' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>Prioridades</div>
-          <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, color: totalPrioridades > 0 ? DES : SUC, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' as const }}>{totalPrioridades}</div>
-          <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>{totalPrioridades === 0 ? 'tudo em dia ✓' : `pendência${totalPrioridades !== 1 ? 's' : ''}`}</div>
-        </div>
-        {/* Próxima */}
-        <div style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 12, padding: isMobile ? '12px 14px' : '16px 20px' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>Próxima</div>
-          <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, color: nextPending ? P : MU, lineHeight: 1, fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' as const }}>{nextPending?.time || '—'}</div>
-          <div style={{ fontSize: 11, color: MU, marginTop: 5 }}>{nextPending ? nextPending.patient_name.split(' ')[0] : 'sem pendentes'}</div>
-        </div>
-      </div>
+      )}
 
       {/* ── Main grid ── */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 300px', gap: isMobile ? 12 : 20, alignItems: 'start' }}>
@@ -1110,8 +1138,11 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
                   patient={patients.find((p: Patient) => p.id === appt.patient_id)}
                   briefing={dayBriefing[appt.patient_id]}
                   defaultExpanded={appt.id === nextApptId}
+                  specialty={specialty}
                   onStart={() => { db.updateAppointment(appt.id, { status: 'in_progress' }).catch(() => { toast.error('Erro ao atualizar status do agendamento'); }); const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); onStartConsult(appt.type as 'retorno' | 'primeira vez', appt.id); } }}
                   onRecord={() => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); go('patient-detail'); } }}
+                  onImportExams={isClinicaGeral ? () => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); setPendingDetailTab?.('Exames'); go('patient-detail'); } } : undefined}
+                  onCreateProblem={isClinicaGeral ? () => { const p = patients.find((x: Patient) => x.id === appt.patient_id); if (p) { setActivePatient(p); setPendingDetailTab?.('Saúde'); go('patient-detail'); } } : undefined}
                 />
               ));
             })()}
@@ -1216,16 +1247,70 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
             )}
           </Card>
 
+          {/* 2b. Exames / Retornos próximos / Inatividade — Clínica Geral */}
+          {isClinicaGeral && (
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3,1fr)', gap: 14 }}>
+              <Card>
+                <SectionHeader icon={Flask} title="Exames para revisar" action={recentExams.length > 0 ? 'Ver todos' : undefined} onAction={() => go('patients')} />
+                {recentExams.length === 0 ? (
+                  <div style={{ padding: '18px 20px', fontSize: 12, color: MU }}>Nenhum exame recente.</div>
+                ) : recentExams.map((doc, i) => {
+                  const days = Math.floor((new Date().getTime() - new Date(doc.created_at).getTime()) / 86400000);
+                  return (
+                    <div key={doc.id} onClick={() => { const p = patients.find(x => x.id === doc.patient_id); if (p) { setActivePatient(p); setPendingDetailTab?.('Exames'); go('patient-detail'); } }}
+                      style={{ padding: '10px 20px', borderBottom: i < recentExams.length - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = PL}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{doc.patient_name}</div>
+                      <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>{doc.lab_name || doc.document_type}</div>
+                      <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>{days === 0 ? 'Enviado hoje' : `Enviado há ${days}d`}</div>
+                    </div>
+                  );
+                })}
+              </Card>
+              <Card>
+                <SectionHeader icon={CalendarBlank} title="Retornos próximos" action={chronicData && chronicData.upcomingReturns.length > 0 ? 'Ver todos' : undefined} onAction={() => go('patients')} />
+                {!chronicData || chronicData.upcomingReturns.length === 0 ? (
+                  <div style={{ padding: '18px 20px', fontSize: 12, color: MU }}>Nenhum retorno agendado.</div>
+                ) : chronicData.upcomingReturns.slice(0, 5).map((r, i) => (
+                  <div key={r.id} onClick={() => navToPatient(r.id)}
+                    style={{ padding: '10px 20px', borderBottom: i < Math.min(chronicData.upcomingReturns.length, 5) - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = PL}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{r.full_name}</div>
+                    <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>{r.conditions.slice(0, 2).join(', ') || '—'}</div>
+                    <div style={{ fontSize: 11, color: P, marginTop: 2, fontWeight: 500 }}>{fmtDate(r.next_return)}</div>
+                  </div>
+                ))}
+              </Card>
+              <Card>
+                <SectionHeader icon={ClockCounterClockwise} title="Sem consulta há muito tempo" action={longInactivePatients.length > 0 ? 'Ver todos' : undefined} onAction={() => go('patients')} />
+                {longInactivePatients.length === 0 ? (
+                  <div style={{ padding: '18px 20px', fontSize: 12, color: MU }}>Todos os pacientes em dia.</div>
+                ) : longInactivePatients.slice(0, 5).map((p, i) => (
+                  <div key={p.id} onClick={() => navToPatient(p.id)}
+                    style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: i < Math.min(longInactivePatients.length, 5) - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = PL}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{p.full_name}</span>
+                    <Badge color={p.days > 365 ? DES : WARN} bg={p.days > 365 ? DESL : WARNL}>{p.days} dias</Badge>
+                  </div>
+                ))}
+              </Card>
+            </div>
+          )}
+
           {/* 3b. Distribuição de condições — Clínica Geral */}
           {specialty !== 'Pediatria' && chronicData && chronicData.conditionDistribution.length > 0 && (
             <Card>
-              <SectionHeader icon={ChartBar} title="Condições mais frequentes" />
+              <SectionHeader icon={ChartBar} title="Pacientes em acompanhamento" />
               <div style={{ padding: '8px 20px 16px' }}>
                 {chronicData.conditionDistribution.map((cond, i) => {
                   const maxCount = chronicData.conditionDistribution[0].count;
                   const pct = Math.round((cond.count / maxCount) * 100);
                   return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < chronicData.conditionDistribution.length - 1 ? `1px solid ${BO}` : 'none' }}>
+                    <div key={i} onClick={() => { setPresetPatientSearch?.(cond.name); go('patients'); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < chronicData.conditionDistribution.length - 1 ? `1px solid ${BO}` : 'none', cursor: 'pointer' }}>
                       <span style={{ fontSize: 13, color: INK, width: 160, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{cond.name}</span>
                       <div style={{ flex: 1, height: 8, background: BO, borderRadius: 4, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${pct}%`, background: P, borderRadius: 4, transition: 'width 0.5s ease' }} />
@@ -1311,6 +1396,25 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
               );
             })}
           </Card>
+
+          {/* 5. Insights do dia (IA) — Clínica Geral */}
+          {isClinicaGeral && (
+            <Card>
+              <SectionHeader icon={Sparkle} title="Insights do dia (IA)" action="Ver todos os insights" onAction={() => go('patients')} />
+              <div style={{ padding: '14px 20px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2,1fr)', gap: 10 }}>
+                {clinicalInsights.map((insight, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', background: WARNL, border: `1px solid ${WARN}30`, borderRadius: 8, fontSize: 13, color: INK }}>
+                    <Warning size={14} color={WARN} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span>{insight}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', background: '#F3F4F6', border: `1px solid ${BO}`, borderRadius: 8, fontSize: 13, color: MU }}>
+                  <Info size={14} color={MU} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>Em breve: análise de exames e fatores de risco</span>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* RIGHT COLUMN */}
@@ -1348,8 +1452,8 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
             </div>
           </Card>
 
-          {/* Pontos de atenção (IA leve) */}
-          {attentionPoints.length > 0 && showAttentionPoints && (
+          {/* Pontos de atenção (IA leve) — Pediatria */}
+          {!isClinicaGeral && attentionPoints.length > 0 && showAttentionPoints && (
             <Card style={{ padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1368,6 +1472,34 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
               </div>
             </Card>
           )}
+
+          {/* Alertas Clínicos — Clínica Geral */}
+          {isClinicaGeral && (() => {
+            const rows: { label: string; count: number }[] = [
+              { label: 'Retornos vencidos', count: overdueAppts.length },
+              { label: 'Crônicos sem acompanhamento', count: chronicData?.patientsWithoutReturn.length ?? 0 },
+              { label: 'Exames pendentes', count: recentExams.length },
+              { label: 'Medicações sem renovação', count: -1 },
+              { label: 'Sem consulta há >12 meses', count: longInactiveOver365 },
+            ];
+            return (
+              <Card style={{ padding: 0 }}>
+                <SectionHeader icon={Warning} title="Alertas Clínicos" />
+                <div style={{ padding: '6px 0' }}>
+                  {rows.map((r, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 20px', borderBottom: i < rows.length - 1 ? `1px solid ${BO}` : 'none' }}>
+                      <span style={{ fontSize: 13, color: INK }}>{r.label}</span>
+                      {r.count === -1 ? (
+                        <span style={{ fontSize: 12, color: MU }} title="Em breve">—</span>
+                      ) : (
+                        <Badge color={r.count > 0 ? DES : SUC} bg={r.count > 0 ? DESL : SUCL}>{r.count}</Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            );
+          })()}
         </div>
       </div>
     </div>
@@ -1533,10 +1665,18 @@ const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated
 });
 
 // ─── PATIENTS ─────────────────────────────────────────────────────────────────
-function PatientsPage({ go, setActivePatient, specialty = 'Pediatria' }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; specialty?: string }) {
-  const [search, setSearch] = useState('');
+function PatientsPage({ go, setActivePatient, specialty = 'Pediatria', presetSearch, onConsumePresetSearch }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; specialty?: string; presetSearch?: string; onConsumePresetSearch?: () => void }) {
+  const [search, setSearch] = useState(presetSearch || '');
   // Defer filter computation so typing stays instant even with 200+ patients
   const deferredSearch = useDeferredValue(search);
+
+  // Consome busca pré-definida vinda do Dashboard (ex.: clique em uma condição)
+  useEffect(() => {
+    if (presetSearch) {
+      setSearch(presetSearch);
+      onConsumePresetSearch?.();
+    }
+  }, [presetSearch]);
   // patients come from shared PatientContext
   const { patients, loading: patientsLoading, refetch: refetchPatients } = usePatients();
   const [loading, setLoading] = useState(false);
@@ -2929,8 +3069,16 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
 }
 
 // ─── PATIENT DETAIL ───────────────────────────────────────────────────────────
-function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTrigger = 0, specialty = 'Pediatria' }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; onOpenDraft: (draft: Consultation) => void; refetchTrigger?: number; specialty?: string }) {
-  const [tab, setTab] = useState('Resumo');
+function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTrigger = 0, specialty = 'Pediatria', pendingTab, onConsumePendingTab }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; onOpenDraft: (draft: Consultation) => void; refetchTrigger?: number; specialty?: string; pendingTab?: string | null; onConsumePendingTab?: () => void }) {
+  const [tab, setTab] = useState(pendingTab || 'Resumo');
+
+  // Consome a aba pré-definida vinda do Dashboard (ex.: "Importar exames")
+  useEffect(() => {
+    if (pendingTab) {
+      setTab(pendingTab);
+      onConsumePendingTab?.();
+    }
+  }, [pendingTab]);
   const [selectedConsult, setSelectedConsult] = useState<Consultation | null>(null);
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [loadingC, setLoadingC] = useState(true);
@@ -5563,6 +5711,8 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [doctorName, setDoctorName] = useState('');
   const [doctorSpecialty, setDoctorSpecialty] = useState<string>('Pediatria');
+  const [presetPatientSearch, setPresetPatientSearch] = useState('');
+  const [pendingDetailTab, setPendingDetailTab] = useState<string | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [screen, setScreen] = useState('dashboard');
@@ -5750,11 +5900,11 @@ export default function App() {
               <RequireRole roles={['medico']}
                 fallback={<SecretaryDashboard go={go} setActivePatient={setActivePatient} onNewPatient={() => go('patients')} />}
               >
-                <DashboardPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} user={user} doctorName={doctorName} specialty={doctorSpecialty} />
+                <DashboardPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} user={user} doctorName={doctorName} specialty={doctorSpecialty} setPresetPatientSearch={setPresetPatientSearch} setPendingDetailTab={setPendingDetailTab} />
               </RequireRole>
             )}
-            {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} specialty={doctorSpecialty} />}
-            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} specialty={doctorSpecialty} onOpenDraft={async (draft) => {
+            {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} specialty={doctorSpecialty} presetSearch={presetPatientSearch} onConsumePresetSearch={() => setPresetPatientSearch('')} />}
+            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} specialty={doctorSpecialty} pendingTab={pendingDetailTab} onConsumePendingTab={() => setPendingDetailTab(null)} onOpenDraft={async (draft) => {
                 setRealSummary(draft.summary);
                 setRealTranscript('');
                 setDraftConsultationId(draft.id);
