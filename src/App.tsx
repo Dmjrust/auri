@@ -2890,6 +2890,32 @@ function MedicacoesAdultaTab({ medications }: { medications: Medication[] }) {
   );
 }
 
+// Categorização client-side de marcadores de exame por palavra-chave (case/acento-insensível).
+// Não depende de dados da IA — funciona inclusive para documentos já salvos antes desta mudança.
+const MARKER_CATEGORIES: { category: string; keywords: string[] }[] = [
+  { category: 'Hemograma', keywords: ['hemoglobina', 'hematocrito', 'eritrocito', 'leucocito', 'neutrofilo', 'eosinofilo', 'basofilo', 'linfocito', 'monocito', 'plaqueta', 'vcm', 'hcm', 'chcm', 'rdw', 'vpm', 'bastonete', 'segmentado'] },
+  { category: 'Glicemia', keywords: ['glicose', 'hba1c', 'glicada', 'insulina', 'homa'] },
+  { category: 'Lipidograma', keywords: ['colesterol', 'ldl', 'hdl', 'triglicer', 'apolipoproteina', 'vldl'] },
+  { category: 'Função Renal', keywords: ['ureia', 'creatinina', 'egfr', 'filtracao glomerular'] },
+  { category: 'Função Hepática', keywords: ['tgo', 'tgp', 'transaminase', 'gama-glutamil', 'gama glutamil', 'fosfatase alcalina', 'albumina', 'bilirrubina'] },
+  { category: 'Eletrólitos e Minerais', keywords: ['potassio', 'sodio', 'cloro', 'magnesio', 'calcio', 'zinco', 'cobre', 'ferro', 'ferritina', 'transferrina', 'saturacao da transferrina', 'fixacao'] },
+  { category: 'Vitaminas', keywords: ['vitamina', 'acido folico', 'folico', 'b-12', 'b12'] },
+  { category: 'Hormônios Tireoidianos', keywords: ['tsh', 'tireoestimulante', 't3', 't4', 'tiroxina', 'triiodotironina'] },
+  { category: 'Hormônios Sexuais e Adrenais', keywords: ['testosterona', 'estradiol', 'progesterona', 'fsh', 'foliculo estimulante', 'lh', 'luteinizante', 'prolactina', 'shbg', 'dehidroepiandrosterona', 'dheа', 'dht', 'dihidrotestosterona', 'cortisol'] },
+  { category: 'Marcadores Inflamatórios e Outros', keywords: ['proteina c reativa', 'pcr', 'homocisteina', 'acido urico', 'psa', 'prostatico'] },
+];
+
+function categorizeMarker(name: string): string {
+  const normalized = name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, ''); // remove acentos
+  for (const { category, keywords } of MARKER_CATEGORIES) {
+    if (keywords.some(k => normalized.includes(k))) return category;
+  }
+  return 'Outros';
+}
+
 function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentSaved }: {
   patientId: string;
   documents: ClinicalDocument[];
@@ -2903,6 +2929,7 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
   const [manualLab, setManualLab] = useState('');
   const [manualText, setManualText] = useState('');
   const [savingManual, setSavingManual] = useState(false);
+  const [onlyAltered, setOnlyAltered] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function handleFileUpload(file: File) {
@@ -2984,6 +3011,28 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
   const statusColor = (s: string) => s === 'alto' ? WARN : s === 'critico' ? DES : s === 'baixo' ? '#3B82F6' : SUC;
   const statusBg = (s: string) => s === 'alto' ? WARNL : s === 'critico' ? DESL : s === 'baixo' ? '#EFF6FF' : SUCL;
 
+  const alteredEntries = markerEntries.filter(([, m]) => m.status !== 'normal');
+  const visibleEntries = onlyAltered ? alteredEntries : markerEntries;
+
+  const groupedMarkers = visibleEntries.reduce<Record<string, [string, LabMarker][]>>((acc, entry) => {
+    const cat = categorizeMarker(entry[0]);
+    (acc[cat] ??= []).push(entry);
+    return acc;
+  }, {});
+  // Alterados primeiro dentro de cada categoria; categorias ordenadas pela quantidade de alterados, depois alfabético.
+  Object.values(groupedMarkers).forEach(entries => entries.sort((a, b) => {
+    const aAlt = a[1].status !== 'normal' ? 0 : 1;
+    const bAlt = b[1].status !== 'normal' ? 0 : 1;
+    return aAlt !== bAlt ? aAlt - bAlt : a[0].localeCompare(b[0]);
+  }));
+  const categoryOrder = Object.keys(groupedMarkers).sort((a, b) => {
+    const aAlt = groupedMarkers[a].filter(([, m]) => m.status !== 'normal').length;
+    const bAlt = groupedMarkers[b].filter(([, m]) => m.status !== 'normal').length;
+    return aAlt !== bAlt ? bAlt - aAlt : a.localeCompare(b);
+  });
+
+  const latestDocWithSummary = documents.find(d => d.ai_summary);
+
   const SH = ({ title, right }: { title: string; right?: React.ReactNode }) => (
     <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <span style={{ fontSize: 15, fontWeight: 600, fontFamily: '"Fraunces", Georgia, serif' }}>{title}</span>
@@ -3046,27 +3095,90 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
         </div>
       </Card>
 
+      {/* Resumo do laudo */}
+      {(markerEntries.length > 0 || latestDocWithSummary) && (
+        <Card style={{ borderColor: alteredEntries.length > 0 ? WARN : BO }}>
+          <SH
+            title="Resumo do laudo"
+            right={markerEntries.length > 0 ? (
+              <span style={{
+                fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99,
+                background: alteredEntries.length > 0 ? WARNL : SUCL,
+                color: alteredEntries.length > 0 ? WARN : SUC,
+              }}>
+                {alteredEntries.length > 0 ? `${alteredEntries.length} de ${markerEntries.length} fora da faixa` : `${markerEntries.length} marcadores normais`}
+              </span>
+            ) : undefined}
+          />
+          <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {alteredEntries.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                {alteredEntries.map(([name, marker]) => (
+                  <span key={name} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600,
+                    padding: '4px 10px', borderRadius: 99, background: statusBg(marker.status), color: statusColor(marker.status),
+                  }}>
+                    {name}: {marker.value} {marker.unit}
+                  </span>
+                ))}
+              </div>
+            )}
+            {latestDocWithSummary?.ai_summary && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, color: INK, lineHeight: 1.5 }}>
+                {alteredEntries.length > 0
+                  ? <Warning size={16} color={WARN} style={{ flexShrink: 0, marginTop: 2 }} />
+                  : <CheckCircle size={16} color={SUC} style={{ flexShrink: 0, marginTop: 2 }} />}
+                <span>{latestDocWithSummary.ai_summary}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Últimos marcadores */}
       {markerEntries.length > 0 && (
         <Card>
-          <SH title="Últimos marcadores" />
-          <div style={{ padding: '14px 20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {markerEntries.map(([name, marker]) => (
-                <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${BO}` }}>
-                  <div style={{ fontSize: 13, color: INK, fontWeight: 500 }}>{name}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ fontSize: 11, color: MU }}>{fmtDate(marker.result_date)}</div>
-                    <span style={{ fontSize: 13, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: statusColor(marker.status) }}>
-                      {marker.value} {marker.unit}
-                    </span>
-                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: statusBg(marker.status), color: statusColor(marker.status), fontWeight: 600 }}>
-                      {marker.status}
-                    </span>
-                  </div>
+          <SH
+            title="Últimos marcadores"
+            right={
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: MU, cursor: 'pointer', userSelect: 'none' as const }}>
+                <input type="checkbox" checked={onlyAltered} onChange={e => setOnlyAltered(e.target.checked)} />
+                Somente alterados
+              </label>
+            }
+          />
+          <div style={{ padding: '6px 20px 14px' }}>
+            {categoryOrder.map(category => (
+              <div key={category} style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 6 }}>
+                  {category}
                 </div>
-              ))}
-            </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {groupedMarkers[category].map(([name, marker]) => (
+                    <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${BO}`, gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: INK, fontWeight: 500 }}>{name}</div>
+                        {marker.reference_text && (
+                          <div style={{ fontSize: 11, color: MU, marginTop: 1 }}>Ref.: {marker.reference_text}</div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <div style={{ fontSize: 11, color: MU }}>{fmtDate(marker.result_date)}</div>
+                        <span style={{ fontSize: 13, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: statusColor(marker.status) }}>
+                          {marker.value} {marker.unit}
+                        </span>
+                        <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: statusBg(marker.status), color: statusColor(marker.status), fontWeight: 600 }}>
+                          {marker.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {onlyAltered && alteredEntries.length === 0 && (
+              <div style={{ padding: '20px 0', textAlign: 'center', fontSize: 13, color: MU }}>Nenhum marcador fora da faixa.</div>
+            )}
           </div>
         </Card>
       )}
