@@ -36,6 +36,7 @@ logs/
 .claude/
 tmp/
 temp/
+tmp-live-test/
 
 # Supabase local
 supabase/.temp/
@@ -49,3 +50,5 @@ playwright/.auth/
 playwright-report/
 test-results/
 .env.test
+
+.vercel
