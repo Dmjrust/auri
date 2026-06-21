@@ -2933,7 +2933,8 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
         result_date = extracted.result_date;
         summary = extracted.summary || null;
         markers = extracted.markers;
-      } catch {
+      } catch (e) {
+        console.error('[handleFileUpload] extração via IA falhou:', e);
         extractionFailed = true;
       }
 

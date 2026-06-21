@@ -625,7 +625,7 @@ export async function extractExamData(base64: string, mimeType: string): Promise
       model: 'gpt-4o',
       response_format: { type: 'json_object' },
       temperature: 0.1,
-      max_tokens: 4096,
+      max_tokens: 16000, // documento exaustivo pode ter 30-40+ marcadores — não limitar artificialmente
       messages: [
         { role: 'system', content: EXAM_EXTRACTION_SYSTEM_PROMPT },
         {
@@ -637,9 +637,23 @@ export async function extractExamData(base64: string, mimeType: string): Promise
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `GPT-4o exame ${res.status}`);
+    const message = err?.error?.message || `GPT-4o exame ${res.status}`;
+    console.error('[extractExamData] erro da API OpenAI:', message);
+    throw new Error(message);
   }
-  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
+  const json = await res.json();
+  const choice = json.choices[0];
+  if (choice.finish_reason === 'length') {
+    console.error('[extractExamData] resposta truncada por limite de tokens (finish_reason=length)');
+    throw new Error('Resposta da IA truncada — documento muito extenso para uma única extração.');
+  }
+  let raw: Record<string, any>;
+  try {
+    raw = JSON.parse(choice.message.content);
+  } catch (e) {
+    console.error('[extractExamData] falha ao parsear JSON da IA:', e, '\nConteúdo recebido:', choice.message.content);
+    throw new Error('Resposta da IA em formato inválido.');
+  }
 
   const markers = Array.isArray(raw.markers)
     ? raw.markers
