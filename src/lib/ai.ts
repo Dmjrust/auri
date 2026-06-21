@@ -655,17 +655,24 @@ export async function extractExamData(base64: string, mimeType: string): Promise
     throw new Error('Resposta da IA em formato inválido.');
   }
 
+  // Tolerante a decimal brasileiro (vírgula) mesmo que o modelo não converta como instruído.
+  const toNumber = (v: unknown): number => {
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') return Number(v.trim().replace(',', '.'));
+    return NaN;
+  };
+
   const markers = Array.isArray(raw.markers)
     ? raw.markers
-        .filter((m: any) => m && typeof m.marker_name === 'string' && !isNaN(Number(m.value)))
+        .filter((m: any) => m && typeof m.marker_name === 'string' && !isNaN(toNumber(m.value)))
         .map((m: any) => ({
           result_date: String(raw.result_date ?? new Date().toISOString().slice(0, 10)),
           marker_name: String(m.marker_name),
-          value: Number(m.value),
+          value: toNumber(m.value),
           unit: String(m.unit ?? ''),
           reference_text: m.reference_text != null ? String(m.reference_text) : null,
-          reference_min: m.reference_min != null && !isNaN(Number(m.reference_min)) ? Number(m.reference_min) : null,
-          reference_max: m.reference_max != null && !isNaN(Number(m.reference_max)) ? Number(m.reference_max) : null,
+          reference_min: m.reference_min != null && !isNaN(toNumber(m.reference_min)) ? toNumber(m.reference_min) : null,
+          reference_max: m.reference_max != null && !isNaN(toNumber(m.reference_max)) ? toNumber(m.reference_max) : null,
           status: (['normal', 'alto', 'baixo', 'critico'].includes(m.status) ? m.status : 'normal') as LabMarker['status'],
         }))
     : [];
