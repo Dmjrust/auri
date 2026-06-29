@@ -54,6 +54,7 @@ interface RawConsultationRow {
   sum_perimetro_cefalico: string | null;
   sum_vacinas_mencionadas: string[] | null;
   specialty_data: Record<string, unknown> | null;
+  requested_exams: string[] | null;
 }
 
 interface RawAppointmentRow {
@@ -181,7 +182,7 @@ export interface AgendaAppointment {
   patient_name: string;
   age: string;
   type: 'retorno' | 'primeira vez';
-  status: 'completed' | 'in_progress' | 'scheduled';
+  status: 'completed' | 'confirmed' | 'in_progress' | 'scheduled';
   chief_complaint: string;
   guardian: string;
   date: string;
@@ -196,7 +197,7 @@ export interface TodayAppointment {
   patient_birth_date: string;
   age: string;
   type: 'retorno' | 'primeira vez';
-  status: 'completed' | 'in_progress' | 'scheduled';
+  status: 'completed' | 'confirmed' | 'in_progress' | 'scheduled';
   guardian: string;
   guardian_phone: string;
 }
@@ -350,6 +351,7 @@ export async function saveConsultation(
     sum_perimetro_cefalico: summary.perimetro_cefalico,
     sum_vacinas_mencionadas: summary.vacinas_mencionadas,
     specialty_data: summary.specialty_data ?? null,
+    requested_exams: summary.requested_exams ?? null,
     ai_transcribed: aiTranscribed,
   }).select('id').single();
   if (error) throw error;
@@ -406,6 +408,7 @@ export async function saveDraftConsultation(
     sum_perimetro_cefalico: summary.perimetro_cefalico,
     sum_vacinas_mencionadas: summary.vacinas_mencionadas,
     specialty_data: summary.specialty_data ?? null,
+    requested_exams: summary.requested_exams ?? null,
   }).select('id').single();
   if (error) throw error;
   return data.id;
@@ -442,6 +445,7 @@ export async function confirmDraftConsultation(
       sum_perimetro_cefalico:   summary.perimetro_cefalico,
       sum_vacinas_mencionadas:  summary.vacinas_mencionadas,
       specialty_data:           summary.specialty_data ?? null,
+      requested_exams:          summary.requested_exams ?? null,
       ai_transcribed:           true, // drafts sempre vêm do fluxo de gravação + IA
     })
     .eq('id', draftId)
@@ -489,6 +493,7 @@ export async function updateDraftConsultation(
       sum_perimetro_cefalico:   summary.perimetro_cefalico,
       sum_vacinas_mencionadas:  summary.vacinas_mencionadas,
       specialty_data:           summary.specialty_data ?? null,
+      requested_exams:          summary.requested_exams ?? null,
     })
     .eq('id', draftId);
   if (error) throw error;
@@ -552,7 +557,7 @@ export async function fetchAppointmentsForWeek(from: string, to: string): Promis
       patient_name: patient?.full_name || 'Paciente',
       age,
       type: (c.type || 'retorno') as 'retorno' | 'primeira vez',
-      status: (c.status || 'scheduled') as 'completed' | 'in_progress' | 'scheduled',
+      status: (c.status || 'scheduled') as 'completed' | 'confirmed' | 'in_progress' | 'scheduled',
       chief_complaint: c.chief_complaint || '',
       guardian: primary?.name || '',
       date: c.scheduled_at.slice(0, 10),
@@ -564,7 +569,7 @@ export async function updateAppointment(id: string, input: {
   scheduled_at?: string;
   type?: 'retorno' | 'primeira vez';
   chief_complaint?: string;
-  status?: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  status?: 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
 }): Promise<void> {
   const { error } = await supabase.from('appointments').update(input).eq('id', id);
   if (error) throw error;
@@ -604,7 +609,7 @@ export async function fetchTodayAppointments(): Promise<TodayAppointment[]> {
       patient_birth_date: patient?.birth_date || '',
       age,
       type: (c.type || 'retorno') as 'retorno' | 'primeira vez',
-      status: (c.status || 'scheduled') as 'completed' | 'in_progress' | 'scheduled',
+      status: (c.status || 'scheduled') as 'completed' | 'confirmed' | 'in_progress' | 'scheduled',
       guardian: primary?.name || '',
       guardian_phone: primary?.phone || '',
     };
@@ -1147,7 +1152,9 @@ function mapConsultation(c: RawConsultationRow): Consultation {
       perimetro_cefalico: c.sum_perimetro_cefalico || '',
       vacinas_mencionadas: c.sum_vacinas_mencionadas || [],
       specialty_data: c.specialty_data ?? null,
+      requested_exams: c.requested_exams ?? null,
     },
+    requested_exams: c.requested_exams ?? null,
   };
 }
 
@@ -1791,6 +1798,20 @@ export async function fetchLabMarkerHistory(patientId: string, markerName: strin
   return data as LabMarker[];
 }
 
+export async function fetchMarkersForDocuments(documentIds: string[]): Promise<Record<string, LabMarker[]>> {
+  if (documentIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('lab_markers')
+    .select('*')
+    .in('clinical_document_id', documentIds);
+  if (error || !data) return {};
+  const result: Record<string, LabMarker[]> = {};
+  for (const row of data as LabMarker[]) {
+    (result[row.clinical_document_id] ??= []).push(row);
+  }
+  return result;
+}
+
 export async function fetchLatestMarkers(patientId: string): Promise<Record<string, LabMarker>> {
   const { data, error } = await supabase
     .from('lab_markers')
@@ -1815,7 +1836,8 @@ export async function saveLabResult(
   fileUrl: string | null,
   rawText: string | null,
   aiSummary: string | null,
-  markers: Omit<LabMarker, 'id' | 'clinical_document_id' | 'patient_id' | 'created_at'>[]
+  markers: Omit<LabMarker, 'id' | 'clinical_document_id' | 'patient_id' | 'created_at'>[],
+  consultationId: string | null = null
 ): Promise<ClinicalDocument | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -1825,6 +1847,7 @@ export async function saveLabResult(
     .insert({
       patient_id: patientId,
       doctor_id: user.id,
+      consultation_id: consultationId,
       document_type: docType,
       result_date: resultDate,
       lab_name: labName,
@@ -1845,6 +1868,49 @@ export async function saveLabResult(
   }
 
   return doc as ClinicalDocument;
+}
+
+// Vincula um documento clínico já existente a uma consulta (ex.: usuário escolhe
+// depois do upload, ou corrige o vínculo automático sugerido na UI).
+export async function linkClinicalDocumentToConsultation(documentId: string, consultationId: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('clinical_documents')
+    .update({ consultation_id: consultationId })
+    .eq('id', documentId);
+  if (error) throw error;
+}
+
+// ── Exames pedidos na consulta anterior (para o médico checar no retorno) ─────
+export interface LastRequestedExamsInfo {
+  consultationId: string;
+  date: string;
+  requestedExams: string[];
+  linkedDocuments: { id: string; lab_name: string | null; result_date: string }[];
+}
+
+export async function fetchLastRequestedExams(patientId: string): Promise<LastRequestedExamsInfo | null> {
+  const { data, error } = await supabase
+    .from('consultations')
+    .select('id, scheduled_at, requested_exams')
+    .eq('patient_id', patientId)
+    .eq('status', 'completed')
+    .not('requested_exams', 'is', null)
+    .order('scheduled_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data || !data.requested_exams?.length) return null;
+
+  const { data: docs } = await supabase
+    .from('clinical_documents')
+    .select('id, lab_name, result_date')
+    .eq('consultation_id', data.id);
+
+  return {
+    consultationId: data.id,
+    date: data.scheduled_at.slice(0, 10),
+    requestedExams: data.requested_exams,
+    linkedDocuments: docs || [],
+  };
 }
 
 // Sobe o arquivo original (PDF/imagem) ao bucket privado "clinical-documents" e

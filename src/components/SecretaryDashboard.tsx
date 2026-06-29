@@ -86,6 +86,8 @@ function StatusBadge({ appt }: { appt: TodayAppt }) {
     return <Badge label="Realizada" color={SUC} bg={SUCL} icon={<CheckCircle size={11} weight="fill" />} />;
   if (appt.status === 'in_progress')
     return <Badge label="Em consulta" color={P} bg={PL} icon={<Stethoscope size={11} />} />;
+  if (appt.status === 'confirmed')
+    return <Badge label="Na sala de espera" color={WARN} bg={WARNL} icon={<Clock size={11} />} />;
   if (delayed)
     return <Badge label="Atrasado" color={DANGER} bg={DANGERL} icon={<Warning size={11} weight="fill" />} />;
   return <Badge label="Aguardando" color={WARN} bg={WARNL} icon={<Hourglass size={11} />} />;

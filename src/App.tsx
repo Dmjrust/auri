@@ -984,6 +984,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
   const firstTimePatients = patients.filter(p => !(consultSummaries[p.id]?.count > 0));
   const retornosPendentes = overdueAppts.length;
   const completedToday = todayAppts.filter(a => a.status === 'completed' || a.status === 'in_progress').length;
+  const waitingToday = todayAppts.filter(a => a.status === 'confirmed').length;
 
   // Filtered by dismissed state
   const displayedOverdueAppts = overdueAppts.filter(a => !dismissedPriorities.has(`retorno:${a.patient_id}`));
@@ -1062,7 +1063,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
     return `há ${Math.floor(diff / 86400)}d`;
   };
 
-  const nextPending = todayAppts.find(a => a.status === 'scheduled');
+  const nextPending = todayAppts.find(a => a.status === 'scheduled' || a.status === 'confirmed');
   const firstName = doctorName.toLowerCase().includes('dr.') || doctorName.toLowerCase().startsWith('dr ')
     ? doctorName.split(' ').slice(1).join(' ').split(' ')[0]
     : doctorName.split(' ')[0];
@@ -1086,7 +1087,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
       {!isClinicaGeral ? (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
           <KpiCard label="Hoje" value={todayAppts.length} sub={`consulta${todayAppts.length !== 1 ? 's' : ''} agendada${todayAppts.length !== 1 ? 's' : ''}`} isMobile={isMobile} bg={PL} border={`${P}20`} />
-          <KpiCard label="Realizadas" value={completedToday} sub={`de ${todayAppts.length} hoje`} isMobile={isMobile} bg={completedToday > 0 ? SUCL : '#fff'} border={completedToday > 0 ? `${SUC}30` : BO} valueColor={completedToday > 0 ? SUC : MU} />
+          <KpiCard label="Realizadas" value={completedToday} sub={`de ${todayAppts.length} hoje${waitingToday > 0 ? ` · ${waitingToday} na sala de espera` : ''}`} isMobile={isMobile} bg={completedToday > 0 ? SUCL : '#fff'} border={completedToday > 0 ? `${SUC}30` : BO} valueColor={completedToday > 0 ? SUC : MU} />
           <KpiCard label="Prioridades" value={totalPrioridades} sub={totalPrioridades === 0 ? 'tudo em dia ✓' : `pendência${totalPrioridades !== 1 ? 's' : ''}`} isMobile={isMobile} bg={totalPrioridades > 0 ? DESL : SUCL} border={totalPrioridades > 0 ? `${DES}30` : `${SUC}30`} valueColor={totalPrioridades > 0 ? DES : SUC} />
           <KpiCard label="Próxima" value={nextPending?.time || '—'} sub={nextPending ? nextPending.patient_name.split(' ')[0] : 'sem pendentes'} isMobile={isMobile} valueColor={nextPending ? P : MU} />
         </div>
@@ -1889,8 +1890,14 @@ function SectionLabel({ abbrev, full }: { abbrev: string; full: string }) {
   );
 }
 
-function ConsultationDetail({ consult, onBack }: { consult: Consultation; onBack: () => void }) {
+function ConsultationDetail({ consult, onBack, linkedDocuments = [] }: { consult: Consultation; onBack: () => void; linkedDocuments?: ClinicalDocument[] }) {
   const { format } = useContext(ProntuarioFormatCtx);
+  const [markersByDoc, setMarkersByDoc] = useState<Record<string, LabMarker[]>>({});
+
+  useEffect(() => {
+    if (linkedDocuments.length === 0) { setMarkersByDoc({}); return; }
+    db.fetchMarkersForDocuments(linkedDocuments.map(d => d.id)).then(setMarkersByDoc).catch(() => setMarkersByDoc({}));
+  }, [linkedDocuments.map(d => d.id).join(',')]);
 
   if (format === 'escaneavel') {
     return <ScannableConsultationDetail consult={consult} onBack={onBack} />;
@@ -2016,6 +2023,27 @@ function ConsultationDetail({ consult, onBack }: { consult: Consultation; onBack
               {consult.plan}
             </div>
           </div>
+
+          {/* ── Exames — pedidos nesta consulta + resultados vinculados ── */}
+          {((consult.requested_exams?.length ?? 0) > 0 || linkedDocuments.length > 0) && (
+            <div>
+              <SectionLabel abbrev="EX" full="Exames" />
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10, paddingLeft: 4 }}>
+                {(consult.requested_exams ?? []).map((examName, i) => {
+                  const fulfilled = linkedDocuments.length > 0;
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 14 }}>{examName}</span>
+                      <Badge color={fulfilled ? SUC : WARN} bg={fulfilled ? SUCL : WARNL}>{fulfilled ? 'Resultado disponível' : 'Pendente'}</Badge>
+                    </div>
+                  );
+                })}
+                {linkedDocuments.map(doc => (
+                  <ExamResultCard key={doc.id} document={doc} markers={markersByDoc[doc.id] ?? []} />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Prescrição ── */}
           {consult.prescription && (
@@ -2916,11 +2944,67 @@ function categorizeMarker(name: string): string {
   return 'Outros';
 }
 
-function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentSaved }: {
+// Card de um laudo (documento + marcadores) — usado dentro da consulta que o pediu
+// e também na aba Exames (histórico geral).
+function ExamResultCard({ document: doc, markers }: { document: ClinicalDocument; markers: LabMarker[] }) {
+  const statusColor = (s: string) => s === 'alto' ? WARN : s === 'critico' ? DES : s === 'baixo' ? '#3B82F6' : SUC;
+  const statusBg = (s: string) => s === 'alto' ? WARNL : s === 'critico' ? DESL : s === 'baixo' ? '#EFF6FF' : SUCL;
+  const altered = markers.filter(m => m.status !== 'normal');
+
+  const grouped = markers.reduce<Record<string, LabMarker[]>>((acc, m) => {
+    const cat = categorizeMarker(m.marker_name);
+    (acc[cat] ??= []).push(m);
+    return acc;
+  }, {});
+
+  return (
+    <Card style={{ borderColor: altered.length > 0 ? WARN : BO }}>
+      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: INK }}>
+            {doc.document_type.charAt(0).toUpperCase() + doc.document_type.slice(1)}
+            {doc.lab_name ? ` — ${doc.lab_name}` : ''}
+          </span>
+          <span style={{ fontSize: 11, color: MU, marginLeft: 8 }}>{fmtDate(doc.result_date)}</span>
+        </div>
+        {markers.length > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: altered.length > 0 ? WARNL : SUCL, color: altered.length > 0 ? WARN : SUC }}>
+            {altered.length > 0 ? `${altered.length} de ${markers.length} fora da faixa` : `${markers.length} normais`}
+          </span>
+        )}
+      </div>
+      <div style={{ padding: '12px 16px' }}>
+        {doc.ai_summary && (
+          <p style={{ margin: '0 0 10px', fontSize: 13, color: INK, lineHeight: 1.5 }}>{doc.ai_summary}</p>
+        )}
+        {Object.entries(grouped).map(([category, ms]) => (
+          <div key={category} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 4 }}>{category}</div>
+            {ms.map(m => (
+              <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: `1px solid ${BO}`, gap: 10 }}>
+                <span style={{ fontSize: 13, color: INK }}>{m.marker_name}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: statusColor(m.status), background: statusBg(m.status), padding: '2px 8px', borderRadius: 4 }}>
+                  {m.value} {m.unit}
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+        {doc.file_url && (
+          <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: P, textDecoration: 'none' }}>Ver arquivo original</a>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function ClinicalDocumentsTab({ patientId, documents, latestMarkers, consultations, onDocumentSaved, onViewConsultation }: {
   patientId: string;
   documents: ClinicalDocument[];
   latestMarkers: Record<string, LabMarker>;
+  consultations: Consultation[];
   onDocumentSaved: () => void;
+  onViewConsultation: (consultationId: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadStep, setUploadStep] = useState('');
@@ -2928,6 +3012,11 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
   const [manualDate, setManualDate] = useState('');
   const [manualLab, setManualLab] = useState('');
   const [manualText, setManualText] = useState('');
+  // Sugestão default: consulta mais recente com exames pedidos e ainda sem nenhum documento vinculado
+  const suggestedConsultId = consultations.find(c =>
+    (c.requested_exams?.length ?? 0) > 0 && !documents.some(d => d.consultation_id === c.id)
+  )?.id ?? '';
+  const [linkConsultId, setLinkConsultId] = useState(suggestedConsultId);
   const [savingManual, setSavingManual] = useState(false);
   const [onlyAltered, setOnlyAltered] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -2974,7 +3063,8 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
         fileUrl,
         null,
         summary,
-        markers
+        markers,
+        linkConsultId || null
       );
 
       if (!saved) {
@@ -2997,7 +3087,7 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
     if (!manualDate || !manualText.trim()) return;
     setSavingManual(true);
     try {
-      await db.saveLabResult(patientId, 'laboratorio', manualDate, manualLab || null, 'manual', null, manualText, null, []);
+      await db.saveLabResult(patientId, 'laboratorio', manualDate, manualLab || null, 'manual', null, manualText, null, [], linkConsultId || null);
       toast.success('Resultado salvo.');
       setManualOpen(false);
       setManualDate(''); setManualLab(''); setManualText('');
@@ -3055,18 +3145,33 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const }}>
-              <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); }} />
-              <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
-                <FileText size={15} /> PDF
-              </Btn>
-              <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
-                <Brain size={15} /> Imagem
-              </Btn>
-              <Btn variant="secondary" onClick={() => setManualOpen(v => !v)} style={{ gap: 6 }}>
-                <PencilSimple size={15} /> Manual
-              </Btn>
-            </div>
+            <>
+              {consultations.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Vincular à consulta</label>
+                  <select value={linkConsultId} onChange={e => setLinkConsultId(e.target.value)} style={inputStyle2}>
+                    <option value="">Sem vínculo (histórico geral)</option>
+                    {consultations.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {fmtDate(c.scheduled_at.split('T')[0])}{(c.requested_exams?.length ?? 0) > 0 ? ' — exames pendentes' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const }}>
+                <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); }} />
+                <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
+                  <FileText size={15} /> PDF
+                </Btn>
+                <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
+                  <Brain size={15} /> Imagem
+                </Btn>
+                <Btn variant="secondary" onClick={() => setManualOpen(v => !v)} style={{ gap: 6 }}>
+                  <PencilSimple size={15} /> Manual
+                </Btn>
+              </div>
+            </>
           )}
           {manualOpen && (
             <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -3186,9 +3291,11 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
       {/* Histórico de documentos */}
       {documents.length > 0 && (
         <Card>
-          <SH title="Documentos anteriores" />
+          <SH title="Histórico geral de documentos" right={<span style={{ fontSize: 11, color: MU }}>todos os laudos do paciente</span>} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {documents.map(doc => (
+            {documents.map(doc => {
+              const linkedConsult = doc.consultation_id ? consultations.find(c => c.id === doc.consultation_id) : null;
+              return (
               <div key={doc.id} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 500, color: INK }}>
@@ -3198,11 +3305,19 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, onDocumentS
                   <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>{fmtDate(doc.result_date)}</div>
                   {doc.ai_summary && <div style={{ fontSize: 12, color: MU, marginTop: 4, fontStyle: 'italic' }}>{doc.ai_summary}</div>}
                 </div>
-                {doc.file_url && (
-                  <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: P, textDecoration: 'none' }}>Ver arquivo</a>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
+                  {linkedConsult && (
+                    <button onClick={() => onViewConsultation(linkedConsult.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: P, padding: 0, fontFamily: 'inherit' }}>
+                      Ver na consulta de {fmtDate(linkedConsult.scheduled_at.split('T')[0])}
+                    </button>
+                  )}
+                  {doc.file_url && (
+                    <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: P, textDecoration: 'none' }}>Ver arquivo</a>
+                  )}
+                </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}
@@ -4052,7 +4167,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
 
         {tab === 'Consultas' && (
           selectedConsult
-            ? <RequireRole roles={['medico']} onBack={() => setSelectedConsult(null)}><ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} /></RequireRole>
+            ? <RequireRole roles={['medico']} onBack={() => setSelectedConsult(null)}><ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} linkedDocuments={clinicalDocs.filter(d => d.consultation_id === selectedConsult.id)} /></RequireRole>
             : (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
@@ -4147,9 +4262,14 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
             patientId={patient.id}
             documents={clinicalDocs}
             latestMarkers={latestMarkers}
+            consultations={pastConsultations}
             onDocumentSaved={() => {
               db.fetchClinicalDocuments(patient.id).then(setClinicalDocs);
               db.fetchLatestMarkers(patient.id).then(setLatestMarkers);
+            }}
+            onViewConsultation={(consultId) => {
+              const c = pastConsultations.find(p => p.id === consultId);
+              if (c) { setSelectedConsult(c); setTab('Consultas'); }
             }}
           />
         )}
@@ -4253,12 +4373,18 @@ function AppointmentDetailModal({
   const [complaint, setComplaint] = useState(appt.chief_complaint || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [lastExams, setLastExams] = useState<db.LastRequestedExamsInfo | null>(null);
+
+  useEffect(() => {
+    if (appt.type !== 'retorno') { setLastExams(null); return; }
+    db.fetchLastRequestedExams(appt.patient_id).then(setLastExams).catch(() => setLastExams(null));
+  }, [appt.patient_id, appt.type]);
 
   const inputSt: React.CSSProperties = { width: '100%', padding: '10px 12px', border: `1px solid ${BO}`, borderRadius: 8, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', background: '#fff', color: INK };
   const labelSt: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 600, color: MU, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 };
 
-  const STATUS_LABEL: Record<string, string> = { scheduled: 'Aguardando confirmação', in_progress: 'Em andamento', completed: 'Realizada', cancelled: 'Cancelada' };
-  const STATUS_COLOR: Record<string, string> = { scheduled: WARN, in_progress: P, completed: SUC, cancelled: MU };
+  const STATUS_LABEL: Record<string, string> = { scheduled: 'Aguardando confirmação', confirmed: 'Paciente chegou', in_progress: 'Em atendimento', completed: 'Realizada', cancelled: 'Cancelada' };
+  const STATUS_COLOR: Record<string, string> = { scheduled: WARN, confirmed: ACCENT, in_progress: P, completed: SUC, cancelled: MU };
   const sColor = STATUS_COLOR[appt.status] || MU;
 
   async function save() {
@@ -4270,7 +4396,7 @@ function AppointmentDetailModal({
   }
   async function confirm() {
     setSaving(true);
-    try { await db.updateAppointment(appt.id, { status: 'in_progress' }); onUpdate(); }
+    try { await db.updateAppointment(appt.id, { status: 'confirmed' }); onUpdate(); }
     catch (e: any) { setError(e.message || 'Erro.'); setSaving(false); }
   }
   async function markDone() {
@@ -4339,6 +4465,26 @@ function AppointmentDetailModal({
                   </div>
                 )}
               </div>
+
+              {/* Exames pedidos na consulta anterior — para conferir o que o paciente trouxe */}
+              {lastExams && (
+                <div style={{ padding: '12px 16px', background: WARNL, border: `1px solid ${WARN}30`, borderRadius: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: WARN, letterSpacing: 0.5, marginBottom: 8 }}>
+                    EXAMES PEDIDOS EM {fmtDate(lastExams.date)}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {lastExams.requestedExams.map((exam, i) => {
+                      const fulfilled = lastExams.linkedDocuments.length > 0;
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {fulfilled ? <CheckCircle size={14} color={SUC} /> : <Warning size={14} color={WARN} />}
+                          <span style={{ fontSize: 13, color: INK }}>{exam}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -4438,9 +4584,10 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
 
   const allAppts = Object.values(apptsByDate).flat();
   const todayAppts = apptsByDate[todayIso] || [];
-  const confirmed = allAppts.filter(a => a.status === 'completed' || a.status === 'in_progress').length;
+  const attendedCount = allAppts.filter(a => a.status === 'completed' || a.status === 'in_progress').length;
+  const waitingCount = allAppts.filter(a => a.status === 'confirmed').length;
   const pending = allAppts.filter(a => a.status === 'scheduled').length;
-  const nextAppt = todayAppts.find(a => a.status === 'scheduled' || a.status === 'in_progress');
+  const nextAppt = todayAppts.find(a => a.status === 'scheduled' || a.status === 'confirmed' || a.status === 'in_progress');
 
   // Collect all unique times from week, sorted
   const allTimes = [...new Set(allAppts.map(a => a.time))].sort();
@@ -4457,11 +4604,13 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
   // Appointment card colors
   function apptBg(a: AppointmentRow) {
     if (a.status === 'completed') return `${SUC}12`;
+    if (a.status === 'confirmed') return `${WARN}14`;
     if (a.type === 'primeira vez') return `${ACCENT}14`;
     return `${P}10`;
   }
   function apptBorder(a: AppointmentRow) {
     if (a.status === 'completed') return SUC;
+    if (a.status === 'confirmed') return WARN;
     if (a.type === 'primeira vez') return ACCENT;
     return P;
   }
@@ -4498,7 +4647,7 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: isMobile ? 10 : 16, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(5,1fr)', gap: isMobile ? 10 : 16, marginBottom: 24 }}>
         <Card style={{ padding: isMobile ? 14 : '16px 20px' }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>HOJE</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
@@ -4507,8 +4656,12 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
           </div>
         </Card>
         <Card style={{ padding: isMobile ? 14 : '16px 20px' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>CONFIRMADAS</div>
-          <span style={{ fontSize: 32, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: SUC, letterSpacing: '-0.02em' }}>{loading ? '—' : confirmed}</span>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>REALIZADAS</div>
+          <span style={{ fontSize: 32, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: SUC, letterSpacing: '-0.02em' }}>{loading ? '—' : attendedCount}</span>
+        </Card>
+        <Card style={{ padding: isMobile ? 14 : '16px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>NA SALA DE ESPERA</div>
+          <span style={{ fontSize: 32, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: waitingCount > 0 ? ACCENT : MU, letterSpacing: '-0.02em' }}>{loading ? '—' : waitingCount}</span>
         </Card>
         <Card style={{ padding: isMobile ? 14 : '16px 20px' }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: MU, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginBottom: 8 }}>AGUARDANDO</div>
@@ -4624,6 +4777,7 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
                   <div style={{ fontSize: 12, color: MU }}>{appt.age} · {appt.chief_complaint || appt.type}</div>
                 </div>
                 {appt.status === 'completed' && <Badge color={SUC} bg={SUCL}><CheckCircle size={10} /></Badge>}
+                {appt.status === 'confirmed' && <Badge color={WARN} bg={WARNL}><Clock size={10} /></Badge>}
                 {appt.status === 'in_progress' && <Badge color={P} bg={PL}><Heartbeat size={10} /></Badge>}
               </div>
             ))}

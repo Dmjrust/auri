@@ -72,6 +72,8 @@ export interface StructuredSummary {
   peso: string; altura: string; perimetro_cefalico: string; vacinas_mencionadas: string[];
   // Tricologia: objeto extraído pela IA com campos capilares; null em consultas pediátricas
   specialty_data?: Record<string, unknown> | null;
+  // Exames pedidos nesta consulta (lista estruturada, não texto livre)
+  requested_exams?: string[] | null;
 }
 export interface Consultation {
   id: string; patient_id: string; scheduled_at: string; status: string;
@@ -79,6 +81,9 @@ export interface Consultation {
   chief_complaint: string; diagnosis: string; plan: string;
   prescription: string; anamnesis: string; physical_exam: string;
   summary: StructuredSummary;
+  // Lista estruturada dos exames pedidos nesta consulta (fonte de verdade para
+  // vincular o pedido ao resultado que chega depois, em vez de texto livre solto)
+  requested_exams?: string[] | null;
 }
 export interface GrowthPoint { month: number; weight?: number; height?: number; hc?: number; }
 export interface OmsPoint { month: number; p3: number; p15: number; p50: number; p85: number; p97: number; }
@@ -89,7 +94,7 @@ export interface VaccineRecord {
 export interface Appointment {
   id: string; time: string; patient_id: string; patient_name: string;
   age: string; type: 'retorno' | 'primeira vez';
-  status: 'completed' | 'in_progress' | 'scheduled'; guardian: string;
+  status: 'completed' | 'confirmed' | 'in_progress' | 'scheduled'; guardian: string;
 }
 export interface Insight { type: 'alert' | 'pattern' | 'info'; title: string; body: string; }
 
@@ -191,6 +196,9 @@ export type ClinicalDocumentType = 'laboratorio' | 'imagem' | 'laudo' | 'relator
 export interface ClinicalDocument {
   id: string;
   patient_id: string;
+  // Consulta em que o exame foi pedido/discutido — null para documentos antigos
+  // ainda não vinculados ou anexados fora do fluxo de uma consulta.
+  consultation_id: string | null;
   document_type: ClinicalDocumentType;
   result_date: string;
   lab_name: string | null;

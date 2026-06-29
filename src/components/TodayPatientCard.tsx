@@ -30,7 +30,7 @@ export interface TodayAppt {
   patient_birth_date: string;
   age: string;
   type: 'retorno' | 'primeira vez';
-  status: 'completed' | 'in_progress' | 'scheduled';
+  status: 'completed' | 'confirmed' | 'in_progress' | 'scheduled';
   guardian: string;
   guardian_phone: string;
 }
@@ -124,6 +124,7 @@ export function TodayPatientCard({ appt, patient, briefing, defaultExpanded, onS
 
   const isDone       = appt.status === 'completed';
   const isInProgress = appt.status === 'in_progress';
+  const isConfirmed  = appt.status === 'confirmed';
   const isPrimeira   = appt.type === 'primeira vez';
   const isClinicaGeral = specialty !== 'Pediatria';
   const allergy      = detectAllergy(patient?.notes || '');
@@ -137,13 +138,13 @@ export function TodayPatientCard({ appt, patient, briefing, defaultExpanded, onS
   const alertCount     = (overdueVaccs.length > 0 ? 1 : 0) + (retornoLag !== null && retornoLag > 0 ? 1 : 0) + (allergy ? 1 : 0);
 
   // Cor da borda lateral por estado
-  const borderColor = isDone ? SUC : isInProgress ? P : hasAlerts ? DANGER : BO;
+  const borderColor = isDone ? SUC : isInProgress ? P : isConfirmed ? WARN : hasAlerts ? DANGER : BO;
 
   return (
     <div style={{
       borderBottom: `1px solid ${BO}`,
       borderLeft: `3px solid ${borderColor}`,
-      background: isDone ? `${SUC}06` : isInProgress ? PL : '#fff',
+      background: isDone ? `${SUC}06` : isInProgress ? PL : isConfirmed ? WARNL : '#fff',
       transition: 'background 0.15s',
     }}>
 
@@ -180,6 +181,7 @@ export function TodayPatientCard({ appt, patient, briefing, defaultExpanded, onS
             />
             {isDone && <SmallBadge label="Realizada" color={SUC} bg={SUCL} />}
             {isInProgress && <SmallBadge label="Em consulta" color={P} bg={PL} />}
+            {isConfirmed && <SmallBadge label="Na sala de espera" color={WARN} bg={WARNL} />}
             {hasAlerts && !isDone && (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 3,

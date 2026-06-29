@@ -35,7 +35,7 @@ export interface AppointmentRow {
   /** Horário no formato HH:mm */
   time: string;
   type: 'retorno' | 'primeira vez';
-  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
   chief_complaint: string;
   notes: string | null;
   created_at: string;
