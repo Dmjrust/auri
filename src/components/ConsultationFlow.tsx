@@ -650,6 +650,7 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
   const [hipoteses, setHipoteses] = useState(summary.hipoteses.join('\n'));
   const [conduta, setConduta] = useState(summary.conduta);
   const [retorno, setRetorno] = useState(summary.retorno);
+  const [examesSolicitados, setExamesSolicitados] = useState((summary.requested_exams ?? []).join('\n'));
 
   const [editedAnamnese, setEditedAnamnese] = useState<AnamnesePrimeiraConsultaData>(
     () => anamnese ?? defaultAnamnesePrimeiraConsulta()
@@ -664,6 +665,7 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
       hipoteses: hipoteses.split('\n').map(h => h.trim()).filter(Boolean),
       conduta,
       retorno,
+      requested_exams: examesSolicitados.split('\n').map(e => e.trim()).filter(Boolean),
     };
   }
 
@@ -816,6 +818,7 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
               { label: 'Exame físico', value: exameFisico, onChange: setExameFisico, rows: 4 },
               { label: 'Hipóteses (uma por linha)', value: hipoteses, onChange: setHipoteses, rows: 3 },
               { label: 'Conduta', value: conduta, onChange: setConduta, rows: 4 },
+              { label: 'Exames a pedir (um por linha)', value: examesSolicitados, onChange: setExamesSolicitados, rows: 2 },
               { label: 'Retorno', value: retorno, onChange: setRetorno, rows: 1 },
             ] as { label: string; value: string; onChange: (v: string) => void; rows: number }[]).map(({ label, value, onChange, rows }) => (
               <div key={label} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>
@@ -840,6 +843,7 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
               { label: 'Exame físico', value: exameFisico, onChange: setExameFisico, rows: 4 },
               { label: 'Hipóteses (uma por linha)', value: hipoteses, onChange: setHipoteses, rows: 2 },
               { label: 'Conduta', value: conduta, onChange: setConduta, rows: 4 },
+              { label: 'Exames a pedir (um por linha)', value: examesSolicitados, onChange: setExamesSolicitados, rows: 2 },
               { label: 'Retorno', value: retorno, onChange: setRetorno, rows: 1 },
             ] as { label: string; value: string; onChange: (v: string) => void; rows: number }[]).map(({ label, value, onChange, rows }) => (
               <div key={label} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>

@@ -61,7 +61,8 @@ const STRUCTURE_SYSTEM_PROMPT = `Você é um assistente de prontuário pediátri
   "peso": "peso mencionado com unidade, ex: '16,4 kg' — deixe vazio se não mencionado",
   "altura": "altura mencionada com unidade, ex: '102,5 cm' — deixe vazio se não mencionado",
   "perimetro_cefalico": "perímetro cefálico mencionado com unidade, ex: '38,5 cm' — deixe vazio se não mencionado",
-  "vacinas_mencionadas": ["vacina mencionada 1", "vacina mencionada 2"]
+  "vacinas_mencionadas": ["vacina mencionada 1", "vacina mencionada 2"],
+  "exames_solicitados": ["exame que o médico disse que vai pedir/solicitar 1", "exame 2"]
 }
 
 GLOSSÁRIO DE CONVERSÃO (termo leigo → termo técnico) — referência para a regra de normalização de vocabulário abaixo. Lista exemplificativa, não exaustiva:
@@ -95,6 +96,7 @@ REGRAS:
 - Ao escrever queixa_principal, hda, exame_fisico e conduta, converta termos coloquiais usados pelos pais/responsáveis, pelo paciente ou pelo médico para a terminologia técnica equivalente, usando o GLOSSÁRIO acima como referência e generalizando o mesmo princípio para termos análogos. Essa conversão é apenas de vocabulário/registro: preserve integralmente sentido, intensidade, localização, duração e gravidade exatamente como relatados. NÃO infira diagnósticos, NÃO adicione achados não mencionados e NÃO altere a gravidade. Em termo ambíguo (mais de uma interpretação técnica plausível), mantenha a expressão original entre aspas ao lado do termo técnico mais provável. Não use termos coloquiais como base para criar hipóteses em "hipoteses" que não tenham sido ditas ou sugeridas pelo médico — hipoteses reflete apenas o raciocínio clínico do médico.
 - Para termos coloquiais que NÃO estejam no glossário: só converta se existir um equivalente técnico padrão, único e amplamente consensual em português do Brasil (ex.: "dor de cabeça" → "cefaleia"). Se a conversão exigir qualquer suposição clínica, ou houver mais de um equivalente plausível sem contexto suficiente para desambiguar, mantenha a expressão original do relato sem alteração — nunca crie, aproxime ou "invente" um termo técnico, e nunca substitua por um termo que implique achado/diagnóstico mais específico do que o relatado.
 - Se um campo não for mencionado, use string vazia ou array vazio
+- Em "exames_solicitados", liste apenas exames que o médico afirmou explicitamente que vai pedir/solicitar nesta consulta (ex.: "vou pedir um hemograma", "vamos solicitar TSH"). Não inclua exames já trazidos pelo paciente, mencionados apenas hipoteticamente, ou citados pelo paciente/responsável. Array vazio se nenhum exame foi solicitado.
 - Conforme CFM 2.454/2026: você é apoio à decisão, o médico revisará e validará`;
 
 // ── Prompt tricológico ────────────────────────────────────────────────────────
@@ -231,6 +233,7 @@ export async function structureSummary(transcript: string, specialty = 'Pediatri
     altura:              String(raw.altura               ?? ''),
     perimetro_cefalico:  String(raw.perimetro_cefalico   ?? ''),
     vacinas_mencionadas: Array.isArray(raw.vacinas_mencionadas) ? raw.vacinas_mencionadas.map(String) : [],
+    requested_exams:     Array.isArray(raw.exames_solicitados) ? raw.exames_solicitados.map(String) : [],
     // Tricologia only — object with hair/scalp assessment fields
     specialty_data:      raw.trichology ?? null,
   } as StructuredSummary & { specialty_data?: unknown };
