@@ -43,6 +43,35 @@ export const PNI_SCHEDULE = [
   { name: 'dT (Difteria + Tétano)', dose: 'Reforço', age_months: 132, age_label: '11 anos' },
 ];
 
+// ─── CALENDÁRIO NACIONAL DE VACINAÇÃO DO ADULTO (MS, simplificado) ───────────
+// Referência geral — não cobre regras de gestação ou grupos de risco
+// específicos, que ficam a critério da avaliação clínica individual.
+export interface AdultVaccineScheduleItem {
+  name: string;
+  dose: string;
+  type: 'once' | 'recurring';
+  min_age_years?: number;   // elegível a partir desta idade
+  max_age_years?: number;   // prazo-limite (só para 'once' com deadline)
+  interval_years?: number;  // só para 'recurring'
+}
+
+export const ADULT_VACCINE_SCHEDULE: AdultVaccineScheduleItem[] = [
+  { name: 'Hepatite B', dose: '1ª dose', type: 'once' },
+  { name: 'Hepatite B', dose: '2ª dose', type: 'once' },
+  { name: 'Hepatite B', dose: '3ª dose', type: 'once' },
+  { name: 'Febre Amarela', dose: 'Dose única', type: 'once' },
+  { name: 'Tríplice Viral (SCR)', dose: '1ª dose', type: 'once', max_age_years: 59 },
+  { name: 'Tríplice Viral (SCR)', dose: '2ª dose', type: 'once', max_age_years: 59 },
+  { name: 'HPV', dose: '1ª dose', type: 'once', min_age_years: 9, max_age_years: 45 },
+  { name: 'HPV', dose: '2ª dose', type: 'once', min_age_years: 9, max_age_years: 45 },
+  { name: 'dT (Difteria + Tétano)', dose: 'Reforço', type: 'recurring', interval_years: 10 },
+  { name: 'Influenza', dose: 'Dose anual', type: 'recurring', interval_years: 1 },
+  { name: 'Covid-19', dose: 'Reforço', type: 'recurring', interval_years: 1 },
+  { name: 'Pneumocócica', dose: 'Dose única', type: 'once', min_age_years: 60 },
+  { name: 'Herpes Zóster', dose: '1ª dose', type: 'once', min_age_years: 50 },
+  { name: 'Herpes Zóster', dose: '2ª dose', type: 'once', min_age_years: 50 },
+];
+
 // ─── VACCINES TAB ─────────────────────────────────────────────────────────────
 export function VaccinesTab({ patient }: { patient: Patient }) {
   const [dbVaccines, setDbVaccines] = useState<any[]>([]);

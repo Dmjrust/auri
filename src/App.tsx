@@ -44,6 +44,7 @@ import { ProntuarioFormatCtx } from './contexts/ProntuarioContext';
 import { PatientProvider, usePatients } from './contexts/PatientContext';
 import { GrowthChart } from './components/GrowthChart';
 import { VaccinesTab, PNI_SCHEDULE } from './components/VaccinesTab';
+import { AdultVaccinesTab } from './components/AdultVaccinesTab';
 import { Badge, Pill, ZBadge, StatusDot, Card, Btn, Tabs } from './components/auri-ui';
 import { RequireRole, useRequireRole } from './components/RequireRole';
 import {
@@ -3164,7 +3165,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
   const { doctorId } = useAuthProfile();
   const isPediatria = specialty === 'Pediatria';
   const TABS_PEDIATRIA     = ['Resumo', 'Consultas', 'Crescimento', 'Vacinas', 'Desenvolvimento'];
-  const TABS_CLINICA_GERAL = ['Resumo', 'Evolução', 'Medicações'];
+  const TABS_CLINICA_GERAL = ['Resumo', 'Evolução', 'Vacinas', 'Medicações'];
   const visibleTabs = isDoctor
     ? (isPediatria ? TABS_PEDIATRIA : TABS_CLINICA_GERAL)
     : (isPediatria ? ['Resumo', 'Vacinas'] : ['Resumo']);
@@ -4155,7 +4156,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
         )}
 
         {tab === 'Crescimento' && <RequireRole roles={['medico']}><GrowthChart patient={patient} consultations={consultations} /></RequireRole>}
-        {tab === 'Vacinas' && <VaccinesTab patient={patient} />}
+        {tab === 'Vacinas' && (isPediatria ? <VaccinesTab patient={patient} /> : <AdultVaccinesTab patient={patient} />)}
         {tab === 'Desenvolvimento' && (
           <RequireRole roles={['medico']}>
             <DevelopmentTab
