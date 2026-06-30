@@ -213,6 +213,6 @@ Esperado do endpoint (`/api/transcribe`):
 
 ## Deploy
 
-- **Vercel:** https://auri-git-main-dmjrust.vercel.app (auto-redeploy em push)
+- **Vercel:** https://auri-coral.vercel.app (auto-redeploy em push)
 - **Branch:** main no GitHub (Dmjrust/auri)
 - **Variáveis:** .env.local (Supabase URL + anon key)
