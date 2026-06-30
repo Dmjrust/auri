@@ -1880,19 +1880,21 @@ function InsightsCard({ patient }: { patient: Patient }) {
 }
 
 // ─── CONSULTATION DETAIL ──────────────────────────────────────────────────────
-function SectionLabel({ abbrev, full }: { abbrev: string; full: string }) {
+function SectionLabel({ abbrev, full, right }: { abbrev: string; full: string; right?: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
       <span style={{ fontSize: 11, fontWeight: 800, color: P, letterSpacing: 1.2, textTransform: 'uppercase' as const, fontFamily: 'monospace' }}>{abbrev}</span>
       <span style={{ fontSize: 11, color: MU, fontWeight: 500 }}>{full}</span>
       <div style={{ flex: 1, borderTop: `1px dashed ${BO}`, marginLeft: 4 }} />
+      {right}
     </div>
   );
 }
 
-function ConsultationDetail({ consult, onBack, linkedDocuments = [] }: { consult: Consultation; onBack: () => void; linkedDocuments?: ClinicalDocument[] }) {
+function ConsultationDetail({ consult, onBack, linkedDocuments = [], allConsultations = [], onExamSaved }: { consult: Consultation; onBack: () => void; linkedDocuments?: ClinicalDocument[]; allConsultations?: Consultation[]; onExamSaved?: () => void }) {
   const { format } = useContext(ProntuarioFormatCtx);
   const [markersByDoc, setMarkersByDoc] = useState<Record<string, LabMarker[]>>({});
+  const [showExamForm, setShowExamForm] = useState(false);
 
   useEffect(() => {
     if (linkedDocuments.length === 0) { setMarkersByDoc({}); return; }
@@ -2025,10 +2027,24 @@ function ConsultationDetail({ consult, onBack, linkedDocuments = [] }: { consult
           </div>
 
           {/* ── Exames — pedidos nesta consulta + resultados vinculados ── */}
-          {((consult.requested_exams?.length ?? 0) > 0 || linkedDocuments.length > 0) && (
+          {((consult.requested_exams?.length ?? 0) > 0 || linkedDocuments.length > 0 || onExamSaved) && (
             <div>
-              <SectionLabel abbrev="EX" full="Exames" />
+              <SectionLabel abbrev="EX" full="Exames" right={onExamSaved ? (
+                <button onClick={() => setShowExamForm(v => !v)} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: P, fontFamily: 'inherit', padding: 0 }}>
+                  <Plus size={13} /> Adicionar resultado
+                </button>
+              ) : undefined} />
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10, paddingLeft: 4 }}>
+                {showExamForm && onExamSaved && (
+                  <ExamUploadForm
+                    patientId={consult.patient_id}
+                    consultations={allConsultations}
+                    documents={linkedDocuments}
+                    defaultConsultId={consult.id}
+                    lockConsult
+                    onSaved={() => { setShowExamForm(false); onExamSaved(); }}
+                  />
+                )}
                 {(consult.requested_exams ?? []).map((examName, i) => {
                   const fulfilled = linkedDocuments.length > 0;
                   return (
@@ -2041,6 +2057,9 @@ function ConsultationDetail({ consult, onBack, linkedDocuments = [] }: { consult
                 {linkedDocuments.map(doc => (
                   <ExamResultCard key={doc.id} document={doc} markers={markersByDoc[doc.id] ?? []} />
                 ))}
+                {(consult.requested_exams?.length ?? 0) === 0 && linkedDocuments.length === 0 && !showExamForm && (
+                  <p style={{ margin: 0, fontSize: 13, color: MU }}>Nenhum exame pedido ou vinculado a esta consulta.</p>
+                )}
               </div>
             </div>
           )}
@@ -2731,11 +2750,12 @@ function AnamneseAdultaModal({ onClose, onSaved, existingData, consultaId }: {
   );
 }
 
-function SaudeTab({ patientId, activeProblems, lastConsultId, anamneseAdulta, onAnamneseSaved, onProblemsUpdated }: {
+function SaudeTab({ patientId, activeProblems, lastConsultId, anamneseAdulta, latestMarkers, onAnamneseSaved, onProblemsUpdated }: {
   patientId: string;
   activeProblems: ProblemaAtivo[];
   lastConsultId: string | null;
   anamneseAdulta: (AnamneseAdultaData & { consulta_id: string; created_at: string }) | null;
+  latestMarkers?: Record<string, LabMarker>;
   onAnamneseSaved: (data: AnamneseAdultaData) => void;
   onProblemsUpdated: (problems: ProblemaAtivo[]) => void;
 }) {
@@ -2743,8 +2763,30 @@ function SaudeTab({ patientId, activeProblems, lastConsultId, anamneseAdulta, on
   const [problems, setProblems] = useState<ProblemaAtivo[]>(activeProblems);
   const [showAddProblem, setShowAddProblem] = useState(false);
   const [newProblemName, setNewProblemName] = useState('');
+  const [onlyAlteredMarkers, setOnlyAlteredMarkers] = useState(false);
 
   useEffect(() => { setProblems(activeProblems); }, [activeProblems]);
+
+  const markerEntries = Object.entries(latestMarkers ?? {});
+  const markerStatusColor = (s: string) => s === 'alto' ? WARN : s === 'critico' ? DES : s === 'baixo' ? '#3B82F6' : SUC;
+  const markerStatusBg = (s: string) => s === 'alto' ? WARNL : s === 'critico' ? DESL : s === 'baixo' ? '#EFF6FF' : SUCL;
+  const alteredMarkerEntries = markerEntries.filter(([, m]) => m.status !== 'normal');
+  const visibleMarkerEntries = onlyAlteredMarkers ? alteredMarkerEntries : markerEntries;
+  const groupedMarkers = visibleMarkerEntries.reduce<Record<string, [string, LabMarker][]>>((acc, entry) => {
+    const cat = categorizeMarker(entry[0]);
+    (acc[cat] ??= []).push(entry);
+    return acc;
+  }, {});
+  Object.values(groupedMarkers).forEach(entries => entries.sort((a, b) => {
+    const aAlt = a[1].status !== 'normal' ? 0 : 1;
+    const bAlt = b[1].status !== 'normal' ? 0 : 1;
+    return aAlt !== bAlt ? aAlt - bAlt : a[0].localeCompare(b[0]);
+  }));
+  const markerCategoryOrder = Object.keys(groupedMarkers).sort((a, b) => {
+    const aAlt = groupedMarkers[a].filter(([, m]) => m.status !== 'normal').length;
+    const bAlt = groupedMarkers[b].filter(([, m]) => m.status !== 'normal').length;
+    return aAlt !== bAlt ? bAlt - aAlt : a.localeCompare(b);
+  });
 
   function addProblem() {
     if (!newProblemName.trim()) return;
@@ -2860,6 +2902,54 @@ function SaudeTab({ patientId, activeProblems, lastConsultId, anamneseAdulta, on
           )}
         </div>
       </Card>
+
+      {/* Marcadores laboratoriais — tendência cross-consulta, complementar à visão por consulta em Evolução */}
+      {markerEntries.length > 0 && (
+        <Card>
+          <SH
+            title="Marcadores laboratoriais"
+            right={
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: MU, cursor: 'pointer', userSelect: 'none' as const }}>
+                <input type="checkbox" checked={onlyAlteredMarkers} onChange={e => setOnlyAlteredMarkers(e.target.checked)} />
+                Somente alterados
+              </label>
+            }
+          />
+          <div style={{ padding: '6px 20px 14px' }}>
+            {markerCategoryOrder.map(category => (
+              <div key={category} style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 6 }}>
+                  {category}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {groupedMarkers[category].map(([name, marker]) => (
+                    <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${BO}`, gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: INK, fontWeight: 500 }}>{name}</div>
+                        {marker.reference_text && (
+                          <div style={{ fontSize: 11, color: MU, marginTop: 1 }}>Ref.: {marker.reference_text}</div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <div style={{ fontSize: 11, color: MU }}>{fmtDate(marker.result_date)}</div>
+                        <span style={{ fontSize: 13, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: markerStatusColor(marker.status) }}>
+                          {marker.value} {marker.unit}
+                        </span>
+                        <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: markerStatusBg(marker.status), color: markerStatusColor(marker.status), fontWeight: 600 }}>
+                          {marker.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {onlyAlteredMarkers && alteredMarkerEntries.length === 0 && (
+              <div style={{ padding: '20px 0', textAlign: 'center', fontSize: 13, color: MU }}>Nenhum marcador fora da faixa.</div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {showAnamneseModal && (
         <AnamneseAdultaModal
@@ -2998,13 +3088,15 @@ function ExamResultCard({ document: doc, markers }: { document: ClinicalDocument
   );
 }
 
-function ClinicalDocumentsTab({ patientId, documents, latestMarkers, consultations, onDocumentSaved, onViewConsultation }: {
+// Formulário de upload/entrada manual de resultado de exame — usado no topo da aba Evolução
+// (sempre visível, com sugestão de vínculo) e dentro de ConsultationDetail (vínculo pré-travado na consulta aberta).
+function ExamUploadForm({ patientId, consultations, documents, defaultConsultId, lockConsult = false, onSaved }: {
   patientId: string;
-  documents: ClinicalDocument[];
-  latestMarkers: Record<string, LabMarker>;
   consultations: Consultation[];
-  onDocumentSaved: () => void;
-  onViewConsultation: (consultationId: string) => void;
+  documents: ClinicalDocument[];
+  defaultConsultId?: string;
+  lockConsult?: boolean;
+  onSaved: () => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadStep, setUploadStep] = useState('');
@@ -3013,12 +3105,11 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, consultatio
   const [manualLab, setManualLab] = useState('');
   const [manualText, setManualText] = useState('');
   // Sugestão default: consulta mais recente com exames pedidos e ainda sem nenhum documento vinculado
-  const suggestedConsultId = consultations.find(c =>
+  const suggestedConsultId = defaultConsultId ?? (consultations.find(c =>
     (c.requested_exams?.length ?? 0) > 0 && !documents.some(d => d.consultation_id === c.id)
-  )?.id ?? '';
+  )?.id ?? '');
   const [linkConsultId, setLinkConsultId] = useState(suggestedConsultId);
   const [savingManual, setSavingManual] = useState(false);
-  const [onlyAltered, setOnlyAltered] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function handleFileUpload(file: File) {
@@ -3074,7 +3165,7 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, consultatio
       } else {
         toast.success('Exame processado — marcadores extraídos automaticamente.');
       }
-      onDocumentSaved();
+      onSaved();
     } catch {
       toast.error('Erro ao processar arquivo.');
     } finally {
@@ -3091,37 +3182,11 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, consultatio
       toast.success('Resultado salvo.');
       setManualOpen(false);
       setManualDate(''); setManualLab(''); setManualText('');
-      onDocumentSaved();
+      onSaved();
     } catch {
       toast.error('Erro ao salvar. Verifique se as tabelas foram criadas no Supabase.');
     } finally { setSavingManual(false); }
   }
-
-  const markerEntries = Object.entries(latestMarkers);
-  const statusColor = (s: string) => s === 'alto' ? WARN : s === 'critico' ? DES : s === 'baixo' ? '#3B82F6' : SUC;
-  const statusBg = (s: string) => s === 'alto' ? WARNL : s === 'critico' ? DESL : s === 'baixo' ? '#EFF6FF' : SUCL;
-
-  const alteredEntries = markerEntries.filter(([, m]) => m.status !== 'normal');
-  const visibleEntries = onlyAltered ? alteredEntries : markerEntries;
-
-  const groupedMarkers = visibleEntries.reduce<Record<string, [string, LabMarker][]>>((acc, entry) => {
-    const cat = categorizeMarker(entry[0]);
-    (acc[cat] ??= []).push(entry);
-    return acc;
-  }, {});
-  // Alterados primeiro dentro de cada categoria; categorias ordenadas pela quantidade de alterados, depois alfabético.
-  Object.values(groupedMarkers).forEach(entries => entries.sort((a, b) => {
-    const aAlt = a[1].status !== 'normal' ? 0 : 1;
-    const bAlt = b[1].status !== 'normal' ? 0 : 1;
-    return aAlt !== bAlt ? aAlt - bAlt : a[0].localeCompare(b[0]);
-  }));
-  const categoryOrder = Object.keys(groupedMarkers).sort((a, b) => {
-    const aAlt = groupedMarkers[a].filter(([, m]) => m.status !== 'normal').length;
-    const bAlt = groupedMarkers[b].filter(([, m]) => m.status !== 'normal').length;
-    return aAlt !== bAlt ? bAlt - aAlt : a.localeCompare(b);
-  });
-
-  const latestDocWithSummary = documents.find(d => d.ai_summary);
 
   const SH = ({ title, right }: { title: string; right?: React.ReactNode }) => (
     <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -3131,207 +3196,71 @@ function ClinicalDocumentsTab({ patientId, documents, latestMarkers, consultatio
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-      {/* Upload */}
-      <Card>
-        <SH title="Adicionar resultado" />
-        <div style={{ padding: '20px' }}>
-          {uploading ? (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ fontSize: 13, color: P, fontWeight: 500 }}>{uploadStep}</div>
-              <div style={{ marginTop: 10, height: 4, background: BO, borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', background: P, width: '60%', borderRadius: 2 }} />
-              </div>
+    <Card>
+      <SH title="Adicionar resultado" />
+      <div style={{ padding: '20px' }}>
+        {uploading ? (
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ fontSize: 13, color: P, fontWeight: 500 }}>{uploadStep}</div>
+            <div style={{ marginTop: 10, height: 4, background: BO, borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: P, width: '60%', borderRadius: 2 }} />
             </div>
-          ) : (
-            <>
-              {consultations.length > 0 && (
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Vincular à consulta</label>
-                  <select value={linkConsultId} onChange={e => setLinkConsultId(e.target.value)} style={inputStyle2}>
-                    <option value="">Sem vínculo (histórico geral)</option>
-                    {consultations.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {fmtDate(c.scheduled_at.split('T')[0])}{(c.requested_exams?.length ?? 0) > 0 ? ' — exames pendentes' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const }}>
-                <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); }} />
-                <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
-                  <FileText size={15} /> PDF
-                </Btn>
-                <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
-                  <Brain size={15} /> Imagem
-                </Btn>
-                <Btn variant="secondary" onClick={() => setManualOpen(v => !v)} style={{ gap: 6 }}>
-                  <PencilSimple size={15} /> Manual
-                </Btn>
+          </div>
+        ) : (
+          <>
+            {!lockConsult && consultations.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Vincular à consulta</label>
+                <select value={linkConsultId} onChange={e => setLinkConsultId(e.target.value)} style={inputStyle2}>
+                  <option value="">Sem vínculo (histórico geral)</option>
+                  {consultations.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {fmtDate(c.scheduled_at.split('T')[0])}{(c.requested_exams?.length ?? 0) > 0 ? ' — exames pendentes' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </>
-          )}
-          {manualOpen && (
-            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Data do resultado *</label>
-                  <input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} style={inputStyle2} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Laboratório</label>
-                  <input value={manualLab} onChange={e => setManualLab(e.target.value)} placeholder="Ex: Fleury, DASA" style={inputStyle2} />
-                </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const }}>
+              <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); }} />
+              <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
+                <FileText size={15} /> PDF
+              </Btn>
+              <Btn variant="secondary" onClick={() => fileRef.current?.click()} style={{ gap: 6 }}>
+                <Brain size={15} /> Imagem
+              </Btn>
+              <Btn variant="secondary" onClick={() => setManualOpen(v => !v)} style={{ gap: 6 }}>
+                <PencilSimple size={15} /> Manual
+              </Btn>
+            </div>
+          </>
+        )}
+        {manualOpen && (
+          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Data do resultado *</label>
+                <input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} style={inputStyle2} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Resultados (texto livre) *</label>
-                <textarea value={manualText} onChange={e => setManualText(e.target.value)} placeholder="Cole aqui os resultados dos exames…" rows={4} style={{ ...inputStyle2, resize: 'vertical' as const }} />
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Btn onClick={saveManual} disabled={!manualDate || !manualText.trim() || savingManual} style={{ flex: 1, justifyContent: 'center' }}>
-                  {savingManual ? 'Salvando…' : <><FloppyDisk size={14} /> Salvar</>}
-                </Btn>
-                <Btn variant="secondary" onClick={() => setManualOpen(false)} style={{ flexShrink: 0 }}><X size={14} /></Btn>
+                <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Laboratório</label>
+                <input value={manualLab} onChange={e => setManualLab(e.target.value)} placeholder="Ex: Fleury, DASA" style={inputStyle2} />
               </div>
             </div>
-          )}
-        </div>
-      </Card>
-
-      {/* Resumo do laudo */}
-      {(markerEntries.length > 0 || latestDocWithSummary) && (
-        <Card style={{ borderColor: alteredEntries.length > 0 ? WARN : BO }}>
-          <SH
-            title="Resumo do laudo"
-            right={markerEntries.length > 0 ? (
-              <span style={{
-                fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99,
-                background: alteredEntries.length > 0 ? WARNL : SUCL,
-                color: alteredEntries.length > 0 ? WARN : SUC,
-              }}>
-                {alteredEntries.length > 0 ? `${alteredEntries.length} de ${markerEntries.length} fora da faixa` : `${markerEntries.length} marcadores normais`}
-              </span>
-            ) : undefined}
-          />
-          <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {alteredEntries.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
-                {alteredEntries.map(([name, marker]) => (
-                  <span key={name} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600,
-                    padding: '4px 10px', borderRadius: 99, background: statusBg(marker.status), color: statusColor(marker.status),
-                  }}>
-                    {name}: {marker.value} {marker.unit}
-                  </span>
-                ))}
-              </div>
-            )}
-            {latestDocWithSummary?.ai_summary && (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, color: INK, lineHeight: 1.5 }}>
-                {alteredEntries.length > 0
-                  ? <Warning size={16} color={WARN} style={{ flexShrink: 0, marginTop: 2 }} />
-                  : <CheckCircle size={16} color={SUC} style={{ flexShrink: 0, marginTop: 2 }} />}
-                <span>{latestDocWithSummary.ai_summary}</span>
-              </div>
-            )}
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Resultados (texto livre) *</label>
+              <textarea value={manualText} onChange={e => setManualText(e.target.value)} placeholder="Cole aqui os resultados dos exames…" rows={4} style={{ ...inputStyle2, resize: 'vertical' as const }} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Btn onClick={saveManual} disabled={!manualDate || !manualText.trim() || savingManual} style={{ flex: 1, justifyContent: 'center' }}>
+                {savingManual ? 'Salvando…' : <><FloppyDisk size={14} /> Salvar</>}
+              </Btn>
+              <Btn variant="secondary" onClick={() => setManualOpen(false)} style={{ flexShrink: 0 }}><X size={14} /></Btn>
+            </div>
           </div>
-        </Card>
-      )}
-
-      {/* Últimos marcadores */}
-      {markerEntries.length > 0 && (
-        <Card>
-          <SH
-            title="Últimos marcadores"
-            right={
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: MU, cursor: 'pointer', userSelect: 'none' as const }}>
-                <input type="checkbox" checked={onlyAltered} onChange={e => setOnlyAltered(e.target.checked)} />
-                Somente alterados
-              </label>
-            }
-          />
-          <div style={{ padding: '6px 20px 14px' }}>
-            {categoryOrder.map(category => (
-              <div key={category} style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 6 }}>
-                  {category}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {groupedMarkers[category].map(([name, marker]) => (
-                    <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${BO}`, gap: 10 }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, color: INK, fontWeight: 500 }}>{name}</div>
-                        {marker.reference_text && (
-                          <div style={{ fontSize: 11, color: MU, marginTop: 1 }}>Ref.: {marker.reference_text}</div>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                        <div style={{ fontSize: 11, color: MU }}>{fmtDate(marker.result_date)}</div>
-                        <span style={{ fontSize: 13, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', color: statusColor(marker.status) }}>
-                          {marker.value} {marker.unit}
-                        </span>
-                        <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: statusBg(marker.status), color: statusColor(marker.status), fontWeight: 600 }}>
-                          {marker.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {onlyAltered && alteredEntries.length === 0 && (
-              <div style={{ padding: '20px 0', textAlign: 'center', fontSize: 13, color: MU }}>Nenhum marcador fora da faixa.</div>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {/* Histórico de documentos */}
-      {documents.length > 0 && (
-        <Card>
-          <SH title="Histórico geral de documentos" right={<span style={{ fontSize: 11, color: MU }}>todos os laudos do paciente</span>} />
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {documents.map(doc => {
-              const linkedConsult = doc.consultation_id ? consultations.find(c => c.id === doc.consultation_id) : null;
-              return (
-              <div key={doc.id} style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: INK }}>
-                    {doc.document_type.charAt(0).toUpperCase() + doc.document_type.slice(1)}
-                    {doc.lab_name ? ` — ${doc.lab_name}` : ''}
-                  </div>
-                  <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>{fmtDate(doc.result_date)}</div>
-                  {doc.ai_summary && <div style={{ fontSize: 12, color: MU, marginTop: 4, fontStyle: 'italic' }}>{doc.ai_summary}</div>}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
-                  {linkedConsult && (
-                    <button onClick={() => onViewConsultation(linkedConsult.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: P, padding: 0, fontFamily: 'inherit' }}>
-                      Ver na consulta de {fmtDate(linkedConsult.scheduled_at.split('T')[0])}
-                    </button>
-                  )}
-                  {doc.file_url && (
-                    <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: P, textDecoration: 'none' }}>Ver arquivo</a>
-                  )}
-                </div>
-              </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {documents.length === 0 && markerEntries.length === 0 && (
-        <Card>
-          <div style={{ padding: '32px 20px', textAlign: 'center' }}>
-            <FileText size={28} color={MU} />
-            <p style={{ margin: '10px 0 0', fontSize: 13, color: MU }}>Nenhum documento clínico registrado.</p>
-            <p style={{ margin: '6px 0 0', fontSize: 12, color: MU }}>Adicione resultados de exames acima.</p>
-          </div>
-        </Card>
-      )}
-    </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -3354,13 +3283,14 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
   const [anamneseAdulta, setAnamneseAdulta] = useState<(AnamneseAdultaData & { consulta_id: string; created_at: string }) | null>(null);
   const [clinicalDocs, setClinicalDocs] = useState<ClinicalDocument[]>([]);
   const [latestMarkers, setLatestMarkers] = useState<Record<string, LabMarker>>({});
+  const [lastRequestedExams, setLastRequestedExams] = useState<db.LastRequestedExamsInfo | null>(null);
   const guardian = primaryGuardian(patient);
   const isMobile = useIsMobile();
   const isDoctor = useRequireRole(['medico']);
   const { doctorId } = useAuthProfile();
   const isPediatria = specialty === 'Pediatria';
   const TABS_PEDIATRIA     = ['Resumo', 'Consultas', 'Crescimento', 'Vacinas', 'Desenvolvimento'];
-  const TABS_CLINICA_GERAL = ['Resumo', 'Consultas', 'Saúde', 'Medicações', 'Exames'];
+  const TABS_CLINICA_GERAL = ['Resumo', 'Evolução', 'Saúde', 'Medicações'];
   const visibleTabs = isDoctor
     ? (isPediatria ? TABS_PEDIATRIA : TABS_CLINICA_GERAL)
     : (isPediatria ? ['Resumo', 'Vacinas'] : ['Resumo']);
@@ -3402,6 +3332,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
     db.fetchAnamneseAdulta(patient.id).then(setAnamneseAdulta).catch(() => null);
     db.fetchClinicalDocuments(patient.id).then(setClinicalDocs).catch(() => setClinicalDocs([]));
     db.fetchLatestMarkers(patient.id).then(setLatestMarkers).catch(() => setLatestMarkers({}));
+    db.fetchLastRequestedExams(patient.id).then(setLastRequestedExams).catch(() => setLastRequestedExams(null));
   }, [patient.id, refetchTrigger, isPediatria]);
 
   // Drafts: awaiting doctor confirmation
@@ -3558,31 +3489,21 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                     </Card>
                   )}
 
-                  {/* Condições ativas */}
-                  <Card>
-                    <SH title="Condições ativas" right={
-                      <span style={{ fontSize: 11, color: MU, background: activeProblems.length > 0 ? WARNL : SUCL, color: activeProblems.length > 0 ? WARN : SUC, borderRadius: 5, padding: '2px 8px', fontWeight: 600 }}>
-                        {activeProblems.length} ativa{activeProblems.length !== 1 ? 's' : ''}
-                      </span>
-                    } />
-                    <div style={{ padding: '14px 20px' }}>
-                      {activeProblems.length === 0 ? (
-                        <p style={{ margin: 0, fontSize: 13, color: MU }}>Nenhuma condição ativa registrada.</p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          {activeProblems.map((prob, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: BG, borderRadius: 8, border: `1px solid ${BO}` }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 14, fontWeight: 500, color: INK }}>{prob.name}</div>
-                                {prob.since && <div style={{ fontSize: 11, color: MU }}>Desde {fmtDate(prob.since)}</div>}
-                              </div>
-                              <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: prob.status === 'ativo' ? WARNL : prob.status === 'controlado' ? SUCL : SEC, color: prob.status === 'ativo' ? WARN : prob.status === 'controlado' ? SUC : MU }}>
-                                {prob.status.charAt(0).toUpperCase() + prob.status.slice(1)}
-                              </span>
-                            </div>
-                          ))}
+                  {/* Condições ativas — versão compacta; detalhe completo/editável vive em Saúde */}
+                  <Card style={{ cursor: 'pointer' }} onClick={() => setTab('Saúde')}>
+                    <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>Condições ativas</div>
+                        <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>
+                          {activeProblems.length === 0 ? 'Nenhuma registrada' : activeProblems.map(p => p.name).join(', ')}
                         </div>
-                      )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 5, background: activeProblems.length > 0 ? WARNL : SUCL, color: activeProblems.length > 0 ? WARN : SUC }}>
+                          {activeProblems.length}
+                        </span>
+                        <span style={{ fontSize: 12, color: P, fontWeight: 600 }}>Ver em Saúde →</span>
+                      </div>
                     </div>
                   </Card>
 
@@ -3607,43 +3528,18 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                     </Card>
                   )}
 
-                  {/* Anamnese adulta */}
-                  {anamneseAdulta && (
-                    <Card>
-                      <SH title="Anamnese — 1ª consulta" right={<span style={{ fontSize: 11, color: MU }}>{fmtDate(anamneseAdulta.created_at.slice(0, 10))}</span>} />
-                      <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {anamneseAdulta.motivo_consulta && (
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Motivo</div>
-                            <p style={{ margin: 0, fontSize: 13, color: INK }}>{anamneseAdulta.motivo_consulta}</p>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {[
-                            { l: 'HAS', v: anamneseAdulta.hipertensao },
-                            { l: 'DM', v: anamneseAdulta.diabetes },
-                            { l: 'Dislipidemia', v: anamneseAdulta.dislipidemia },
-                            { l: 'Cardiopatia', v: anamneseAdulta.cardiopatia },
-                          ].filter(x => x.v === true).map(({ l }) => (
-                            <span key={l} style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 5, background: WARNL, color: WARN }}>{l}</span>
-                          ))}
-                          {anamneseAdulta.tabagismo === 'fumante' && <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 5, background: DESL, color: DES }}>Tabagista</span>}
+                  {/* Anamnese — versão compacta; detalhe completo/editável vive em Saúde */}
+                  <Card style={{ cursor: 'pointer' }} onClick={() => setTab('Saúde')}>
+                    <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>Anamnese — 1ª consulta</div>
+                        <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>
+                          {anamneseAdulta ? (anamneseAdulta.motivo_consulta || 'Registrada') : 'Não registrada'}
                         </div>
-                        {anamneseAdulta.outras_comorbidades && (
-                          <p style={{ margin: 0, fontSize: 12, color: MU }}>{anamneseAdulta.outras_comorbidades}</p>
-                        )}
                       </div>
-                    </Card>
-                  )}
-
-                  {!anamneseAdulta && consultations.length > 0 && (
-                    <Card>
-                      <div style={{ padding: '20px', textAlign: 'center' }}>
-                        <FileText size={24} color={MU} />
-                        <p style={{ margin: '8px 0 0', fontSize: 13, color: MU }}>Anamnese da 1ª consulta não registrada.</p>
-                      </div>
-                    </Card>
-                  )}
+                      <span style={{ fontSize: 12, color: P, fontWeight: 600, flexShrink: 0 }}>Ver em Saúde →</span>
+                    </div>
+                  </Card>
                 </div>
 
                 {/* Coluna direita */}
@@ -3681,9 +3577,37 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                   )}
 
                   {/* Últimos marcadores laboratoriais */}
-                  {Object.keys(latestMarkers).length > 0 && (
-                    <Card>
-                      <SH title="Últimos exames" />
+                  {Object.keys(latestMarkers).length > 0 && (() => {
+                    const alteredEntries = Object.entries(latestMarkers).filter(([, m]) => m.status !== 'normal');
+                    const latestDocWithSummary = clinicalDocs.find(d => d.ai_summary);
+                    return (
+                    <Card style={{ borderColor: alteredEntries.length > 0 ? WARN : BO }}>
+                      <SH title="Últimos exames" right={
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: alteredEntries.length > 0 ? WARNL : SUCL, color: alteredEntries.length > 0 ? WARN : SUC }}>
+                          {alteredEntries.length > 0 ? `${alteredEntries.length} fora da faixa` : 'tudo normal'}
+                        </span>
+                      } />
+                      {(alteredEntries.length > 0 || latestDocWithSummary?.ai_summary) && (
+                        <div style={{ padding: '12px 20px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {alteredEntries.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                              {alteredEntries.map(([name, marker]) => (
+                                <span key={name} style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600,
+                                  padding: '4px 10px', borderRadius: 99,
+                                  background: marker.status === 'alto' ? WARNL : marker.status === 'critico' ? DESL : '#EFF6FF',
+                                  color: marker.status === 'alto' ? WARN : marker.status === 'critico' ? DES : '#3B82F6',
+                                }}>
+                                  {name}: {marker.value} {marker.unit}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {latestDocWithSummary?.ai_summary && (
+                            <p style={{ margin: 0, fontSize: 12, color: MU, lineHeight: 1.5, fontStyle: 'italic' }}>{latestDocWithSummary.ai_summary}</p>
+                          )}
+                        </div>
+                      )}
                       <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {Object.entries(latestMarkers).slice(0, 6).map(([name, marker]) => (
                           <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3700,7 +3624,8 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                         ))}
                       </div>
                     </Card>
-                  )}
+                    );
+                  })()}
 
                   {/* Alergias */}
                   {patient.notes && (
@@ -4165,9 +4090,9 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
           );
         })()}
 
-        {tab === 'Consultas' && (
+        {(tab === 'Consultas' || tab === 'Evolução') && (
           selectedConsult
-            ? <RequireRole roles={['medico']} onBack={() => setSelectedConsult(null)}><ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} linkedDocuments={clinicalDocs.filter(d => d.consultation_id === selectedConsult.id)} /></RequireRole>
+            ? <RequireRole roles={['medico']} onBack={() => setSelectedConsult(null)}><ConsultationDetail consult={selectedConsult} onBack={() => setSelectedConsult(null)} linkedDocuments={clinicalDocs.filter(d => d.consultation_id === selectedConsult.id)} allConsultations={pastConsultations} onExamSaved={() => { db.fetchClinicalDocuments(patient.id).then(setClinicalDocs); db.fetchLatestMarkers(patient.id).then(setLatestMarkers); db.fetchLastRequestedExams(patient.id).then(setLastRequestedExams); }} /></RequireRole>
             : (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
@@ -4176,6 +4101,53 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
 
                 {/* Primeira Consulta — bloco fixo no topo */}
                 <PrimeiraConsultaCard patientId={patient.id} refetchTrigger={refetchTrigger} />
+
+                {/* Clínica Geral: upload de exames sempre acessível + pendências da última consulta */}
+                {!isPediatria && (
+                  <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {lastRequestedExams && (
+                      <Card
+                        style={{ cursor: 'pointer', border: `1.5px solid ${lastRequestedExams.linkedDocuments.length > 0 ? SUC : WARN}40`, background: lastRequestedExams.linkedDocuments.length > 0 ? SUCL : WARNL }}
+                        onClick={() => { const c = pastConsultations.find(p => p.id === lastRequestedExams.consultationId); if (c) setSelectedConsult(c); }}
+                      >
+                        <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                          <Flask size={20} color={lastRequestedExams.linkedDocuments.length > 0 ? SUC : WARN} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>
+                              Pedido em {fmtDate(lastRequestedExams.date)}: {lastRequestedExams.requestedExams.join(', ')}
+                            </div>
+                            <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>
+                              {lastRequestedExams.linkedDocuments.length > 0
+                                ? `${lastRequestedExams.linkedDocuments.length} resultado${lastRequestedExams.linkedDocuments.length !== 1 ? 's' : ''} disponível${lastRequestedExams.linkedDocuments.length !== 1 ? 'eis' : ''}`
+                                : 'Ainda sem resultado vinculado'}
+                            </div>
+                          </div>
+                          <CaretRight size={16} color={MU} />
+                        </div>
+                      </Card>
+                    )}
+                    <ExamUploadForm
+                      patientId={patient.id}
+                      consultations={pastConsultations}
+                      documents={clinicalDocs}
+                      onSaved={() => {
+                        db.fetchClinicalDocuments(patient.id).then(setClinicalDocs);
+                        db.fetchLatestMarkers(patient.id).then(setLatestMarkers);
+                        db.fetchLastRequestedExams(patient.id).then(setLastRequestedExams);
+                      }}
+                    />
+                    {clinicalDocs.some(d => !d.consultation_id) && (
+                      <Card style={{ border: `1px solid ${WARN}40`, background: WARNL }}>
+                        <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <Warning size={16} color={WARN} />
+                          <span style={{ fontSize: 12, color: WARN }}>
+                            {clinicalDocs.filter(d => !d.consultation_id).length} documento{clinicalDocs.filter(d => !d.consultation_id).length !== 1 ? 's' : ''} sem consulta vinculada — abra uma consulta para linkar.
+                          </span>
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                )}
 
                 {/* Drafts section */}
                 {draftConsultations.length > 0 && (
@@ -4205,16 +4177,24 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                 {pastConsultations.length === 0 && draftConsultations.length === 0 && (
                   <Card style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada.</Card>
                 )}
-                {pastConsultations.map((c, i) => (
+                {pastConsultations.map((c, i) => {
+                  const linkedExamDocs = clinicalDocs.filter(d => d.consultation_id === c.id);
+                  const hasRequestedExams = (c.requested_exams?.length ?? 0) > 0;
+                  return (
                   <Card key={c.id} style={{ marginBottom: 12, cursor: 'pointer' }} onClick={() => setSelectedConsult(c)}>
                     <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
                       <div style={{ width: 40, height: 40, borderRadius: 8, background: PL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={18} color={P} /></div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' as const }}>
                           <span style={{ fontWeight: 600, fontSize: 14 }}>{fmtDateTime(c.scheduled_at)}</span>
                           <Pill type={c.type} />
                           <Badge color={MU} bg={SEC}>{c.duration_minutes} min</Badge>
                           {i === 0 && <Badge color={SUC} bg={SUCL}>Mais recente</Badge>}
+                          {hasRequestedExams && (
+                            <Badge color={linkedExamDocs.length > 0 ? SUC : WARN} bg={linkedExamDocs.length > 0 ? SUCL : WARNL}>
+                              {linkedExamDocs.length > 0 ? 'Resultado disponível' : 'Exame pendente'}
+                            </Badge>
+                          )}
                         </div>
                         <div style={{ fontSize: 13, marginBottom: 2 }}>{c.chief_complaint}</div>
                         <div style={{ fontSize: 12, color: MU }}>{c.diagnosis}</div>
@@ -4222,7 +4202,8 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                       <CaretRight size={18} color={MU} />
                     </div>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             )
         )}
@@ -4246,6 +4227,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
             activeProblems={activeProblems}
             lastConsultId={lastConsult?.id ?? null}
             anamneseAdulta={anamneseAdulta}
+            latestMarkers={latestMarkers}
             onAnamneseSaved={(data) => db.fetchAnamneseAdulta(patient.id).then(setAnamneseAdulta)}
             onProblemsUpdated={(problems) => {
               if (lastConsult?.id) db.updatePatientProblems(lastConsult.id, problems);
@@ -4255,23 +4237,6 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
 
         {tab === 'Medicações' && !isPediatria && (
           <MedicacoesAdultaTab medications={currentMedications} />
-        )}
-
-        {tab === 'Exames' && !isPediatria && (
-          <ClinicalDocumentsTab
-            patientId={patient.id}
-            documents={clinicalDocs}
-            latestMarkers={latestMarkers}
-            consultations={pastConsultations}
-            onDocumentSaved={() => {
-              db.fetchClinicalDocuments(patient.id).then(setClinicalDocs);
-              db.fetchLatestMarkers(patient.id).then(setLatestMarkers);
-            }}
-            onViewConsultation={(consultId) => {
-              const c = pastConsultations.find(p => p.id === consultId);
-              if (c) { setSelectedConsult(c); setTab('Consultas'); }
-            }}
-          />
         )}
 
         {/* Avaliação Capilar (Tricologia) — oculto na fase de validação de Pediatria */}
