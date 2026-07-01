@@ -237,7 +237,7 @@ function Header({ breadcrumb, onBack, notifications = [], onNotificationClick, o
   );
 }
 
-function Layout({ children, screen, go, breadcrumb, onBack, doctorName, notifications, onNotificationClick, onClearNotifications }: { children: React.ReactNode; screen: string; go: (s: string) => void; breadcrumb?: string[]; onBack?: () => void; doctorName: string; notifications?: AppNotification[]; onNotificationClick?: (patientId?: string) => void; onClearNotifications?: () => void }) {
+function Layout({ children, screen, go, breadcrumb, onBack, doctorName, doctorSpecialty, notifications, onNotificationClick, onClearNotifications }: { children: React.ReactNode; screen: string; go: (s: string) => void; breadcrumb?: string[]; onBack?: () => void; doctorName: string; doctorSpecialty?: string; notifications?: AppNotification[]; onNotificationClick?: (patientId?: string) => void; onClearNotifications?: () => void }) {
   const isMobile = useIsMobile();
 
   if (isMobile) {
@@ -259,7 +259,7 @@ function Layout({ children, screen, go, breadcrumb, onBack, doctorName, notifica
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: BG }}>
-      <Sidebar screen={screen} go={go} doctorName={doctorName} specialty={doctorSpecialty} />
+      <Sidebar screen={screen} go={go} doctorName={doctorName} specialty={doctorSpecialty ?? 'Pediatria'} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Header breadcrumb={breadcrumb} onBack={onBack} notifications={notifications} onNotificationClick={onNotificationClick} onClearNotifications={onClearNotifications} />
         <main style={{ flex: 1, padding: 32, overflowY: 'auto' }}>{children}</main>
@@ -6099,7 +6099,7 @@ export default function App() {
     <MobileCtx.Provider value={isMobile}>
       <PatientProvider>
         <ProntuarioFormatCtx.Provider value={{ format: prontuarioFormat, setFormat: setProntuarioFormat }}>
-          <Layout screen={screen} go={go} breadcrumb={breadcrumbs[screen]} onBack={screen === 'patient-detail' ? () => go('patients') : undefined} doctorName={doctorName} notifications={notifications} onNotificationClick={(patientId) => { if (patientId) { db.fetchPatients().then(ps => { const found = ps.find(x => x.id === patientId); if (found) { setActivePatient(found); go('patient-detail'); } }); } }} onClearNotifications={() => setNotifications([])}>
+          <Layout screen={screen} go={go} breadcrumb={breadcrumbs[screen]} onBack={screen === 'patient-detail' ? () => go('patients') : undefined} doctorName={doctorName} doctorSpecialty={doctorSpecialty} notifications={notifications} onNotificationClick={(patientId) => { if (patientId) { db.fetchPatients().then(ps => { const found = ps.find(x => x.id === patientId); if (found) { setActivePatient(found); go('patient-detail'); } }); } }} onClearNotifications={() => setNotifications([])}>
             {screen === 'dashboard' && (
               <RequireRole roles={['medico']}
                 fallback={<SecretaryDashboard go={go} setActivePatient={setActivePatient} onNewPatient={() => go('patients')} />}
