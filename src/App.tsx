@@ -98,7 +98,7 @@ function BottomNav({ screen, go }: { screen: string; go: (s: string) => void }) 
 }
 
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
-function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) => void; doctorName: string }) {
+function Sidebar({ screen, go, doctorName, specialty = 'Pediatria' }: { screen: string; go: (s: string) => void; doctorName: string; specialty?: string }) {
   const { isDoctor, isAdmin, role, fullName } = useAuthProfile();
   const allNavItems = [
     { id: 'dashboard', label: 'Dashboard',            icon: SquaresFour,  doctorOnly: false, adminOnly: false },
@@ -115,7 +115,7 @@ function Sidebar({ screen, go, doctorName }: { screen: string; go: (s: string) =
     : allNavItems.filter(i => !i.doctorOnly || isDoctor);
   // Nome exibido: fullName do perfil (médico ou secretaria)
   const displayName = fullName || doctorName || 'Usuário';
-  const displayRole = isAdmin ? 'Admin' : role === 'secretaria' ? 'Secretaria' : 'Pediatra';
+  const displayRole = isAdmin ? 'Admin' : role === 'secretaria' ? 'Secretaria' : (specialty || 'Médico');
   return (
     <div style={{ width: SIDEBAR_W, height: '100%', background: '#fff', borderRight: `1px solid ${BO}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       {/* Brand */}
@@ -259,7 +259,7 @@ function Layout({ children, screen, go, breadcrumb, onBack, doctorName, notifica
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: BG }}>
-      <Sidebar screen={screen} go={go} doctorName={doctorName} />
+      <Sidebar screen={screen} go={go} doctorName={doctorName} specialty={doctorSpecialty} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Header breadcrumb={breadcrumb} onBack={onBack} notifications={notifications} onNotificationClick={onNotificationClick} onClearNotifications={onClearNotifications} />
         <main style={{ flex: 1, padding: 32, overflowY: 'auto' }}>{children}</main>
