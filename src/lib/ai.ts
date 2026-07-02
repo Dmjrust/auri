@@ -3,28 +3,69 @@ import type {
   ConsultaAdultoData, VitaisAdulto, ProblemaAtivo, Medication, Allergy, MedicationChange, RespostaTratamento,
 } from '../data/mock';
 import { calcImc } from './auri-utils';
+import { supabase } from './supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// VALIDAÇÃO CLÍNICA: chama OpenAI diretamente do browser via VITE_OPENAI_API_KEY.
-// Simples, sem proxy — mas a API do Whisper impõe um limite rígido de 25MB por
-// requisição. A gravação usa Opus a 24kbps (~180KB/min), o que cobre até ~2h20
-// de consulta dentro desse limite. Acima disso, transcribeAudio() lança um erro
-// tratável antes que a OpenAI retorne 413.
-//
-// TODO pós-validação: mover para proxy server-side (Vercel Pro + maxDuration 300s)
-//   para não expor a chave no bundle de produção.
+// Em produção, TODAS as chamadas à OpenAI passam pelo proxy autenticado em
+// /api (Vercel Functions) — a chave OPENAI_API_KEY vive só no servidor e nunca
+// entra no bundle. Em dev (vite/vitest), chama a OpenAI direto com
+// VITE_OPENAI_API_KEY para não exigir `vercel dev` local.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const KEY = () => import.meta.env.VITE_OPENAI_API_KEY as string;
+const IS_DEV = import.meta.env.DEV;
+const DEV_KEY = () => import.meta.env.VITE_OPENAI_API_KEY as string;
 
 // Limite documentado da API Whisper (corpo multipart/form-data, ~25MB).
+// A gravação usa Opus a 24kbps (~180KB/min) — cobre até ~2h20 de consulta.
 // https://platform.openai.com/docs/guides/speech-to-text
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 26214400 bytes
 
+const AI_TIMEOUT_MS = 5 * 60 * 1000;
+
+async function sessionBearer(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sessão expirada. Faça login novamente para usar a transcrição por IA.');
+  return `Bearer ${session.access_token}`;
+}
+
+// fetch com timeout de 5min e 1 retry para falha de rede / 429 / 5xx.
+async function fetchAI(url: string, init: RequestInit, label: string): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      if ((res.status === 429 || res.status >= 500) && attempt === 0) continue;
+      return res;
+    } catch (e: any) {
+      if (attempt === 0) continue; // falha de rede/timeout → 1 retry
+      if (e?.name === 'AbortError') throw new Error(`${label}: tempo limite excedido (5 min). Verifique a conexão e tente novamente.`);
+      throw new Error(`${label}: falha de rede. Verifique a conexão e tente novamente.`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+// Chat completion via proxy (produção) ou direto (dev). Retorna o JSON completo
+// da resposta da OpenAI ({ choices: [...] }).
+async function chatCompletion(payload: Record<string, unknown>, label = 'GPT-4o'): Promise<any> {
+  const url = IS_DEV ? 'https://api.openai.com/v1/chat/completions' : '/api/chat';
+  const auth = IS_DEV ? `Bearer ${DEV_KEY()}` : await sessionBearer();
+  const res = await fetchAI(url, {
+    method: 'POST',
+    headers: { Authorization: auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }, label);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.error || `${label} ${res.status}`);
+  }
+  return res.json();
+}
+
 // ── Whisper: áudio → transcrição ─────────────────────────────────────────────
 export async function transcribeAudio(blob: Blob): Promise<string> {
-  const key = KEY();
-  if (!key || key === 'undefined') throw new Error('VITE_OPENAI_API_KEY não configurada. Adicione nas variáveis de ambiente do Vercel e faça redeploy.');
   if (blob.size === 0) throw new Error('O áudio gravado está vazio. Tente gravar novamente.');
   if (blob.size > MAX_AUDIO_BYTES) {
     const sizeMb = (blob.size / (1024 * 1024)).toFixed(1);
@@ -34,22 +75,64 @@ export async function transcribeAudio(blob: Blob): Promise<string> {
     );
   }
 
+  if (IS_DEV) return transcribeDirect(blob);
+  return transcribeViaProxy(blob);
+}
+
+// Dev only: Whisper direto do browser com VITE_OPENAI_API_KEY.
+async function transcribeDirect(blob: Blob): Promise<string> {
+  const key = DEV_KEY();
+  if (!key || key === 'undefined') throw new Error('VITE_OPENAI_API_KEY não configurada para desenvolvimento local.');
+
   const form = new FormData();
   const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
   form.append('file', blob, `consulta.${ext}`);
   form.append('model', 'whisper-1');
   form.append('language', 'pt');
 
-  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+  const res = await fetchAI('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}` },
     body: form,
-  });
+  }, 'Whisper');
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.error?.message || `Whisper ${res.status}`);
   }
   return (await res.json()).text as string;
+}
+
+// Produção: sobe o áudio ao bucket privado consult-audio, gera signed URL curta
+// e envia ao proxy /api/transcribe. O arquivo é deletado ao final (LGPD) —
+// sucesso ou falha.
+async function transcribeViaProxy(blob: Blob): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Sessão expirada. Faça login novamente para usar a transcrição por IA.');
+
+  const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
+  const path = `${user.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const bucket = supabase.storage.from('consult-audio');
+
+  const { error: uploadError } = await bucket.upload(path, blob, { contentType: blob.type || 'audio/webm' });
+  if (uploadError) throw new Error(`Falha ao enviar o áudio para transcrição: ${uploadError.message}`);
+
+  try {
+    const { data: signed, error: signError } = await bucket.createSignedUrl(path, 60 * 60 * 2);
+    if (signError || !signed) throw new Error('Falha ao preparar o áudio para transcrição.');
+
+    const res = await fetchAI('/api/transcribe', {
+      method: 'POST',
+      headers: { Authorization: await sessionBearer(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioUrl: signed.signedUrl, mimeType: blob.type || 'audio/webm' }),
+    }, 'Transcrição');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || `Transcrição falhou (${res.status})`);
+    }
+    return (await res.json()).text as string;
+  } finally {
+    bucket.remove([path]).catch(() => { /* melhor esforço — bucket é privado por médico */ });
+  }
 }
 
 // ── GPT-4o: transcrição → prontuário estruturado ─────────────────────────────
@@ -312,24 +395,19 @@ export async function structureSummary(
         })}\n\nTranscrição da consulta:\n\n${transcript}`
       : `Transcrição da consulta:\n\n${transcript}`;
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      response_format: { type: 'json_object' },
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...(userContent ? [{ role: 'user' as const, content: userContent }] : []),
-      ],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `GPT-4o ${res.status}`);
+  const data = await chatCompletion({
+    model: 'gpt-4o',
+    response_format: { type: 'json_object' },
+    temperature: 0.2,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...(userContent ? [{ role: 'user' as const, content: userContent }] : []),
+    ],
+  }, 'GPT-4o');
+  const raw = JSON.parse(data.choices[0].message.content) as Record<string, unknown>;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('A IA retornou um formato inesperado. Use "Continuar sem IA" para preencher manualmente.');
   }
-  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, unknown>;
 
   const isAdult = specialty !== 'Tricologia' && specialty !== 'Pediatria';
   const cg = isAdult ? (raw.clinica_geral as Record<string, unknown> | undefined) ?? {} : null;
@@ -481,24 +559,16 @@ Vacinas mencionadas: ${data.vacinas_mencionadas.join(', ') || 'Nenhuma'}
 Retorno: ${data.retorno || 'Não informado'}
   `.trim();
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-      messages: [
-        { role: 'system', content: SCANNABLE_SYSTEM_PROMPT },
-        { role: 'user', content: input },
-      ],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `GPT-4o ${res.status}`);
-  }
-  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
+  const resp = await chatCompletion({
+    model: 'gpt-4o',
+    response_format: { type: 'json_object' },
+    temperature: 0.1,
+    messages: [
+      { role: 'system', content: SCANNABLE_SYSTEM_PROMPT },
+      { role: 'user', content: input },
+    ],
+  }, 'GPT-4o resumo');
+  const raw = JSON.parse(resp.choices[0].message.content) as Record<string, any>;
 
   return {
     quick_summary:       Array.isArray(raw.quick_summary)       ? raw.quick_summary.map(String)       : [],
@@ -690,24 +760,16 @@ const ANAMNESE_PRIMEIRA_VEZ_SCHEMA = {
 } as const;
 
 export async function extractAnamnesePrimeiraConsulta(transcript: string): Promise<AnamnesePrimeiraConsultaData> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      response_format: { type: 'json_schema', json_schema: ANAMNESE_PRIMEIRA_VEZ_SCHEMA },
-      temperature: 0.1,
-      messages: [
-        { role: 'system', content: ANAMNESE_PRIMEIRA_VEZ_SYSTEM_PROMPT },
-        { role: 'user', content: `Transcrição da primeira consulta:\n\n${transcript}` },
-      ],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `GPT-4o anamnese ${res.status}`);
-  }
-  const root = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
+  const data = await chatCompletion({
+    model: 'gpt-4o',
+    response_format: { type: 'json_schema', json_schema: ANAMNESE_PRIMEIRA_VEZ_SCHEMA },
+    temperature: 0.1,
+    messages: [
+      { role: 'system', content: ANAMNESE_PRIMEIRA_VEZ_SYSTEM_PROMPT },
+      { role: 'user', content: `Transcrição da primeira consulta:\n\n${transcript}` },
+    ],
+  }, 'GPT-4o anamnese');
+  const root = JSON.parse(data.choices[0].message.content) as Record<string, any>;
 
   // Destructure the six section objects (default to empty obj if section absent)
   const ha = root.historia_atual          ?? {};
@@ -883,24 +945,16 @@ const ANAMNESE_ADULTA_SCHEMA = {
 } as const;
 
 export async function extractAnamneseAdulta(transcript: string): Promise<AnamneseAdultaData> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      response_format: { type: 'json_schema', json_schema: ANAMNESE_ADULTA_SCHEMA },
-      temperature: 0.1,
-      messages: [
-        { role: 'system', content: ANAMNESE_ADULTA_SYSTEM_PROMPT },
-        { role: 'user', content: `Transcrição da primeira consulta:\n\n${transcript}` },
-      ],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `GPT-4o anamnese adulta ${res.status}`);
-  }
-  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
+  const data = await chatCompletion({
+    model: 'gpt-4o',
+    response_format: { type: 'json_schema', json_schema: ANAMNESE_ADULTA_SCHEMA },
+    temperature: 0.1,
+    messages: [
+      { role: 'system', content: ANAMNESE_ADULTA_SYSTEM_PROMPT },
+      { role: 'user', content: `Transcrição da primeira consulta:\n\n${transcript}` },
+    ],
+  }, 'GPT-4o anamnese adulta');
+  const raw = JSON.parse(data.choices[0].message.content) as Record<string, any>;
 
   const str = (v: any) => (v !== null && v !== undefined) ? String(v) : '';
   const bl  = (v: any): boolean | null => v === true ? true : v === false ? false : null;
@@ -992,30 +1046,19 @@ export async function extractExamData(base64: string, mimeType: string): Promise
     ? { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }
     : { type: 'file', file: { filename: 'exame.pdf', file_data: `data:${mimeType};base64,${base64}` } };
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-      max_tokens: 16000, // documento exaustivo pode ter 30-40+ marcadores — não limitar artificialmente
-      messages: [
-        { role: 'system', content: EXAM_EXTRACTION_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: [fileContent, { type: 'text', text: 'Extraia os dados deste exame conforme as instruções. Lembre-se: o array "markers" deve incluir TODOS os resultados numéricos do documento, não apenas os alterados.' }],
-        },
-      ],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const message = err?.error?.message || `GPT-4o exame ${res.status}`;
-    console.error('[extractExamData] erro da API OpenAI:', message);
-    throw new Error(message);
-  }
-  const json = await res.json();
+  const json = await chatCompletion({
+    model: 'gpt-4o',
+    response_format: { type: 'json_object' },
+    temperature: 0.1,
+    max_tokens: 16000, // documento exaustivo pode ter 30-40+ marcadores — não limitar artificialmente
+    messages: [
+      { role: 'system', content: EXAM_EXTRACTION_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: [fileContent, { type: 'text', text: 'Extraia os dados deste exame conforme as instruções. Lembre-se: o array "markers" deve incluir TODOS os resultados numéricos do documento, não apenas os alterados.' }],
+      },
+    ],
+  }, 'GPT-4o exame');
   const choice = json.choices[0];
   if (choice.finish_reason === 'length') {
     console.error('[extractExamData] resposta truncada por limite de tokens (finish_reason=length)');

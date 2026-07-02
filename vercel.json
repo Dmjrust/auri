@@ -3,11 +3,8 @@
     "api/transcribe.ts": {
       "maxDuration": 300
     },
-    "api/structure.ts": {
-      "maxDuration": 30
-    },
-    "api/scannable.ts": {
-      "maxDuration": 30
+    "api/chat.ts": {
+      "maxDuration": 60
     }
   }
 }

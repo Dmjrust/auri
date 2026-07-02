@@ -16,6 +16,8 @@ export const config = {
   },
 };
 
+import { requireSupabaseUser } from './_auth';
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -27,6 +29,9 @@ export default async function handler(req: any, res: any) {
       error: 'API key não configurada no servidor. Adicione OPENAI_API_KEY nas variáveis de ambiente do Vercel.',
     });
   }
+
+  const auth = await requireSupabaseUser(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
   try {
     const { audioUrl, mimeType } = req.body as { audioUrl: string; mimeType: string };
