@@ -16,6 +16,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import * as db from '../lib/db';
 import * as ai from '../lib/ai';
 import {
@@ -575,6 +576,7 @@ export function ProblemsEditor({ problems, onChange, novos }: {
     onChange(problems.map((p, i) => i === idx ? { ...p, status: next, updated_at: new Date().toISOString() } : p));
   }
   function remove(idx: number) {
+    if (!window.confirm(`Remover o problema "${problems[idx]?.name}"?`)) return;
     onChange(problems.filter((_, i) => i !== idx));
   }
 
@@ -625,6 +627,7 @@ export function MedicationsEditor({ medications, onChange }: {
     onChange(medications.map((m, i) => i === idx ? { ...m, status } : m));
   }
   function remove(idx: number) {
+    if (!window.confirm(`Remover a medicação "${medications[idx]?.name}"?`)) return;
     onChange(medications.filter((_, i) => i !== idx));
   }
 
@@ -672,6 +675,7 @@ export function AllergiesEditor({ allergies, onChange }: {
     setDraft({ allergen: '', reaction: '' });
   }
   function remove(idx: number) {
+    if (!window.confirm(`Remover a alergia "${allergies[idx]?.allergen}"?`)) return;
     onChange(allergies.filter((_, i) => i !== idx));
   }
 
@@ -808,15 +812,17 @@ export function ConsentScreen({ onOk, onCancel, consultType }: {
         </div>
         <div style={{ background: SEC, borderRadius: 10, padding: 20, marginBottom: 24, fontSize: 13, lineHeight: 1.7, color: MU }}>
           <strong>O que acontece com o áudio:</strong><br />
-          • A gravação é processada localmente e descartada após a transcrição<br />
-          • Apenas o texto estruturado é salvo no prontuário<br />
-          • Dados protegidos conforme LGPD e CFM 2.454/2026<br />
-          • O médico revisa e valida o resumo antes de salvar
+          • O áudio é enviado de forma criptografada à OpenAI (EUA) para transcrição — transferência internacional de dados, conforme LGPD Art. 33<br />
+          • A OpenAI pode reter o áudio por até 30 dias para fins de segurança; não o utiliza para treinar modelos<br />
+          • Nossa cópia do áudio é apagada imediatamente após a transcrição; apenas o texto estruturado é salvo no prontuário<br />
+          • O médico revisa e valida o resumo antes de salvar (IA como apoio, CFM 2.454/2026)<br />
+          • Este consentimento fica registrado com data, hora e versão do termo<br />
+          • É possível recusar e preencher o prontuário manualmente, sem gravação
         </div>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', marginBottom: 28, fontSize: 14 }}>
           <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)}
             style={{ marginTop: 2, accentColor: P, width: 16, height: 16 }} />
-          <span>O responsável foi informado e concordou com a gravação desta consulta para fins de documentação médica.</span>
+          <span>O paciente ou responsável foi informado sobre a gravação, a transcrição por IA (OpenAI/EUA) e o registro deste consentimento, e concordou com o uso para fins de documentação médica.</span>
         </label>
         <div style={{ display: 'flex', gap: 12 }}>
           <Btn variant="secondary" onClick={onCancel} style={{ flex: 1, justifyContent: 'center' }}>Cancelar</Btn>
@@ -1151,24 +1157,32 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
       } else {
         consultId = await db.saveConsultation(patient.id, edited, recTime, patient.birth_date, consultType);
       }
-      if (isPrimeira) {
-        if (isAdult) {
-          await db.saveAnamneseAdulta(consultId, editedAnamneseAdulta)
-            .catch(e => console.error('Anamnese adulta save failed (non-critical):', e));
-        } else {
-          await db.saveAnamnesePrimeiraConsulta(consultId, patient.id, editedAnamnese)
-            .catch(e => console.error('Anamnese save failed (non-critical):', e));
-        }
-      }
-      if (isAdult) {
-        await db.saveConsultaAdultoExtras(consultId, editedAdultData)
-          .catch(e => console.error('Dados de clínica geral save failed (non-critical):', e));
-      }
+      await saveSecondaryData(consultId);
       onSave();
     } catch (e: unknown) {
       setSaveError((e as Error)?.message || 'Erro ao salvar consulta. Tente novamente.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Salva anamnese e dados complementares. A consulta principal já foi salva;
+  // aqui um erro não desfaz o fluxo, mas o médico precisa ser avisado de que
+  // parte do prontuário não persistiu (nunca falhar em silêncio).
+  async function saveSecondaryData(consultId: string) {
+    if (!patient) return;
+    if (isPrimeira) {
+      if (isAdult) {
+        await db.saveAnamneseAdulta(consultId, editedAnamneseAdulta)
+          .catch(e => toast.error(`A anamnese não foi salva: ${(e as Error)?.message || 'erro de conexão'}. Reabra a consulta e salve novamente.`));
+      } else {
+        await db.saveAnamnesePrimeiraConsulta(consultId, patient.id, editedAnamnese)
+          .catch(e => toast.error(`A anamnese não foi salva: ${(e as Error)?.message || 'erro de conexão'}. Reabra a consulta e salve novamente.`));
+      }
+    }
+    if (isAdult) {
+      await db.saveConsultaAdultoExtras(consultId, editedAdultData)
+        .catch(e => toast.error(`Os dados de clínica geral não foram salvos: ${(e as Error)?.message || 'erro de conexão'}. Reabra a consulta e salve novamente.`));
     }
   }
 
@@ -1184,19 +1198,7 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
       } else {
         consultId = await db.saveDraftConsultation(patient.id, edited, recTime, consultType);
       }
-      if (isPrimeira) {
-        if (isAdult) {
-          await db.saveAnamneseAdulta(consultId, editedAnamneseAdulta)
-            .catch(e => console.error('Anamnese adulta save failed (non-critical):', e));
-        } else {
-          await db.saveAnamnesePrimeiraConsulta(consultId, patient.id, editedAnamnese)
-            .catch(e => console.error('Anamnese save failed (non-critical):', e));
-        }
-      }
-      if (isAdult) {
-        await db.saveConsultaAdultoExtras(consultId, editedAdultData)
-          .catch(e => console.error('Dados de clínica geral save failed (non-critical):', e));
-      }
+      await saveSecondaryData(consultId);
       onSave();
     } catch (e: unknown) {
       setSaveError((e as Error)?.message || 'Erro ao salvar rascunho. Tente novamente.');

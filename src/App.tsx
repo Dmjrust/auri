@@ -3248,9 +3248,11 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
 
   function removeAllergy(idx: number) {
     if (!lastConsult?.id) return;
+    if (!window.confirm(`Remover a alergia "${allergies[idx]?.allergen}" do prontuário?`)) return;
     const next = allergies.filter((_, i) => i !== idx);
     setAllergies(next);
-    db.updatePatientAllergies(lastConsult.id, next);
+    db.updatePatientAllergies(lastConsult.id, next)
+      .catch(err => toast.error(`A alergia não foi removida no servidor: ${err?.message || 'erro de conexão'}.`));
   }
 
   return (
@@ -6102,14 +6104,24 @@ export default function App() {
     />
   );
 
-  if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => { if (screen === 'dashboard') { go('patient-detail'); } else { setFlow(null); } }} />;
+  if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={async () => {
+    // LGPD Art. 7º/50: o consentimento precisa estar registrado antes de gravar.
+    if (activePatient) {
+      try { await db.saveConsent(activePatient.id, consultType); }
+      catch (err: any) {
+        toast.error(`Não foi possível registrar o consentimento: ${err?.message || 'erro de conexão'}. A gravação não foi iniciada.`);
+        return;
+      }
+    }
+    setFlow('recording');
+  }} onCancel={() => { if (screen === 'dashboard') { go('patient-detail'); } else { setFlow(null); } }} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} onCancel={() => { setFlow(null); setRecTime(0); setMicReady(false); }} onMicReady={() => setMicReady(true)} />;
   if (flow === 'processing') return <ProcessingScreen consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} patientId={activePatient?.id} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese, anamneseError, anamneseAdulta) => {
     setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setRealAnamneseAdulta(anamneseAdulta ?? null); setRealAnamneseError(anamneseError ?? null); setFlow('done');
     if (activePatient) {
       db.saveDraftConsultation(activePatient.id, summary, recTime, consultType)
         .then(id => setDraftConsultationId(id))
-        .catch(err => console.error('Auto-save draft failed:', err));
+        .catch(err => toast.error(`O rascunho da consulta não foi salvo automaticamente: ${err?.message || 'erro de conexão'}. Revise e salve manualmente antes de sair.`));
     }
   }} />;
   if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} anamnese={realAnamnese} anamneseAdulta={realAnamneseAdulta} anamneseError={realAnamneseError} specialty={doctorSpecialty} onSave={() => { if (activeAppointmentId) db.updateAppointment(activeAppointmentId, { status: 'completed' }).catch(() => {}); setActiveAppointmentId(null); setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRealAnamnese(null); setRealAnamneseAdulta(null); setRealAnamneseError(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;

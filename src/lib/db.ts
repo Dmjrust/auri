@@ -414,6 +414,27 @@ export async function saveDraftConsultation(
   return data.id;
 }
 
+// ─── CONSENTIMENTO LGPD ───────────────────────────────────────────────────────
+// Versão do termo exibido no ConsentScreen. Incrementar sempre que o texto do
+// termo mudar, para que o registro em consultation_consents reflita o que o
+// responsável de fato leu (LGPD Art. 7º / Art. 50).
+export const CONSENT_TERM_VERSION = '2026-07-02.v2';
+
+export async function saveConsent(
+  patientId: string,
+  consultType: 'retorno' | 'primeira vez',
+): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Não autenticado');
+  const { error } = await supabase.from('consultation_consents').insert({
+    doctor_id: user.id,
+    patient_id: patientId,
+    term_version: CONSENT_TERM_VERSION,
+    consult_type: consultType,
+  });
+  if (error) throw error;
+}
+
 // ── Confirm draft → completed (saves edited summary + growth records) ─────────
 export async function confirmDraftConsultation(
   draftId: string,
