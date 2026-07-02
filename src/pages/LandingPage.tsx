@@ -37,7 +37,7 @@ const FEATURES = [
   {
     icon: <ShieldCheck size={22} weight="duotone" color="#E8825B" />,
     title: 'Privacidade em primeiro lugar',
-    desc: 'LGPD + CFM 2.454/2026. Áudio descartado após transcrição. Dados no Brasil. Você é o dono.',
+    desc: 'LGPD + CFM 2.454/2026. Áudio descartado após a transcrição, consentimento registrado a cada consulta. Você é o dono dos dados.',
   },
   {
     icon: <TrendUp size={22} weight="duotone" color="#E8825B" />,
