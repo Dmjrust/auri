@@ -30,3 +30,24 @@ export function fmtTimer(s: number): string {
 export function primaryGuardian(p: Patient) {
   return p.guardians.find(g => g.is_primary) || p.guardians[0];
 }
+
+// Extrai o primeiro número (aceita vírgula ou ponto decimal) de um texto livre
+// como "82 kg", "1,72 m" ou "172 cm".
+function parseFirstNumber(text: string): number | null {
+  const m = text.replace(',', '.').match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+// Calcula o IMC a partir de textos livres de peso/altura extraídos pela IA.
+// Aceita altura em metros ("1,72 m") ou centímetros ("172 cm") — assume metros
+// quando o valor numérico é menor que 3 (ninguém mede >3m de altura).
+export function calcImc(pesoTexto: string, alturaTexto: string): string {
+  const pesoKg = pesoTexto ? parseFirstNumber(pesoTexto) : null;
+  let alturaM = alturaTexto ? parseFirstNumber(alturaTexto) : null;
+  if (!pesoKg || !alturaM) return '';
+  if (alturaM > 3) alturaM = alturaM / 100; // veio em cm
+  if (alturaM <= 0) return '';
+  const imc = pesoKg / (alturaM * alturaM);
+  if (!isFinite(imc) || imc <= 0) return '';
+  return imc.toFixed(1);
+}

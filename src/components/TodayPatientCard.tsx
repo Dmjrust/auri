@@ -54,6 +54,8 @@ const CLINICA_GERAL_CHECKLIST = [
   'Alergias',
   'Hábitos de vida (atividade física, alimentação, sono, tabagismo, álcool)',
   'Histórico familiar relevante',
+  'Sinais vitais e antropometria',
+  'Problemas ativos iniciais',
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

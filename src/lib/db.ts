@@ -499,6 +499,12 @@ export async function updateDraftConsultation(
   if (error) throw error;
 }
 
+// Mesma regra de detectConsultType, mas client-side — para quando a lista de
+// consultas do paciente já está carregada em memória (evita um round-trip).
+export function deriveConsultType(consultations: Array<{ status: string }>): 'retorno' | 'primeira vez' {
+  return consultations.some(c => c.status === 'completed') ? 'retorno' : 'primeira vez';
+}
+
 // ── Detect consultation type from patient history ─────────────────────────────
 export async function detectConsultType(patientId: string): Promise<'retorno' | 'primeira vez'> {
   const { count } = await supabase
@@ -1771,6 +1777,135 @@ export async function updatePatientProblems(
     .from('consultations')
     .update({ specialty_data: { ...existing, active_problems: problems } })
     .eq('id', consultaId);
+}
+
+export async function updatePatientMedications(
+  consultaId: string,
+  medications: ConsultaAdultoData['current_medications']
+): Promise<void> {
+  const { data: row } = await supabase
+    .from('consultations')
+    .select('specialty_data')
+    .eq('id', consultaId)
+    .single();
+
+  const existing = (row?.specialty_data as ConsultaAdultoData | null) ?? {};
+  await supabase
+    .from('consultations')
+    .update({ specialty_data: { ...existing, current_medications: medications } })
+    .eq('id', consultaId);
+}
+
+export async function updatePatientAllergies(
+  consultaId: string,
+  allergies: ConsultaAdultoData['allergies']
+): Promise<void> {
+  const { data: row } = await supabase
+    .from('consultations')
+    .select('specialty_data')
+    .eq('id', consultaId)
+    .single();
+
+  const existing = (row?.specialty_data as ConsultaAdultoData | null) ?? {};
+  await supabase
+    .from('consultations')
+    .update({ specialty_data: { ...existing, allergies } })
+    .eq('id', consultaId);
+}
+
+// Generaliza saveAnamneseAdulta/updatePatientProblems/updatePatientMedications:
+// merge parcial de qualquer subconjunto de campos de ConsultaAdultoData sobre o
+// specialty_data existente, num único read-modify-write. Usado pelo fluxo de
+// gravação (primeira consulta e retorno) para persistir vitals/medicações/
+// problemas/resumo/campos de retorno de uma vez, sem múltiplas chamadas.
+export async function saveConsultaAdultoExtras(
+  consultaId: string,
+  data: Partial<ConsultaAdultoData>
+): Promise<void> {
+  const { data: row } = await supabase
+    .from('consultations')
+    .select('specialty_data')
+    .eq('id', consultaId)
+    .single();
+
+  const existing = (row?.specialty_data as ConsultaAdultoData | null) ?? {};
+  const { error } = await supabase
+    .from('consultations')
+    .update({ specialty_data: { ...existing, ...data } })
+    .eq('id', consultaId);
+  if (error) throw error;
+}
+
+// Estado clínico atual do paciente (problemas ativos, medicações, alergias),
+// derivado da consulta completa mais recente — usado para dar contexto de
+// "antes desta consulta" à extração de IA do retorno.
+export async function fetchCurrentAdultState(patientId: string): Promise<{
+  active_problems: ConsultaAdultoData['active_problems'];
+  current_medications: ConsultaAdultoData['current_medications'];
+  allergies: ConsultaAdultoData['allergies'];
+}> {
+  const { data } = await supabase
+    .from('consultations')
+    .select('specialty_data')
+    .eq('patient_id', patientId)
+    .eq('status', 'completed')
+    .order('scheduled_at', { ascending: false })
+    .limit(1);
+
+  const row = (data?.[0] as { specialty_data: ConsultaAdultoData | null } | undefined);
+  const sd = row?.specialty_data ?? {};
+  return {
+    active_problems: sd.active_problems ?? [],
+    current_medications: sd.current_medications ?? [],
+    allergies: sd.allergies ?? [],
+  };
+}
+
+export interface MarkerComparison {
+  marker_name: string;
+  previous: LabMarker;
+  current: LabMarker;
+  deltaPct: number | null;
+  trend: 'melhora' | 'piora' | 'estavel';
+}
+
+// Compara os dois valores mais recentes de um marcador de exame já registrados
+// no histórico do paciente. Puramente computado a partir de dados reais salvos
+// (fetchLabMarkerHistory) — nunca pedido à IA, que não deve "lembrar" números
+// de uma transcrição de áudio.
+export async function getMarkerComparison(patientId: string, markerName: string): Promise<MarkerComparison | null> {
+  const history = await fetchLabMarkerHistory(patientId, markerName);
+  if (history.length < 2) return null;
+  const previous = history[history.length - 2];
+  const current = history[history.length - 1];
+  const deltaPct = previous.value !== 0 ? ((current.value - previous.value) / Math.abs(previous.value)) * 100 : null;
+
+  let trend: MarkerComparison['trend'] = 'estavel';
+  if (deltaPct !== null && Math.abs(deltaPct) >= 5) {
+    // Para a maioria dos marcadores, "menor melhor" não é universal — usamos o
+    // status (normal/alto/baixo/critico) já calculado na extração do exame para
+    // decidir a direção da melhora, não apenas o sinal da variação.
+    const wasAltered = previous.status !== 'normal';
+    const isAltered = current.status !== 'normal';
+    if (wasAltered && !isAltered) trend = 'melhora';
+    else if (!wasAltered && isAltered) trend = 'piora';
+    else if (wasAltered && isAltered) {
+      trend = Math.abs(current.value - (current.reference_min ?? current.value)) <
+               Math.abs(previous.value - (previous.reference_min ?? previous.value))
+        ? 'melhora' : 'piora';
+    }
+  }
+
+  return { marker_name: markerName, previous, current, deltaPct, trend };
+}
+
+// Compara todos os marcadores do paciente que têm pelo menos 2 resultados
+// registrados — usado na revisão de retorno e na aba Evolução.
+export async function getMarkerComparisons(patientId: string): Promise<MarkerComparison[]> {
+  const latest = await fetchLatestMarkers(patientId);
+  const names = Object.keys(latest);
+  const comparisons = await Promise.all(names.map(name => getMarkerComparison(patientId, name)));
+  return comparisons.filter((c): c is MarkerComparison => c !== null);
 }
 
 // ─── CLÍNICA GERAL — DOCUMENTOS CLÍNICOS ─────────────────────────────────────

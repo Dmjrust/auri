@@ -21,14 +21,18 @@ import * as ai from '../lib/ai';
 import {
   Baby, FileText, Heartbeat, House, Microphone, Syringe,
   Play, Square, CheckCircle, Warning, CaretUp, CaretDown,
-  Star, ArrowCounterClockwise, TrendUp, Stethoscope,
-  Users, ArrowLeft,
+  Star, ArrowCounterClockwise, TrendUp, TrendDown, Minus, Stethoscope,
+  Users, ArrowLeft, Plus, X, Pill, ClipboardText,
 } from '@phosphor-icons/react';
 
 import { P, PL, ACCENTL, ACCENT, INK, MU, BO, BG, SEC, SUCL, SUC, WARNL, WARN, DESL, DES } from '../lib/design';
-import { fmtTimer } from '../lib/auri-utils';
-import type { Patient, StructuredSummary, AnamnesePrimeiraConsultaData } from '../data/mock';
-import { defaultAnamnesePrimeiraConsulta } from '../data/mock';
+import { fmtTimer, calcImc } from '../lib/auri-utils';
+import type {
+  Patient, StructuredSummary, AnamnesePrimeiraConsultaData, AnamneseAdultaData,
+  ConsultaAdultoData, VitaisAdulto, ProblemaAtivo, Medication, Allergy, MedicationChange, RespostaTratamento,
+} from '../data/mock';
+import { defaultAnamnesePrimeiraConsulta, defaultAnamneseAdulta } from '../data/mock';
+import type { MarkerComparison } from '../lib/db';
 import type { IconComponent } from '../lib/types';
 import { Btn, Card } from './auri-ui';
 import { RequireRole } from './RequireRole';
@@ -360,6 +364,427 @@ export function AnamnesePrimeiraConsulta({ data, onChange }: {
   );
 }
 
+// ─── ANAMNESE ADULTA (CLÍNICA GERAL) — CAMPOS ─────────────────────────────────
+// Compartilhado entre AnamneseAdultaModal (App.tsx, entrada manual) e
+// SummaryDoneScreen (revisão do que a IA extraiu da gravação).
+
+const inputStyleAdulta: React.CSSProperties = {
+  width: '100%', padding: '9px 12px', border: `1px solid ${BO}`, borderRadius: 6,
+  fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const,
+  background: '#fff', color: INK,
+};
+
+export function AnamneseAdultaFields({ form, set }: {
+  form: AnamneseAdultaData;
+  set: (k: keyof AnamneseAdultaData, v: unknown) => void;
+}) {
+  const BoolRow = ({ label, field }: { label: string; field: keyof AnamneseAdultaData }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${BO}` }}>
+      <span style={{ fontSize: 13, color: INK }}>{label}</span>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {(['Sim', 'Não'] as const).map(opt => (
+          <button key={opt} type="button" onClick={() => set(field, opt === 'Sim' ? true : false)}
+            style={{ padding: '4px 12px', borderRadius: 5, border: `1px solid ${BO}`, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+              background: form[field] === (opt === 'Sim') ? P : '#fff', color: form[field] === (opt === 'Sim') ? '#fff' : INK }}>
+            {opt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Motivo */}
+      <section>
+        <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Motivo da consulta</p>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Motivo</label>
+          <input value={form.motivo_consulta} onChange={e => set('motivo_consulta', e.target.value)} placeholder="Ex: controle de hipertensão" style={inputStyleAdulta} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Duração da queixa</label>
+          <input value={form.queixa_duracao} onChange={e => set('queixa_duracao', e.target.value)} placeholder="Ex: 2 anos" style={inputStyleAdulta} />
+        </div>
+      </section>
+
+      {/* Condições crônicas */}
+      <section>
+        <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Condições crônicas</p>
+        <BoolRow label="Hipertensão arterial" field="hipertensao" />
+        <BoolRow label="Diabetes" field="diabetes" />
+        <BoolRow label="Dislipidemia" field="dislipidemia" />
+        <BoolRow label="Cardiopatia" field="cardiopatia" />
+        <BoolRow label="Asma / DPOC" field="asma_dpoc" />
+        <BoolRow label="Doença renal" field="doenca_renal" />
+        <BoolRow label="Doença cardiovascular" field="doenca_cardiovascular" />
+        <BoolRow label="AVC" field="avc" />
+        <BoolRow label="Câncer" field="cancer" />
+        <BoolRow label="Doenças psiquiátricas" field="doencas_psiquiatricas" />
+        <div style={{ marginTop: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Outras comorbidades</label>
+          <input value={form.outras_comorbidades} onChange={e => set('outras_comorbidades', e.target.value)} placeholder="Ex: hipotireoidismo, obesidade" style={inputStyleAdulta} />
+        </div>
+      </section>
+
+      {/* Cirurgias e internações */}
+      <section>
+        <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Cirurgias e internações</p>
+        <BoolRow label="Cirurgias prévias" field="cirurgias_previas" />
+        {form.cirurgias_previas && (
+          <div style={{ marginTop: 8, marginBottom: 8 }}>
+            <input value={form.cirurgias_desc} onChange={e => set('cirurgias_desc', e.target.value)} placeholder="Descreva as cirurgias" style={inputStyleAdulta} />
+          </div>
+        )}
+        <BoolRow label="Internações prévias" field="internacoes_previas" />
+        {form.internacoes_previas && (
+          <div style={{ marginTop: 8 }}>
+            <input value={form.internacoes_desc} onChange={e => set('internacoes_desc', e.target.value)} placeholder="Descreva as internações" style={inputStyleAdulta} />
+          </div>
+        )}
+      </section>
+
+      {/* Hábitos */}
+      <section>
+        <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Hábitos de vida</p>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Tabagismo</label>
+          <select value={form.tabagismo ?? ''} onChange={e => set('tabagismo', e.target.value || null)} style={{ ...inputStyleAdulta, background: '#fff' }}>
+            <option value="">Não informado</option>
+            <option value="nunca">Nunca fumou</option>
+            <option value="ex-fumante">Ex-fumante</option>
+            <option value="fumante">Fumante</option>
+          </select>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Etilismo</label>
+          <select value={form.etilismo ?? ''} onChange={e => set('etilismo', e.target.value || null)} style={{ ...inputStyleAdulta, background: '#fff' }}>
+            <option value="">Não informado</option>
+            <option value="nunca">Nunca</option>
+            <option value="ocasional">Ocasional</option>
+            <option value="regular">Regular</option>
+          </select>
+        </div>
+        <BoolRow label="Atividade física regular" field="atividade_fisica" />
+        {form.atividade_fisica && (
+          <div style={{ marginTop: 8, marginBottom: 8 }}>
+            <input value={form.atividade_fisica_desc} onChange={e => set('atividade_fisica_desc', e.target.value)} placeholder="Ex: caminhada 3x/semana" style={inputStyleAdulta} />
+          </div>
+        )}
+        <div style={{ marginTop: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Sono</label>
+          <input value={form.sono} onChange={e => set('sono', e.target.value)} placeholder="Ex: 6h/noite, sono fragmentado" style={inputStyleAdulta} />
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Uso de drogas</label>
+          <input value={form.uso_drogas} onChange={e => set('uso_drogas', e.target.value)} placeholder="Ex: nega uso" style={inputStyleAdulta} />
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Ocupação</label>
+          <input value={form.ocupacao} onChange={e => set('ocupacao', e.target.value)} placeholder="Ex: motorista de aplicativo" style={inputStyleAdulta} />
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Nível de estresse</label>
+          <input value={form.nivel_estresse} onChange={e => set('nivel_estresse', e.target.value)} placeholder="Ex: alto, relacionado ao trabalho" style={inputStyleAdulta} />
+        </div>
+      </section>
+
+      {/* Medicamentos e alergias */}
+      <section>
+        <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Medicamentos e alergias</p>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Medicamentos em uso</label>
+          <textarea value={form.medicamentos_em_uso} onChange={e => set('medicamentos_em_uso', e.target.value)} placeholder="Liste os medicamentos atuais..." rows={3} style={{ ...inputStyleAdulta, resize: 'vertical' as const }} />
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Alergias a medicamentos</label>
+          <input value={form.alergias_medicamentos} onChange={e => set('alergias_medicamentos', e.target.value)} placeholder="Ex: penicilina, dipirona" style={inputStyleAdulta} />
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Alergias alimentares</label>
+          <input value={form.alergias_alimentares} onChange={e => set('alergias_alimentares', e.target.value)} placeholder="Ex: frutos do mar" style={inputStyleAdulta} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Outras alergias</label>
+          <input value={form.alergias_outras} onChange={e => set('alergias_outras', e.target.value)} placeholder="Ex: látex" style={inputStyleAdulta} />
+        </div>
+      </section>
+
+      {/* Histórico familiar */}
+      <section>
+        <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Histórico familiar</p>
+        <textarea value={form.historico_familiar} onChange={e => set('historico_familiar', e.target.value)} placeholder="Ex: DM2 materno, IAM paterno, CA de cólon" rows={2} style={{ ...inputStyleAdulta, resize: 'vertical' as const }} />
+      </section>
+
+      {/* Histórico vacinal */}
+      <section>
+        <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Histórico vacinal adulto</p>
+        <input value={form.vacinacao_adulto} onChange={e => set('vacinacao_adulto', e.target.value)} placeholder="Ex: gripe (mês passado), COVID (2024)" style={inputStyleAdulta} />
+        <p style={{ margin: '6px 0 0', fontSize: 11, color: MU }}>Menções feitas na consulta — o registro formal de cada dose fica na aba Vacinas.</p>
+      </section>
+
+      {/* Rastreamentos preventivos */}
+      <section>
+        <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Rastreamentos preventivos</p>
+        {[
+          { label: 'Última mamografia', field: 'ultima_mamografia' as keyof AnamneseAdultaData, placeholder: 'Ex: 2024 / não realizado' },
+          { label: 'Último Papanicolau', field: 'ultimo_papanicolau' as keyof AnamneseAdultaData, placeholder: 'Ex: 2024' },
+          { label: 'Última colonoscopia', field: 'ultima_colonoscopia' as keyof AnamneseAdultaData, placeholder: 'Ex: 2022 / nunca realizou' },
+          { label: 'PSA', field: 'psa' as keyof AnamneseAdultaData, placeholder: 'Ex: 2024, 0.9 ng/mL' },
+        ].map(({ label, field, placeholder }) => (
+          <div key={String(field)} style={{ marginBottom: 10 }}>
+            <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>{label}</label>
+            <input value={(form[field] as string) || ''} onChange={e => set(field, e.target.value)} placeholder={placeholder} style={inputStyleAdulta} />
+          </div>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+// ─── CLÍNICA GERAL — EDITORES COMPARTILHADOS (problemas/medicações/alergias/vitais) ─
+// Usados tanto na revisão de primeira consulta quanto na de retorno em SummaryDoneScreen.
+
+const smallInputStyle: React.CSSProperties = {
+  padding: '7px 10px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 13,
+  fontFamily: 'inherit', outline: 'none', background: '#fff', color: INK, boxSizing: 'border-box' as const,
+};
+
+const statusColors: Record<ProblemaAtivo['status'], { bg: string; color: string }> = {
+  ativo: { bg: WARNL, color: WARN },
+  controlado: { bg: SUCL, color: SUC },
+  resolvido: { bg: SEC, color: MU },
+};
+
+export function ProblemsEditor({ problems, onChange, novos }: {
+  problems: ProblemaAtivo[];
+  onChange: (p: ProblemaAtivo[]) => void;
+  novos?: string[]; // nomes de problemas sinalizados pela IA como novos nesta consulta
+}) {
+  const [newName, setNewName] = useState('');
+  const novosSet = new Set((novos ?? []).map(n => n.toLowerCase()));
+
+  function addProblem() {
+    if (!newName.trim()) return;
+    onChange([...problems, { name: newName.trim(), status: 'ativo', updated_at: new Date().toISOString() }]);
+    setNewName('');
+  }
+  function cycleStatus(idx: number) {
+    const order: ProblemaAtivo['status'][] = ['ativo', 'controlado', 'resolvido'];
+    const next = order[(order.indexOf(problems[idx].status) + 1) % order.length];
+    onChange(problems.map((p, i) => i === idx ? { ...p, status: next, updated_at: new Date().toISOString() } : p));
+  }
+  function remove(idx: number) {
+    onChange(problems.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div>
+      {problems.length === 0 && <p style={{ fontSize: 13, color: MU, margin: '0 0 10px' }}>Nenhum problema ativo registrado.</p>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+        {problems.map((p, i) => (
+          <div key={`${p.name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: `1px solid ${BO}`, borderRadius: 7 }}>
+            <span style={{ fontSize: 13, flex: 1, color: INK }}>
+              {p.name}
+              {novosSet.has(p.name.toLowerCase()) && (
+                <span style={{ marginLeft: 8, fontSize: 10, background: PL, color: P, padding: '1px 6px', borderRadius: 99 }}>novo</span>
+              )}
+            </span>
+            <button type="button" onClick={() => cycleStatus(i)} style={{
+              fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+              background: statusColors[p.status].bg, color: statusColors[p.status].color,
+            }}>{p.status}</button>
+            <button type="button" onClick={() => remove(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU, display: 'flex' }}>
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Adicionar problema, ex: Hipertensão arterial"
+          onKeyDown={e => { if (e.key === 'Enter') addProblem(); }}
+          style={{ ...smallInputStyle, flex: 1 }} />
+        <Btn size="sm" variant="secondary" onClick={addProblem}><Plus size={14} /> Adicionar</Btn>
+      </div>
+    </div>
+  );
+}
+
+export function MedicationsEditor({ medications, onChange }: {
+  medications: Medication[];
+  onChange: (m: Medication[]) => void;
+}) {
+  const [draft, setDraft] = useState({ name: '', dosage: '', frequency: '' });
+
+  function add() {
+    if (!draft.name.trim()) return;
+    onChange([...medications, { name: draft.name.trim(), dosage: draft.dosage.trim() || undefined, frequency: draft.frequency.trim() || undefined, status: 'active' }]);
+    setDraft({ name: '', dosage: '', frequency: '' });
+  }
+  function setStatus(idx: number, status: Medication['status']) {
+    onChange(medications.map((m, i) => i === idx ? { ...m, status } : m));
+  }
+  function remove(idx: number) {
+    onChange(medications.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div>
+      {medications.length === 0 && <p style={{ fontSize: 13, color: MU, margin: '0 0 10px' }}>Nenhuma medicação registrada.</p>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+        {medications.map((m, i) => (
+          <div key={`${m.name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: `1px solid ${BO}`, borderRadius: 7 }}>
+            <Pill size={14} color={P} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, flex: 1, color: INK }}>
+              {m.name}{m.dosage ? ` — ${m.dosage}` : ''}{m.frequency ? ` · ${m.frequency}` : ''}
+            </span>
+            <select value={m.status ?? 'active'} onChange={e => setStatus(i, e.target.value as Medication['status'])}
+              style={{ ...smallInputStyle, padding: '3px 8px', fontSize: 11 }}>
+              <option value="active">Ativo</option>
+              <option value="paused">Suspenso</option>
+              <option value="discontinued">Descontinuado</option>
+            </select>
+            <button type="button" onClick={() => remove(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU, display: 'flex' }}>
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Medicamento" style={{ ...smallInputStyle, flex: 2, minWidth: 140 }} />
+        <input value={draft.dosage} onChange={e => setDraft(d => ({ ...d, dosage: e.target.value }))} placeholder="Dose" style={{ ...smallInputStyle, flex: 1, minWidth: 80 }} />
+        <input value={draft.frequency} onChange={e => setDraft(d => ({ ...d, frequency: e.target.value }))} placeholder="Frequência" style={{ ...smallInputStyle, flex: 1, minWidth: 100 }} />
+        <Btn size="sm" variant="secondary" onClick={add}><Plus size={14} /> Adicionar</Btn>
+      </div>
+    </div>
+  );
+}
+
+export function AllergiesEditor({ allergies, onChange }: {
+  allergies: Allergy[];
+  onChange: (a: Allergy[]) => void;
+}) {
+  const [draft, setDraft] = useState({ allergen: '', reaction: '' });
+
+  function add() {
+    if (!draft.allergen.trim()) return;
+    onChange([...allergies, { allergen: draft.allergen.trim(), reaction: draft.reaction.trim() || undefined }]);
+    setDraft({ allergen: '', reaction: '' });
+  }
+  function remove(idx: number) {
+    onChange(allergies.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div>
+      {allergies.length === 0 && <p style={{ fontSize: 13, color: MU, margin: '0 0 10px' }}>Nenhuma alergia registrada.</p>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+        {allergies.map((a, i) => (
+          <div key={`${a.allergen}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: `1px solid ${DES}40`, background: DESL, borderRadius: 7 }}>
+            <span style={{ fontSize: 13, flex: 1, color: INK }}>
+              {a.allergen}{a.reaction ? ` — ${a.reaction}` : ''}
+            </span>
+            <button type="button" onClick={() => remove(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU, display: 'flex' }}>
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={draft.allergen} onChange={e => setDraft(d => ({ ...d, allergen: e.target.value }))} placeholder="Substância" style={{ ...smallInputStyle, flex: 1 }} />
+        <input value={draft.reaction} onChange={e => setDraft(d => ({ ...d, reaction: e.target.value }))} placeholder="Reação (opcional)" style={{ ...smallInputStyle, flex: 1 }} />
+        <Btn size="sm" variant="secondary" onClick={add}><Plus size={14} /> Adicionar</Btn>
+      </div>
+    </div>
+  );
+}
+
+export function VitalsGrid({ vitals, onChange }: {
+  vitals: VitaisAdulto;
+  onChange: (v: VitaisAdulto) => void;
+}) {
+  const set = (k: keyof VitaisAdulto, val: string) => {
+    const next = { ...vitals, [k]: val };
+    if (k === 'peso' || k === 'altura') next.imc = calcImc(next.peso ?? '', next.altura ?? '') || undefined;
+    onChange(next);
+  };
+  const fields: { key: keyof VitaisAdulto; label: string; placeholder: string }[] = [
+    { key: 'pressao_arterial', label: 'Pressão arterial', placeholder: '130/85 mmHg' },
+    { key: 'frequencia_cardiaca', label: 'Freq. cardíaca', placeholder: '78 bpm' },
+    { key: 'frequencia_respiratoria', label: 'Freq. respiratória', placeholder: '18 irpm' },
+    { key: 'saturacao', label: 'Saturação', placeholder: '97%' },
+    { key: 'temperatura', label: 'Temperatura', placeholder: '36.8°C' },
+    { key: 'peso', label: 'Peso', placeholder: '82 kg' },
+    { key: 'altura', label: 'Altura', placeholder: '172 cm' },
+    { key: 'circunferencia_abdominal', label: 'Circ. abdominal', placeholder: '98 cm' },
+  ];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+      {fields.map(({ key, label, placeholder }) => (
+        <div key={key}>
+          <label style={{ display: 'block', fontSize: 11, color: MU, marginBottom: 4 }}>{label}</label>
+          <input value={vitals[key] ?? ''} onChange={e => set(key, e.target.value)} placeholder={placeholder} style={{ ...smallInputStyle, width: '100%' }} />
+        </div>
+      ))}
+      <div>
+        <label style={{ display: 'block', fontSize: 11, color: MU, marginBottom: 4 }}>IMC (calculado)</label>
+        <div style={{ ...smallInputStyle, background: BG, color: MU }}>{vitals.imc || '—'}</div>
+      </div>
+    </div>
+  );
+}
+
+const RESPOSTA_LABELS: Record<RespostaTratamento, string> = {
+  boa: 'Boa resposta', parcial: 'Resposta parcial', sem_resposta: 'Sem resposta',
+  piora: 'Piora clínica', baixa_adesao: 'Baixa adesão', efeitos_adversos: 'Efeitos adversos',
+};
+
+export function MedicationChangesEditor({ changes, onChange }: {
+  changes: MedicationChange[];
+  onChange: (c: MedicationChange[]) => void;
+}) {
+  const actionLabels: Record<MedicationChange['action'], string> = {
+    iniciada: 'Iniciada', aumentada: 'Aumentada', reduzida: 'Reduzida', suspensa: 'Suspensa', mantida: 'Mantida',
+  };
+  function remove(idx: number) { onChange(changes.filter((_, i) => i !== idx)); }
+  if (changes.length === 0) return <p style={{ fontSize: 13, color: MU, margin: 0 }}>Nenhuma mudança de medicação identificada nesta consulta.</p>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {changes.map((c, i) => (
+        <div key={`${c.name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: `1px solid ${BO}`, borderRadius: 7 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: PL, color: P, flexShrink: 0 }}>{actionLabels[c.action]}</span>
+          <span style={{ fontSize: 13, flex: 1, color: INK }}>{c.name}{c.reason ? ` — ${c.reason}` : ''}</span>
+          <button type="button" onClick={() => remove(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU, display: 'flex' }}>
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const trendIcon = (trend: MarkerComparison['trend']) =>
+  trend === 'melhora' ? <TrendDown size={14} color={SUC} /> : trend === 'piora' ? <TrendUp size={14} color={DES} /> : <Minus size={14} color={MU} />;
+
+export function MarkerComparisonsCard({ comparisons }: { comparisons: MarkerComparison[] }) {
+  if (comparisons.length === 0) {
+    return <p style={{ fontSize: 13, color: MU, margin: 0 }}>Sem exames com pelo menos 2 resultados registrados para comparar.</p>;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {comparisons.map(c => (
+        <div key={c.marker_name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: `1px solid ${BO}`, borderRadius: 7 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: INK, flex: 1 }}>{c.marker_name}</span>
+          <span style={{ fontSize: 13, color: MU, fontFamily: 'monospace' }}>
+            {c.previous.value}{c.previous.unit} → {c.current.value}{c.current.unit}
+          </span>
+          {trendIcon(c.trend)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── CONSENT SCREEN ───────────────────────────────────────────────────────────
 
 export function ConsentScreen({ onOk, onCancel, consultType }: {
@@ -515,19 +940,23 @@ export function RecordingScreen({ time, patient, consultType, onFinish, onCancel
 
 // ─── PROCESSING SCREEN ────────────────────────────────────────────────────────
 
-export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, specialty = 'Pediatria' }: {
+export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, specialty = 'Pediatria', patientId }: {
   audioBlob: Blob | null;
-  onDone: (summary: StructuredSummary, transcript: string, anamnese?: AnamnesePrimeiraConsultaData, anamneseError?: string | null) => void;
+  onDone: (summary: StructuredSummary, transcript: string, anamnese?: AnamnesePrimeiraConsultaData, anamneseError?: string | null, anamneseAdulta?: AnamneseAdultaData) => void;
   onRetry: () => void;
   consultType: 'retorno' | 'primeira vez';
   specialty?: string;
+  patientId?: string;
 }) {
   const [step, setStep]   = useState(0);
   const [error, setError] = useState('');
   const isPrimeira = consultType === 'primeira vez';
+  const isAdultSpecialty = specialty !== 'Pediatria';
   const steps = isPrimeira
-    ? ['Enviando áudio para transcrição…', 'Transcrevendo consulta…', 'Estruturando prontuário…', 'Preenchendo ficha de puericultura…', 'Finalizando resumo clínico…']
-    : ['Enviando áudio para transcrição…', 'Transcrevendo consulta…', 'Estruturando prontuário…', 'Finalizando resumo clínico…'];
+    ? ['Enviando áudio para transcrição…', 'Transcrevendo consulta…', 'Estruturando prontuário…', isAdultSpecialty ? 'Preenchendo ficha de anamnese…' : 'Preenchendo ficha de puericultura…', 'Finalizando resumo clínico…']
+    : isAdultSpecialty
+      ? ['Enviando áudio para transcrição…', 'Transcrevendo consulta…', 'Comparando com a última consulta…', 'Finalizando resumo clínico…']
+      : ['Enviando áudio para transcrição…', 'Transcrevendo consulta…', 'Estruturando prontuário…', 'Finalizando resumo clínico…'];
 
   useEffect(() => {
     let cancelled = false;
@@ -540,22 +969,38 @@ export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, spec
 
         if (cancelled) return;
         setStep(2);
-        const summary = await ai.structureSummary(transcript, specialty);
+        const isAdult = specialty !== 'Pediatria';
+        const previousState = (!isPrimeira && isAdult && patientId)
+          ? await db.fetchCurrentAdultState(patientId).catch(() => undefined)
+          : undefined;
+        const summary = await ai.structureSummary(transcript, specialty, consultType, previousState);
 
         if (cancelled) return;
 
         if (isPrimeira) {
           setStep(3);
           let anamneseError: string | null = null;
-          const anamnese = await ai.extractAnamnesePrimeiraConsulta(transcript)
-            .catch((e: unknown) => {
-              anamneseError = (e as Error)?.message || 'Falha ao extrair a ficha de anamnese.';
-              return defaultAnamnesePrimeiraConsulta();
-            });
-          if (cancelled) return;
-          setStep(4);
-          await new Promise(r => setTimeout(r, 400));
-          if (!cancelled) onDone(summary, transcript, anamnese, anamneseError);
+          if (isAdult) {
+            const anamneseAdulta = await ai.extractAnamneseAdulta(transcript)
+              .catch((e: unknown) => {
+                anamneseError = (e as Error)?.message || 'Falha ao extrair a ficha de anamnese.';
+                return defaultAnamneseAdulta();
+              });
+            if (cancelled) return;
+            setStep(4);
+            await new Promise(r => setTimeout(r, 400));
+            if (!cancelled) onDone(summary, transcript, undefined, anamneseError, anamneseAdulta);
+          } else {
+            const anamnese = await ai.extractAnamnesePrimeiraConsulta(transcript)
+              .catch((e: unknown) => {
+                anamneseError = (e as Error)?.message || 'Falha ao extrair a ficha de anamnese.';
+                return defaultAnamnesePrimeiraConsulta();
+              });
+            if (cancelled) return;
+            setStep(4);
+            await new Promise(r => setTimeout(r, 400));
+            if (!cancelled) onDone(summary, transcript, anamnese, anamneseError);
+          }
         } else {
           setStep(3);
           await new Promise(r => setTimeout(r, 400));
@@ -580,7 +1025,13 @@ export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, spec
       peso: '', altura: '', perimetro_cefalico: '', vacinas_mencionadas: [],
       specialty_data: null,
     };
-    onDone(emptySummary, '', isPrimeira ? defaultAnamnesePrimeiraConsulta() : undefined, null);
+    const isAdult = specialty !== 'Pediatria';
+    onDone(
+      emptySummary, '',
+      isPrimeira && !isAdult ? defaultAnamnesePrimeiraConsulta() : undefined,
+      null,
+      isPrimeira && isAdult ? defaultAnamneseAdulta() : undefined,
+    );
   }
 
   return (
@@ -630,16 +1081,19 @@ export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, spec
 
 // ─── SUMMARY DONE SCREEN ──────────────────────────────────────────────────────
 
-export function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, consultType, anamnese, anamneseError, onSave }: {
+export function SummaryDoneScreen({ patient, recTime, summary, transcript, draftId, consultType, anamnese, anamneseError, anamneseAdulta, specialty = 'Pediatria', onSave }: {
   patient: Patient | null; recTime: number;
   summary: StructuredSummary; transcript: string;
   draftId: string | null;
   consultType: 'retorno' | 'primeira vez';
   anamnese: AnamnesePrimeiraConsultaData | null;
   anamneseError?: string | null;
+  anamneseAdulta?: AnamneseAdultaData | null;
+  specialty?: string;
   onSave: () => void;
 }) {
   const isPrimeira = consultType === 'primeira vez';
+  const isAdult = specialty !== 'Pediatria';
   const [showTranscript, setShowTranscript] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -655,6 +1109,22 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
   const [editedAnamnese, setEditedAnamnese] = useState<AnamnesePrimeiraConsultaData>(
     () => anamnese ?? defaultAnamnesePrimeiraConsulta()
   );
+  const [editedAnamneseAdulta, setEditedAnamneseAdulta] = useState<AnamneseAdultaData>(
+    () => anamneseAdulta ?? defaultAnamneseAdulta()
+  );
+  const [editedAdultData, setEditedAdultData] = useState<ConsultaAdultoData>(
+    () => (summary.specialty_data as ConsultaAdultoData | null) ?? {}
+  );
+  const setAdult = <K extends keyof ConsultaAdultoData>(k: K, v: ConsultaAdultoData[K]) =>
+    setEditedAdultData(d => ({ ...d, [k]: v }));
+
+  const [markerComparisons, setMarkerComparisons] = useState<MarkerComparison[]>([]);
+  useEffect(() => {
+    if (!isAdult || isPrimeira || !patient) return;
+    let cancelled = false;
+    db.getMarkerComparisons(patient.id).then(c => { if (!cancelled) setMarkerComparisons(c); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isAdult, isPrimeira, patient]);
 
   function buildEdited(): StructuredSummary {
     return {
@@ -682,8 +1152,17 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
         consultId = await db.saveConsultation(patient.id, edited, recTime, patient.birth_date, consultType);
       }
       if (isPrimeira) {
-        await db.saveAnamnesePrimeiraConsulta(consultId, patient.id, editedAnamnese)
-          .catch(e => console.error('Anamnese save failed (non-critical):', e));
+        if (isAdult) {
+          await db.saveAnamneseAdulta(consultId, editedAnamneseAdulta)
+            .catch(e => console.error('Anamnese adulta save failed (non-critical):', e));
+        } else {
+          await db.saveAnamnesePrimeiraConsulta(consultId, patient.id, editedAnamnese)
+            .catch(e => console.error('Anamnese save failed (non-critical):', e));
+        }
+      }
+      if (isAdult) {
+        await db.saveConsultaAdultoExtras(consultId, editedAdultData)
+          .catch(e => console.error('Dados de clínica geral save failed (non-critical):', e));
       }
       onSave();
     } catch (e: unknown) {
@@ -698,10 +1177,25 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
     setSaving(true); setSaveError('');
     const edited = buildEdited();
     try {
+      let consultId: string;
       if (draftId) {
         await db.updateDraftConsultation(draftId, edited);
+        consultId = draftId;
       } else {
-        await db.saveDraftConsultation(patient.id, edited, recTime, consultType);
+        consultId = await db.saveDraftConsultation(patient.id, edited, recTime, consultType);
+      }
+      if (isPrimeira) {
+        if (isAdult) {
+          await db.saveAnamneseAdulta(consultId, editedAnamneseAdulta)
+            .catch(e => console.error('Anamnese adulta save failed (non-critical):', e));
+        } else {
+          await db.saveAnamnesePrimeiraConsulta(consultId, patient.id, editedAnamnese)
+            .catch(e => console.error('Anamnese save failed (non-critical):', e));
+        }
+      }
+      if (isAdult) {
+        await db.saveConsultaAdultoExtras(consultId, editedAdultData)
+          .catch(e => console.error('Dados de clínica geral save failed (non-critical):', e));
       }
       onSave();
     } catch (e: unknown) {
@@ -773,6 +1267,21 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
           </Card>
         )}
 
+        {/* Resumo Clínico Inteligente — Clínica Geral, primeira ou retorno */}
+        {isAdult && (
+          <Card style={{ marginBottom: 16, background: PL }}>
+            <div style={{ padding: '14px 20px' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: P, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ClipboardText size={14} /> Resumo clínico inteligente
+              </div>
+              <textarea value={editedAdultData.resumo_clinico ?? ''} onChange={e => setAdult('resumo_clinico', e.target.value)}
+                rows={3} style={{ ...taStyle, background: '#fff' }}
+                onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = P; }}
+                onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = BO; }} />
+            </div>
+          </Card>
+        )}
+
         {/* Main form — branches on consultation type */}
         {isPrimeira ? (
           <RequireRole roles={['medico']}>
@@ -801,9 +1310,133 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
                 <span>A ficha de anamnese não pôde ser extraída automaticamente pela IA ({anamneseError}). Preencha os campos abaixo manualmente com base na consulta.</span>
               </div>
             )}
-            <div style={{ marginBottom: 16 }}>
-              <AnamnesePrimeiraConsulta data={editedAnamnese} onChange={setEditedAnamnese} />
-            </div>
+            {isAdult ? (
+              <>
+                <Card style={{ marginBottom: 16, padding: 20 }}>
+                  <AnamneseAdultaFields
+                    form={editedAnamneseAdulta}
+                    set={(k, v) => setEditedAnamneseAdulta(f => ({ ...f, [k]: v }))}
+                  />
+                </Card>
+                <Card style={{ marginBottom: 16 }}>
+                  <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Heartbeat size={15} color={P} />
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>Exame clínico e sinais vitais</span>
+                  </div>
+                  <div style={{ padding: 20 }}>
+                    <VitalsGrid vitals={editedAdultData.vitals ?? {}} onChange={v => setAdult('vitals', v)} />
+                  </div>
+                </Card>
+                <Card style={{ marginBottom: 16 }}>
+                  <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Stethoscope size={15} color={P} />
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>Problemas ativos iniciais</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: MU }}>Sugeridos pela IA — revise antes de confirmar</span>
+                  </div>
+                  <div style={{ padding: 20 }}>
+                    <ProblemsEditor problems={editedAdultData.active_problems ?? []} onChange={p => setAdult('active_problems', p)} />
+                  </div>
+                </Card>
+              </>
+            ) : (
+              <div style={{ marginBottom: 16 }}>
+                <AnamnesePrimeiraConsulta data={editedAnamnese} onChange={setEditedAnamnese} />
+              </div>
+            )}
+          </RequireRole>
+        ) : isAdult ? (
+          <RequireRole roles={['medico']}>
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileText size={15} color={P} />
+                <span style={{ fontWeight: 600, fontSize: 15 }}>Motivo do retorno e evolução clínica</span>
+              </div>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: MU, paddingTop: 10 }}>Motivo do retorno</span>
+                <input value={editedAdultData.motivo_retorno ?? ''} onChange={e => setAdult('motivo_retorno', e.target.value)}
+                  placeholder="Ex: acompanhamento, ajuste de tratamento, nova queixa" style={{ ...smallInputStyle, width: '100%' }} />
+              </div>
+              <div style={{ padding: '14px 20px', display: 'grid', gridTemplateColumns: '180px 1fr', gap: 16, alignItems: 'start' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: MU, paddingTop: 10 }}>Evolução clínica</span>
+                <textarea value={editedAdultData.evolucao_clinica ?? ''} onChange={e => setAdult('evolucao_clinica', e.target.value)}
+                  rows={4} style={taStyle}
+                  onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = P; }}
+                  onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = BO; }} />
+              </div>
+            </Card>
+
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Stethoscope size={15} color={P} />
+                <span style={{ fontWeight: 600, fontSize: 15 }}>Problemas ativos</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: MU }}>Mantenha, resolva ou adicione problemas</span>
+              </div>
+              <div style={{ padding: 20 }}>
+                <ProblemsEditor
+                  problems={editedAdultData.active_problems ?? []}
+                  onChange={p => setAdult('active_problems', p)}
+                  novos={(editedAdultData.novos_problemas ?? []).map(p => p.name)}
+                />
+              </div>
+            </Card>
+
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <TrendUp size={15} color={P} />
+                <span style={{ fontWeight: 600, fontSize: 15 }}>Exames comparativos</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: MU }}>Comparação com o resultado anterior registrado</span>
+              </div>
+              <div style={{ padding: 20 }}>
+                <MarkerComparisonsCard comparisons={markerComparisons} />
+              </div>
+            </Card>
+
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Pill size={15} color={P} />
+                <span style={{ fontWeight: 600, fontSize: 15 }}>Mudanças de medicação e resposta ao tratamento</span>
+              </div>
+              <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <MedicationChangesEditor changes={editedAdultData.medication_changes ?? []} onChange={c => setAdult('medication_changes', c)} />
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Resposta ao tratamento</label>
+                  <select value={editedAdultData.resposta_tratamento ?? ''} onChange={e => setAdult('resposta_tratamento', (e.target.value || null) as RespostaTratamento | null)}
+                    style={{ ...smallInputStyle, width: '100%', maxWidth: 280 }}>
+                    <option value="">Não classificada</option>
+                    {(Object.keys(RESPOSTA_LABELS) as RespostaTratamento[]).map(k => (
+                      <option key={k} value={k}>{RESPOSTA_LABELS[k]}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </Card>
+
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Pill size={15} color={P} />
+                <span style={{ fontWeight: 600, fontSize: 15 }}>Medicações atuais e alergias</span>
+              </div>
+              <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div>
+                  <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: MU, textTransform: 'uppercase', letterSpacing: 0.6 }}>Medicações atuais</p>
+                  <MedicationsEditor medications={editedAdultData.current_medications ?? []} onChange={m => setAdult('current_medications', m)} />
+                </div>
+                <div>
+                  <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: MU, textTransform: 'uppercase', letterSpacing: 0.6 }}>Alergias</p>
+                  <AllergiesEditor allergies={editedAdultData.allergies ?? []} onChange={a => setAdult('allergies', a)} />
+                </div>
+              </div>
+            </Card>
+
+            <Card style={{ marginBottom: 16 }}>
+              <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Heartbeat size={15} color={P} />
+                <span style={{ fontWeight: 600, fontSize: 15 }}>Exame clínico e sinais vitais</span>
+              </div>
+              <div style={{ padding: 20 }}>
+                <VitalsGrid vitals={editedAdultData.vitals ?? {}} onChange={v => setAdult('vitals', v)} />
+              </div>
+            </Card>
           </RequireRole>
         ) : (
           <Card style={{ marginBottom: 16 }}>
@@ -831,12 +1464,12 @@ export function SummaryDoneScreen({ patient, recTime, summary, transcript, draft
           </Card>
         )}
 
-        {/* Conduta e plano — always shown for primeira vez */}
-        {isPrimeira && (
+        {/* Conduta e plano — primeira consulta (exame físico completo) ou retorno adulto (conduta atualizada) */}
+        {(isPrimeira || isAdult) && (
           <Card style={{ marginBottom: 16 }}>
             <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Stethoscope size={15} color={P} />
-              <span style={{ fontWeight: 600, fontSize: 15 }}>Exame físico, conduta e retorno</span>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>{isPrimeira ? 'Exame físico, conduta e retorno' : 'Conduta atualizada'}</span>
               <span style={{ marginLeft: 'auto', fontSize: 11, color: MU }}>Todos os campos são editáveis</span>
             </div>
             {([

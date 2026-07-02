@@ -30,10 +30,11 @@ describe('getStructurePrompt', () => {
     expect(prompt).toContain('scalp_condition');
   });
 
-  it('especialidade desconhecida → fallback para Pediatria', () => {
+  it('especialidade desconhecida → fallback para prompt adulto (Clínica Geral)', () => {
     const prompt = getStructurePrompt('Cardiologia');
-    expect(prompt).toContain('pediátrico');
+    expect(prompt).toContain('clínica geral');
     expect(prompt).not.toContain('scalp_condition');
+    expect(prompt).not.toContain('puericultura');
   });
 });
 

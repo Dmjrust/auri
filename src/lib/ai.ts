@@ -1,4 +1,8 @@
-import type { StructuredSummary, ScannableSummary, AnamnesePrimeiraConsultaData, LabMarker } from '../data/mock';
+import type {
+  StructuredSummary, ScannableSummary, AnamnesePrimeiraConsultaData, AnamneseAdultaData, LabMarker,
+  ConsultaAdultoData, VitaisAdulto, ProblemaAtivo, Medication, Allergy, MedicationChange, RespostaTratamento,
+} from '../data/mock';
+import { calcImc } from './auri-utils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VALIDAÇÃO CLÍNICA: chama OpenAI diretamente do browser via VITE_OPENAI_API_KEY.
@@ -190,17 +194,123 @@ CAMPOS TRICOLÓGICOS:
 TRANSCRIÇÃO:
 `;
 
-export function getStructurePrompt(specialty: string): string {
-  return specialty === 'Tricologia' ? TRICHOLOGY_STRUCTURE_PROMPT : STRUCTURE_SYSTEM_PROMPT;
+// ── Prompt clínica geral (adulto) ─────────────────────────────────────────────
+//
+// Compartilhado entre primeira consulta e retorno: bloco flat (StructuredSummary)
+// + bloco aninhado "clinica_geral" (mapeado para ConsultaAdultoData/specialty_data).
+// "clinica_geral.resumo_clinico" é o Resumo Clínico Inteligente pedido para os
+// dois templates. Campos exclusivos de retorno (motivo_retorno, evolucao_clinica,
+// resposta_tratamento, medication_changes, novos_problemas) só aparecem no prompt
+// de retorno — o de primeira consulta nem os menciona, para não induzir o modelo
+// a inventar "evolução" numa consulta que não tem visita anterior.
+const ADULT_CLINICA_GERAL_SCHEMA_BLOCK = `{
+  "queixa_principal": "motivo principal da consulta em uma frase",
+  "hda": "anamnese narrativa completa da consulta, incluindo todos os dados subjetivos clinicamente relevantes mencionados na transcrição",
+  "exame_fisico": "achados do exame físico (estado geral, cardiovascular, respiratório, abdominal, neurológico básico, extremidades, outros achados) — NÃO repita aqui os sinais vitais, eles vão em clinica_geral.vitals",
+  "hipoteses": ["hipótese diagnóstica principal (sempre o primeiro item)", "hipóteses diferenciais, se houver, nos itens seguintes"],
+  "conduta": "conduta clínica organizada em blocos: medicações iniciadas/ajustadas/mantidas, exames solicitados, orientações, encaminhamentos, medidas de estilo de vida",
+  "retorno": "texto único combinando: prazo do retorno, objetivo do retorno, exames que o paciente deve trazer, e sinais de alerta para procurar atendimento antes do prazo — ou 'Conforme necessidade' se nada foi mencionado",
+  "peso": "peso mencionado com unidade, ex: '82 kg' — deixe vazio se não mencionado",
+  "altura": "altura mencionada com unidade, ex: '1,72 m' — deixe vazio se não mencionado",
+  "perimetro_cefalico": "",
+  "vacinas_mencionadas": [],
+  "exames_solicitados": ["exame que o médico disse que vai pedir/solicitar 1", "exame 2"],
+  "clinica_geral": {
+    "vitals": {
+      "pressao_arterial": "ex: '130/85 mmHg', vazio se não mencionado",
+      "frequencia_cardiaca": "ex: '78 bpm', vazio se não mencionado",
+      "frequencia_respiratoria": "ex: '18 irpm', vazio se não mencionado",
+      "saturacao": "ex: '97%', vazio se não mencionado",
+      "temperatura": "ex: '36.8°C', vazio se não mencionado",
+      "peso": "ex: '82 kg', vazio se não mencionado",
+      "altura": "ex: '172 cm', vazio se não mencionado",
+      "circunferencia_abdominal": "ex: '98 cm', vazio se não mencionado"
+    },
+    "current_medications": [
+      { "name": "nome do medicamento", "dosage": "dose, ex: '50mg'", "frequency": "ex: '1x ao dia'", "indication": "para que serve, se mencionado", "status": "active" }
+    ],
+    "allergies": [
+      { "allergen": "substância", "reaction": "reação descrita, se mencionada", "severity": "leve | moderada | grave, se mencionada" }
+    ],
+    "active_problems": [
+      { "name": "nome do problema/condição sugerido pela consulta, ex: 'Hipertensão arterial'", "status": "ativo" }
+    ],
+    "resumo_clinico": "resumo final curto (3-5 frases), profissional e escaneável, no estilo: 'Paciente de X anos, [primeira consulta/retorno] em Clínica Geral, com [condições]. [queixa/evolução]. [achado de exame relevante]. [conduta principal]. Retorno em [prazo].'"
+  }
+}`;
+
+const ADULT_PRIMEIRA_STRUCTURE_PROMPT = `Você é um assistente de prontuário médico brasileiro (clínica geral / adulto), atuando na PRIMEIRA CONSULTA de um paciente. Analise a transcrição e retorne APENAS um JSON com exatamente estes campos:
+
+${ADULT_CLINICA_GERAL_SCHEMA_BLOCK}
+
+REGRAS:
+- Responda APENAS com o JSON, sem markdown ou explicações
+- Use terminologia médica brasileira para adultos
+- O campo "hda" deve considerar a transcrição inteira e consolidar a anamnese completa (queixa e evolução, sintomas associados, antecedentes pessoais, cirurgias/internações, alergias, medicações em uso e adesão, hábitos de vida, histórico familiar, contexto social, dúvidas do paciente) — não descarte informação relevante por falta de campo específico
+- "clinica_geral.active_problems" deve conter problemas ativos SUGERIDOS a partir do que foi dito na consulta (ex.: hipertensão não controlada, diabetes tipo 2, obesidade, ansiedade, dor lombar crônica) — apenas condições explicitamente mencionadas ou claramente evidenciadas pelo exame, nunca invente
+- "perimetro_cefalico" e "vacinas_mencionadas" só se aplicam a contextos pediátricos — deixe vazio/array vazio
+- Campos não mencionados: string vazia ou array vazio, nunca invente
+- Não feche diagnóstico definitivo sem base explícita
+- Conforme CFM 2.454/2026: você é apoio à decisão, o médico revisará e validará`;
+
+const ADULT_RETORNO_STRUCTURE_PROMPT = `Você é um assistente de prontuário médico brasileiro (clínica geral / adulto), atuando em uma consulta de RETORNO. Você recebe também o estado clínico do paciente ANTES desta consulta (problemas ativos e medicações em uso na última visita) — use-o para descrever evolução e mudanças, nunca para preencher esta consulta com dados que não foram ditos agora.
+
+Retorne APENAS um JSON com exatamente estes campos:
+
+${ADULT_CLINICA_GERAL_SCHEMA_BLOCK.replace(
+  '"resumo_clinico": "resumo final curto (3-5 frases), profissional e escaneável, no estilo: \'Paciente de X anos, [primeira consulta/retorno] em Clínica Geral, com [condições]. [queixa/evolução]. [achado de exame relevante]. [conduta principal]. Retorno em [prazo].\'"',
+  `"resumo_clinico": "resumo final curto (3-5 frases) da evolução deste retorno, no estilo: 'Retorno para acompanhamento de [condições]. [evolução desde a última consulta]. [mudança de conduta/medicação]. Retorno em [prazo].'",
+    "motivo_retorno": "acompanhamento | reavaliação de sintomas | revisão de exames | ajuste de tratamento | nova queixa — ou breve texto livre se nenhuma dessas categorias descrever bem",
+    "evolucao_clinica": "resumo da evolução desde a última consulta com base no que foi dito: melhora, piora, estabilidade, baixa adesão, persistência da queixa, novo sintoma etc.",
+    "resposta_tratamento": "boa | parcial | sem_resposta | piora | baixa_adesao | efeitos_adversos — a classificação que melhor descreve a resposta ao tratamento anterior, com base no que foi relatado; vazio se não houver base para classificar",
+    "medication_changes": [
+      { "name": "nome do medicamento", "action": "iniciada | aumentada | reduzida | suspensa | mantida", "reason": "motivo da mudança, se mencionado" }
+    ],
+    "novos_problemas": [
+      { "name": "nome de um problema/condição NOVO identificado nesta consulta (não presente no estado anterior informado)", "status": "ativo" }
+    ]`
+)}
+
+REGRAS:
+- Responda APENAS com o JSON, sem markdown ou explicações
+- Use terminologia médica brasileira para adultos
+- "clinica_geral.active_problems" deve refletir a lista de problemas ativos ATUALIZADA (estado anterior + mudanças mencionadas nesta consulta, ex.: problema resolvido deve sair ou virar status "resolvido"); "clinica_geral.novos_problemas" é só o subconjunto de condições que NÃO estavam no estado anterior informado — pode se sobrepor com "active_problems", não precisa ser mutuamente exclusivo
+- "clinica_geral.current_medications" deve refletir a lista de medicações ATUAL após os ajustes desta consulta
+- "medication_changes" registra apenas mudanças explicitamente ditas nesta consulta (não repita medicações mantidas sem menção de continuidade)
+- Campos não mencionados: string vazia ou array vazio, nunca invente
+- Não feche diagnóstico definitivo sem base explícita
+- Conforme CFM 2.454/2026: você é apoio à decisão, o médico revisará e validará`;
+
+export function getStructurePrompt(specialty: string, consultType: 'retorno' | 'primeira vez' = 'retorno'): string {
+  if (specialty === 'Tricologia') return TRICHOLOGY_STRUCTURE_PROMPT;
+  if (specialty === 'Pediatria') return STRUCTURE_SYSTEM_PROMPT;
+  // Clínica Geral e demais especialidades adultas
+  return consultType === 'primeira vez' ? ADULT_PRIMEIRA_STRUCTURE_PROMPT : ADULT_RETORNO_STRUCTURE_PROMPT;
 }
 
-export async function structureSummary(transcript: string, specialty = 'Pediatria'): Promise<StructuredSummary> {
+export interface AdultPreviousState {
+  active_problems?: ProblemaAtivo[];
+  current_medications?: Medication[];
+}
+
+export async function structureSummary(
+  transcript: string,
+  specialty = 'Pediatria',
+  consultType: 'retorno' | 'primeira vez' = 'retorno',
+  previousState?: AdultPreviousState,
+): Promise<StructuredSummary> {
   const systemPrompt = specialty === 'Tricologia'
     ? TRICHOLOGY_STRUCTURE_PROMPT + transcript
-    : STRUCTURE_SYSTEM_PROMPT;
+    : getStructurePrompt(specialty, consultType);
+  const isAdultRetorno = specialty !== 'Tricologia' && specialty !== 'Pediatria' && consultType === 'retorno';
   const userContent = specialty === 'Tricologia'
     ? '' // transcript já incluída no system prompt para Tricologia
-    : `Transcrição da consulta:\n\n${transcript}`;
+    : isAdultRetorno
+      ? `Estado clínico do paciente antes desta consulta:\n${JSON.stringify({
+          active_problems: previousState?.active_problems ?? [],
+          current_medications: previousState?.current_medications ?? [],
+        })}\n\nTranscrição da consulta:\n\n${transcript}`
+      : `Transcrição da consulta:\n\n${transcript}`;
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -221,21 +331,99 @@ export async function structureSummary(transcript: string, specialty = 'Pediatri
   }
   const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, unknown>;
 
+  const isAdult = specialty !== 'Tricologia' && specialty !== 'Pediatria';
+  const cg = isAdult ? (raw.clinica_geral as Record<string, unknown> | undefined) ?? {} : null;
+
+  const str = (v: any) => (v !== null && v !== undefined) ? String(v) : '';
+  const strArr = (v: any): string[] => Array.isArray(v) ? v.map(String) : [];
+
+  const vitalsRaw = (cg?.vitals ?? {}) as Record<string, unknown>;
+  const vitalsPeso = str(vitalsRaw.peso);
+  const vitalsAltura = str(vitalsRaw.altura);
+  const vitals: VitaisAdulto | undefined = cg ? {
+    pressao_arterial: str(vitalsRaw.pressao_arterial) || undefined,
+    frequencia_cardiaca: str(vitalsRaw.frequencia_cardiaca) || undefined,
+    frequencia_respiratoria: str(vitalsRaw.frequencia_respiratoria) || undefined,
+    saturacao: str(vitalsRaw.saturacao) || undefined,
+    temperatura: str(vitalsRaw.temperatura) || undefined,
+    peso: vitalsPeso || undefined,
+    altura: vitalsAltura || undefined,
+    imc: calcImc(vitalsPeso, vitalsAltura) || undefined,
+    circunferencia_abdominal: str(vitalsRaw.circunferencia_abdominal) || undefined,
+  } : undefined;
+
+  const current_medications: Medication[] | undefined = cg && Array.isArray(cg.current_medications)
+    ? cg.current_medications.map((m: any) => ({
+        name: str(m?.name), dosage: str(m?.dosage) || undefined, frequency: str(m?.frequency) || undefined,
+        indication: str(m?.indication) || undefined, status: 'active' as const,
+      })).filter((m: Medication) => m.name)
+    : undefined;
+
+  const allergies: Allergy[] | undefined = cg && Array.isArray(cg.allergies)
+    ? cg.allergies.map((a: any) => ({
+        allergen: str(a?.allergen), reaction: str(a?.reaction) || undefined,
+        severity: (['leve', 'moderada', 'grave'].includes(a?.severity) ? a.severity : undefined),
+      })).filter((a: Allergy) => a.allergen)
+    : undefined;
+
+  const active_problems: ProblemaAtivo[] | undefined = cg && Array.isArray(cg.active_problems)
+    ? cg.active_problems.map((p: any) => ({
+        name: str(p?.name),
+        status: (['ativo', 'controlado', 'resolvido'].includes(p?.status) ? p.status : 'ativo') as ProblemaAtivo['status'],
+        updated_at: new Date().toISOString(),
+      })).filter((p: ProblemaAtivo) => p.name)
+    : undefined;
+
+  let specialtyData: ConsultaAdultoData | Record<string, unknown> | null = null;
+  if (specialty === 'Tricologia') {
+    specialtyData = (raw.trichology as Record<string, unknown>) ?? null;
+  } else if (isAdult && cg) {
+    const adultData: ConsultaAdultoData = {
+      vitals, current_medications, allergies, active_problems,
+      resumo_clinico: str(cg.resumo_clinico) || undefined,
+    };
+    if (isAdultRetorno) {
+      adultData.motivo_retorno = str(cg.motivo_retorno) || undefined;
+      adultData.evolucao_clinica = str(cg.evolucao_clinica) || undefined;
+      const resposta = str(cg.resposta_tratamento);
+      adultData.resposta_tratamento = (
+        ['boa', 'parcial', 'sem_resposta', 'piora', 'baixa_adesao', 'efeitos_adversos'].includes(resposta)
+          ? resposta as RespostaTratamento
+          : null
+      );
+      adultData.medication_changes = Array.isArray(cg.medication_changes)
+        ? (cg.medication_changes as any[]).map(m => ({
+            name: str(m?.name),
+            action: (['iniciada', 'aumentada', 'reduzida', 'suspensa', 'mantida'].includes(m?.action) ? m.action : 'mantida') as MedicationChange['action'],
+            reason: str(m?.reason) || undefined,
+          })).filter(m => m.name)
+        : [];
+      adultData.novos_problemas = Array.isArray(cg.novos_problemas)
+        ? (cg.novos_problemas as any[]).map(p => ({
+            name: str(p?.name),
+            status: (['ativo', 'controlado', 'resolvido'].includes(p?.status) ? p.status : 'ativo') as ProblemaAtivo['status'],
+            updated_at: new Date().toISOString(),
+          })).filter(p => p.name)
+        : [];
+    }
+    specialtyData = adultData;
+  }
+
   return {
-    queixa_principal:    String(raw.queixa_principal    ?? ''),
-    hda:                 String(raw.hda                 ?? ''),
-    exame_fisico:        String(raw.exame_fisico         ?? ''),
-    hipoteses:           Array.isArray(raw.hipoteses)          ? raw.hipoteses.map(String)          : [],
-    conduta:             String(raw.conduta              ?? ''),
-    retorno:             String(raw.retorno              ?? ''),
-    // Pediatria only — empty for Tricologia
-    peso:                String(raw.peso                 ?? ''),
-    altura:              String(raw.altura               ?? ''),
-    perimetro_cefalico:  String(raw.perimetro_cefalico   ?? ''),
-    vacinas_mencionadas: Array.isArray(raw.vacinas_mencionadas) ? raw.vacinas_mencionadas.map(String) : [],
-    requested_exams:     Array.isArray(raw.exames_solicitados) ? raw.exames_solicitados.map(String) : [],
-    // Tricologia only — object with hair/scalp assessment fields
-    specialty_data:      raw.trichology ?? null,
+    queixa_principal:    str(raw.queixa_principal),
+    hda:                 str(raw.hda),
+    exame_fisico:        str(raw.exame_fisico),
+    hipoteses:           strArr(raw.hipoteses),
+    conduta:             str(raw.conduta),
+    retorno:             str(raw.retorno),
+    // Pediatria only — empty for adultos/Tricologia
+    peso:                str(raw.peso),
+    altura:              str(raw.altura),
+    perimetro_cefalico:  str(raw.perimetro_cefalico),
+    vacinas_mencionadas: strArr(raw.vacinas_mencionadas),
+    requested_exams:     strArr(raw.exames_solicitados),
+    // Tricologia: objeto capilar. Clínica Geral: ConsultaAdultoData (vitals/medicações/problemas/resumo).
+    specialty_data:      specialtyData,
   } as StructuredSummary & { specialty_data?: unknown };
 }
 
@@ -573,6 +761,187 @@ export async function extractAnamnesePrimeiraConsulta(transcript: string): Promi
     animal_domestico:             bl(hs.animais),
     animal_domestico_qual:        str(hs.animais_qual),
     agua_saneamento:              bl(hs.saneamento),
+  };
+}
+
+// ── GPT-4o: transcrição primeira consulta (adulto) → ficha de anamnese ─────────
+//
+// Prompt específico para tipo_consulta === 'primeira_vez' quando a especialidade
+// do médico não é Pediatria (Clínica Geral). Retorna JSON diretamente no formato
+// AnamneseAdultaData (sem seções aninhadas, ao contrário da versão pediátrica).
+//
+const ANAMNESE_ADULTA_SYSTEM_PROMPT = `Você é um assistente médico especializado em clínica geral (adulto). Analise a transcrição da consulta e extraia as informações da anamnese, retornando um JSON com exatamente estes campos:
+
+{
+  "motivo_consulta": null,
+  "queixa_duracao": null,
+  "hipertensao": null,
+  "diabetes": null,
+  "dislipidemia": null,
+  "cardiopatia": null,
+  "asma_dpoc": null,
+  "doenca_renal": null,
+  "doenca_cardiovascular": null,
+  "avc": null,
+  "cancer": null,
+  "doencas_psiquiatricas": null,
+  "outras_comorbidades": null,
+  "cirurgias_previas": null,
+  "cirurgias_desc": null,
+  "internacoes_previas": null,
+  "internacoes_desc": null,
+  "tabagismo": null,
+  "tabagismo_pack_years": null,
+  "etilismo": null,
+  "atividade_fisica": null,
+  "atividade_fisica_desc": null,
+  "sono": null,
+  "uso_drogas": null,
+  "ocupacao": null,
+  "nivel_estresse": null,
+  "medicamentos_em_uso": null,
+  "alergias_medicamentos": null,
+  "alergias_alimentares": null,
+  "alergias_outras": null,
+  "historico_familiar": null,
+  "ultima_mamografia": null,
+  "ultimo_papanicolau": null,
+  "ultima_colonoscopia": null,
+  "psa": null,
+  "vacinacao_adulto": null
+}
+
+Tipos obrigatórios por campo:
+- hipertensao / diabetes / dislipidemia / cardiopatia / asma_dpoc / doenca_renal / doenca_cardiovascular / avc / cancer / doencas_psiquiatricas / cirurgias_previas / internacoes_previas / atividade_fisica: true | false | null
+- tabagismo: "nunca" | "ex-fumante" | "fumante" | null
+- etilismo: "nunca" | "ocasional" | "regular" | null
+- Demais campos: string | null
+
+Campos não mencionados na consulta retornar como null.
+Nunca invente dados não mencionados pelo médico ou paciente.
+Antes de retornar null em qualquer campo, releia a transcrição inteira procurando menções diretas OU indiretas a esse tópico — mesmo comentários breves do paciente contam.
+- "vacinacao_adulto" captura apenas o que foi dito na conversa sobre vacinas (ex.: "tomei a da gripe mês passado") — não é o registro formal do calendário vacinal, que fica em outra tela.
+- Conforme CFM 2.454/2026: extração de apoio à decisão, médico revisará`;
+
+const ANAMNESE_ADULTA_SCHEMA = {
+  name: 'anamnese_adulta',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'motivo_consulta', 'queixa_duracao',
+      'hipertensao', 'diabetes', 'dislipidemia', 'cardiopatia',
+      'asma_dpoc', 'doenca_renal', 'doenca_cardiovascular', 'avc', 'cancer', 'doencas_psiquiatricas',
+      'outras_comorbidades',
+      'cirurgias_previas', 'cirurgias_desc', 'internacoes_previas', 'internacoes_desc',
+      'tabagismo', 'tabagismo_pack_years', 'etilismo', 'atividade_fisica', 'atividade_fisica_desc',
+      'sono', 'uso_drogas', 'ocupacao', 'nivel_estresse',
+      'medicamentos_em_uso', 'alergias_medicamentos', 'alergias_alimentares', 'alergias_outras',
+      'historico_familiar',
+      'ultima_mamografia', 'ultimo_papanicolau', 'ultima_colonoscopia', 'psa', 'vacinacao_adulto',
+    ],
+    properties: {
+      motivo_consulta: { type: ['string', 'null'] },
+      queixa_duracao: { type: ['string', 'null'] },
+      hipertensao: { type: ['boolean', 'null'] },
+      diabetes: { type: ['boolean', 'null'] },
+      dislipidemia: { type: ['boolean', 'null'] },
+      cardiopatia: { type: ['boolean', 'null'] },
+      asma_dpoc: { type: ['boolean', 'null'] },
+      doenca_renal: { type: ['boolean', 'null'] },
+      doenca_cardiovascular: { type: ['boolean', 'null'] },
+      avc: { type: ['boolean', 'null'] },
+      cancer: { type: ['boolean', 'null'] },
+      doencas_psiquiatricas: { type: ['boolean', 'null'] },
+      outras_comorbidades: { type: ['string', 'null'] },
+      cirurgias_previas: { type: ['boolean', 'null'] },
+      cirurgias_desc: { type: ['string', 'null'] },
+      internacoes_previas: { type: ['boolean', 'null'] },
+      internacoes_desc: { type: ['string', 'null'] },
+      tabagismo: { type: ['string', 'null'], enum: ['nunca', 'ex-fumante', 'fumante', null] },
+      tabagismo_pack_years: { type: ['string', 'null'] },
+      etilismo: { type: ['string', 'null'], enum: ['nunca', 'ocasional', 'regular', null] },
+      atividade_fisica: { type: ['boolean', 'null'] },
+      atividade_fisica_desc: { type: ['string', 'null'] },
+      sono: { type: ['string', 'null'] },
+      uso_drogas: { type: ['string', 'null'] },
+      ocupacao: { type: ['string', 'null'] },
+      nivel_estresse: { type: ['string', 'null'] },
+      medicamentos_em_uso: { type: ['string', 'null'] },
+      alergias_medicamentos: { type: ['string', 'null'] },
+      alergias_alimentares: { type: ['string', 'null'] },
+      alergias_outras: { type: ['string', 'null'] },
+      historico_familiar: { type: ['string', 'null'] },
+      ultima_mamografia: { type: ['string', 'null'] },
+      ultimo_papanicolau: { type: ['string', 'null'] },
+      ultima_colonoscopia: { type: ['string', 'null'] },
+      psa: { type: ['string', 'null'] },
+      vacinacao_adulto: { type: ['string', 'null'] },
+    },
+  },
+} as const;
+
+export async function extractAnamneseAdulta(transcript: string): Promise<AnamneseAdultaData> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      response_format: { type: 'json_schema', json_schema: ANAMNESE_ADULTA_SCHEMA },
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: ANAMNESE_ADULTA_SYSTEM_PROMPT },
+        { role: 'user', content: `Transcrição da primeira consulta:\n\n${transcript}` },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `GPT-4o anamnese adulta ${res.status}`);
+  }
+  const raw = JSON.parse((await res.json()).choices[0].message.content) as Record<string, any>;
+
+  const str = (v: any) => (v !== null && v !== undefined) ? String(v) : '';
+  const bl  = (v: any): boolean | null => v === true ? true : v === false ? false : null;
+
+  return {
+    motivo_consulta: str(raw.motivo_consulta),
+    queixa_duracao: str(raw.queixa_duracao),
+    hipertensao: bl(raw.hipertensao),
+    diabetes: bl(raw.diabetes),
+    dislipidemia: bl(raw.dislipidemia),
+    cardiopatia: bl(raw.cardiopatia),
+    asma_dpoc: bl(raw.asma_dpoc),
+    doenca_renal: bl(raw.doenca_renal),
+    doenca_cardiovascular: bl(raw.doenca_cardiovascular),
+    avc: bl(raw.avc),
+    cancer: bl(raw.cancer),
+    doencas_psiquiatricas: bl(raw.doencas_psiquiatricas),
+    outras_comorbidades: str(raw.outras_comorbidades),
+    cirurgias_previas: bl(raw.cirurgias_previas),
+    cirurgias_desc: str(raw.cirurgias_desc),
+    internacoes_previas: bl(raw.internacoes_previas),
+    internacoes_desc: str(raw.internacoes_desc),
+    tabagismo: (['nunca', 'ex-fumante', 'fumante'].includes(raw.tabagismo) ? raw.tabagismo : null),
+    tabagismo_pack_years: str(raw.tabagismo_pack_years),
+    etilismo: (['nunca', 'ocasional', 'regular'].includes(raw.etilismo) ? raw.etilismo : null),
+    atividade_fisica: bl(raw.atividade_fisica),
+    atividade_fisica_desc: str(raw.atividade_fisica_desc),
+    sono: str(raw.sono),
+    uso_drogas: str(raw.uso_drogas),
+    ocupacao: str(raw.ocupacao),
+    nivel_estresse: str(raw.nivel_estresse),
+    medicamentos_em_uso: str(raw.medicamentos_em_uso),
+    alergias_medicamentos: str(raw.alergias_medicamentos),
+    alergias_alimentares: str(raw.alergias_alimentares),
+    alergias_outras: str(raw.alergias_outras),
+    historico_familiar: str(raw.historico_familiar),
+    ultima_mamografia: str(raw.ultima_mamografia),
+    ultimo_papanicolau: str(raw.ultimo_papanicolau),
+    ultima_colonoscopia: str(raw.ultima_colonoscopia),
+    psa: str(raw.psa),
+    vacinacao_adulto: str(raw.vacinacao_adulto),
   };
 }
 

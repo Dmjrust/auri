@@ -49,7 +49,7 @@ import { Badge, Pill, ZBadge, StatusDot, Card, Btn, Tabs } from './components/au
 import { RequireRole, useRequireRole } from './components/RequireRole';
 import {
   AnamBoolSeg, AnamSelect, ConsultTypeBadge,
-  AnamnesePrimeiraConsulta,
+  AnamnesePrimeiraConsulta, AnamneseAdultaFields,
   ConsentScreen, RecordingScreen, ProcessingScreen, SummaryDoneScreen,
 } from './components/ConsultationFlow';
 import { SecretaryDashboard } from './components/SecretaryDashboard';
@@ -2613,20 +2613,6 @@ function AnamneseAdultaModal({ onClose, onSaved, existingData, consultaId }: {
   const [form, setForm] = useState<AnamneseAdultaData>(existingData ?? defaultAnamneseAdulta());
   const [saving, setSaving] = useState(false);
   const set = (k: keyof AnamneseAdultaData, v: unknown) => setForm(f => ({ ...f, [k]: v }));
-  const BoolRow = ({ label, field }: { label: string; field: keyof AnamneseAdultaData }) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${BO}` }}>
-      <span style={{ fontSize: 13, color: INK }}>{label}</span>
-      <div style={{ display: 'flex', gap: 6 }}>
-        {(['Sim', 'Não'] as const).map(opt => (
-          <button key={opt} onClick={() => set(field, opt === 'Sim' ? true : false)}
-            style={{ padding: '4px 12px', borderRadius: 5, border: `1px solid ${BO}`, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-              background: form[field] === (opt === 'Sim') ? P : '#fff', color: form[field] === (opt === 'Sim') ? '#fff' : INK }}>
-            {opt}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 
   async function handleSave() {
     setSaving(true);
@@ -2645,100 +2631,8 @@ function AnamneseAdultaModal({ onClose, onSaved, existingData, consultaId }: {
           <span style={{ fontWeight: 700, fontSize: 16 }}>Anamnese — 1ª consulta</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU }}><X size={18} /></button>
         </div>
-        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
-          {/* Motivo */}
-          <section>
-            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Motivo da consulta</p>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Motivo</label>
-              <input value={form.motivo_consulta} onChange={e => set('motivo_consulta', e.target.value)} placeholder="Ex: controle de hipertensão" style={inputStyle2} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Duração da queixa</label>
-              <input value={form.queixa_duracao} onChange={e => set('queixa_duracao', e.target.value)} placeholder="Ex: 2 anos" style={inputStyle2} />
-            </div>
-          </section>
-
-          {/* Condições crônicas */}
-          <section>
-            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Condições crônicas</p>
-            <BoolRow label="Hipertensão arterial" field="hipertensao" />
-            <BoolRow label="Diabetes" field="diabetes" />
-            <BoolRow label="Dislipidemia" field="dislipidemia" />
-            <BoolRow label="Cardiopatia" field="cardiopatia" />
-            <div style={{ marginTop: 10 }}>
-              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Outras comorbidades</label>
-              <input value={form.outras_comorbidades} onChange={e => set('outras_comorbidades', e.target.value)} placeholder="Ex: hipotireoidismo, obesidade" style={inputStyle2} />
-            </div>
-          </section>
-
-          {/* Hábitos */}
-          <section>
-            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Hábitos de vida</p>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Tabagismo</label>
-              <select value={form.tabagismo ?? ''} onChange={e => set('tabagismo', e.target.value || null)} style={{ ...inputStyle2, background: '#fff' }}>
-                <option value="">Não informado</option>
-                <option value="nunca">Nunca fumou</option>
-                <option value="ex-fumante">Ex-fumante</option>
-                <option value="fumante">Fumante</option>
-              </select>
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Etilismo</label>
-              <select value={form.etilismo ?? ''} onChange={e => set('etilismo', e.target.value || null)} style={{ ...inputStyle2, background: '#fff' }}>
-                <option value="">Não informado</option>
-                <option value="nunca">Nunca</option>
-                <option value="ocasional">Ocasional</option>
-                <option value="regular">Regular</option>
-              </select>
-            </div>
-            <BoolRow label="Atividade física regular" field="atividade_fisica" />
-            {form.atividade_fisica && (
-              <div style={{ marginTop: 8 }}>
-                <input value={form.atividade_fisica_desc} onChange={e => set('atividade_fisica_desc', e.target.value)} placeholder="Ex: caminhada 3x/semana" style={inputStyle2} />
-              </div>
-            )}
-          </section>
-
-          {/* Medicamentos e alergias */}
-          <section>
-            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Medicamentos e alergias</p>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Medicamentos em uso</label>
-              <textarea value={form.medicamentos_em_uso} onChange={e => set('medicamentos_em_uso', e.target.value)} placeholder="Liste os medicamentos atuais..." rows={3} style={{ ...inputStyle2, resize: 'vertical' as const }} />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Alergias a medicamentos</label>
-              <input value={form.alergias_medicamentos} onChange={e => set('alergias_medicamentos', e.target.value)} placeholder="Ex: penicilina, dipirona" style={inputStyle2} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>Outras alergias</label>
-              <input value={form.alergias_outras} onChange={e => set('alergias_outras', e.target.value)} placeholder="Ex: frutos do mar, látex" style={inputStyle2} />
-            </div>
-          </section>
-
-          {/* Histórico familiar */}
-          <section>
-            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Histórico familiar</p>
-            <textarea value={form.historico_familiar} onChange={e => set('historico_familiar', e.target.value)} placeholder="Ex: DM2 materno, IAM paterno, CA de cólon" rows={2} style={{ ...inputStyle2, resize: 'vertical' as const }} />
-          </section>
-
-          {/* Preventiva */}
-          <section>
-            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase', letterSpacing: 0.8 }}>Saúde preventiva</p>
-            {[
-              { label: 'Última mamografia', field: 'ultima_mamografia' as keyof AnamneseAdultaData, placeholder: 'Ex: 2024 / não realizado' },
-              { label: 'Último Papanicolau', field: 'ultimo_papanicolau' as keyof AnamneseAdultaData, placeholder: 'Ex: 2024' },
-              { label: 'Última colonoscopia', field: 'ultima_colonoscopia' as keyof AnamneseAdultaData, placeholder: 'Ex: 2022 / nunca realizou' },
-              { label: 'Vacinação adulto', field: 'vacinacao_adulto' as keyof AnamneseAdultaData, placeholder: 'Ex: gripe, pneumo 23V' },
-            ].map(({ label, field, placeholder }) => (
-              <div key={String(field)} style={{ marginBottom: 10 }}>
-                <label style={{ display: 'block', fontSize: 12, color: MU, marginBottom: 5 }}>{label}</label>
-                <input value={(form[field] as string) || ''} onChange={e => set(field, e.target.value)} placeholder={placeholder} style={inputStyle2} />
-              </div>
-            ))}
-          </section>
+        <div style={{ padding: 24 }}>
+          <AnamneseAdultaFields form={form} set={set} />
         </div>
         <div style={{ padding: '16px 24px', borderTop: `1px solid ${BO}`, display: 'flex', gap: 12 }}>
           <Btn variant="secondary" onClick={onClose} style={{ flex: 1, justifyContent: 'center' }}>Cancelar</Btn>
@@ -2751,29 +2645,36 @@ function AnamneseAdultaModal({ onClose, onSaved, existingData, consultaId }: {
   );
 }
 
-function MedicacoesAdultaTab({ medications }: { medications: Medication[] }) {
+function MedicacoesAdultaTab({ medications, canEdit, onAdd, onSetStatus }: {
+  medications: Medication[];
+  canEdit: boolean;
+  onAdd: (name: string, dosage: string, frequency: string) => void;
+  onSetStatus: (idx: number, status: Medication['status']) => void;
+}) {
   const statusLabel: Record<string, string> = { active: 'Ativo', paused: 'Suspenso', discontinued: 'Descontinuado' };
   const statusColors: Record<string, { bg: string; color: string }> = {
     active: { bg: SUCL, color: SUC },
     paused: { bg: WARNL, color: WARN },
     discontinued: { bg: SEC, color: MU },
   };
+  const [draft, setDraft] = useState({ name: '', dosage: '', frequency: '' });
 
-  if (medications.length === 0) {
-    return (
-      <Card>
-        <div style={{ padding: '32px 20px', textAlign: 'center' }}>
-          <Heartbeat size={28} color={MU} />
-          <p style={{ margin: '10px 0 0', fontSize: 13, color: MU }}>Nenhuma medicação registrada para este paciente.</p>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: MU }}>As medicações são registradas durante a consulta.</p>
-        </div>
-      </Card>
-    );
+  function handleAdd() {
+    if (!draft.name.trim()) return;
+    onAdd(draft.name, draft.dosage, draft.frequency);
+    setDraft({ name: '', dosage: '', frequency: '' });
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {medications.map((med, i) => {
+      {medications.length === 0 ? (
+        <Card>
+          <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+            <Heartbeat size={28} color={MU} />
+            <p style={{ margin: '10px 0 0', fontSize: 13, color: MU }}>Nenhuma medicação registrada para este paciente.</p>
+          </div>
+        </Card>
+      ) : medications.map((med, i) => {
         const s = med.status ?? 'active';
         const sc = statusColors[s] ?? statusColors.active;
         return (
@@ -2785,13 +2686,35 @@ function MedicacoesAdultaTab({ medications }: { medications: Medication[] }) {
                 {med.indication && <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>Indicação: {med.indication}</div>}
                 {med.start_date && <div style={{ fontSize: 11, color: MU, marginTop: 2 }}>Início: {fmtDate(med.start_date)}</div>}
               </div>
-              <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 5, background: sc.bg, color: sc.color, flexShrink: 0 }}>
-                {statusLabel[s] ?? s}
-              </span>
+              {canEdit ? (
+                <select value={s} onChange={e => onSetStatus(i, e.target.value as Medication['status'])}
+                  style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 5, background: sc.bg, color: sc.color, border: 'none', flexShrink: 0, cursor: 'pointer' }}>
+                  <option value="active">Ativo</option>
+                  <option value="paused">Suspenso</option>
+                  <option value="discontinued">Descontinuado</option>
+                </select>
+              ) : (
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 5, background: sc.bg, color: sc.color, flexShrink: 0 }}>
+                  {statusLabel[s] ?? s}
+                </span>
+              )}
             </div>
           </Card>
         );
       })}
+      {canEdit && (
+        <Card>
+          <div style={{ padding: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Medicamento"
+              style={{ flex: 2, minWidth: 140, padding: '8px 10px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+            <input value={draft.dosage} onChange={e => setDraft(d => ({ ...d, dosage: e.target.value }))} placeholder="Dose"
+              style={{ flex: 1, minWidth: 80, padding: '8px 10px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+            <input value={draft.frequency} onChange={e => setDraft(d => ({ ...d, frequency: e.target.value }))} placeholder="Frequência"
+              style={{ flex: 1, minWidth: 100, padding: '8px 10px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+            <Btn onClick={handleAdd}><Plus size={14} /> Adicionar</Btn>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -2954,6 +2877,35 @@ function MarcadoresTrendCard({ latestMarkers }: { latestMarkers: Record<string, 
           </div>
         </div>
       )}
+    </Card>
+  );
+}
+
+// Comparação real (2 últimos valores registrados) por marcador — complementa o
+// MarcadoresTrendCard, que só mostra o valor mais recente.
+function MarkerComparisonsCard({ comparisons }: { comparisons: db.MarkerComparison[] }) {
+  if (comparisons.length === 0) return null;
+  const trendColor = (t: db.MarkerComparison['trend']) => t === 'melhora' ? SUC : t === 'piora' ? DES : MU;
+  const trendLabel = (t: db.MarkerComparison['trend']) => t === 'melhora' ? 'Melhora' : t === 'piora' ? 'Piora' : 'Estável';
+  return (
+    <Card>
+      <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}` }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: INK }}>Exames comparativos ({comparisons.length})</span>
+        <span style={{ fontSize: 11, color: MU, marginLeft: 8 }}>Últimos 2 resultados registrados por marcador</span>
+      </div>
+      <div style={{ padding: '10px 20px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {comparisons.map(c => (
+          <div key={c.marker_name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: `1px solid ${BO}` }}>
+            <span style={{ fontSize: 13, color: INK, fontWeight: 500, flex: 1 }}>{c.marker_name}</span>
+            <span style={{ fontSize: 12, color: MU, fontFamily: '"JetBrains Mono", monospace' }}>
+              {c.previous.value}{c.previous.unit} → {c.current.value}{c.current.unit}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, color: trendColor(c.trend), background: trendColor(c.trend) + '1A' }}>
+              {trendLabel(c.trend)}
+            </span>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }
@@ -3153,11 +3105,17 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
   const [anamneseAdulta, setAnamneseAdulta] = useState<(AnamneseAdultaData & { consulta_id: string; created_at: string }) | null>(null);
   const [clinicalDocs, setClinicalDocs] = useState<ClinicalDocument[]>([]);
   const [latestMarkers, setLatestMarkers] = useState<Record<string, LabMarker>>({});
+  const [markerComparisons, setMarkerComparisons] = useState<db.MarkerComparison[]>([]);
   const [lastRequestedExams, setLastRequestedExams] = useState<db.LastRequestedExamsInfo | null>(null);
   // Condições Ativas + Anamnese — geridas direto no Resumo (aba Saúde foi extinta)
   const [showAnamneseModal, setShowAnamneseModal] = useState(false);
   const [problems, setProblems] = useState<ProblemaAtivo[]>([]);
   const [showAddProblem, setShowAddProblem] = useState(false);
+  const [medications, setMedications] = useState<Medication[]>([]);
+  const [allergies, setAllergies] = useState<Allergy[]>([]);
+  const [showAddAllergy, setShowAddAllergy] = useState(false);
+  const [newAllergyName, setNewAllergyName] = useState('');
+  const [newAllergyReaction, setNewAllergyReaction] = useState('');
   const [newProblemName, setNewProblemName] = useState('');
   const guardian = primaryGuardian(patient);
   const isMobile = useIsMobile();
@@ -3208,6 +3166,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
     db.fetchClinicalDocuments(patient.id).then(setClinicalDocs).catch(() => setClinicalDocs([]));
     db.fetchLatestMarkers(patient.id).then(setLatestMarkers).catch(() => setLatestMarkers({}));
     db.fetchLastRequestedExams(patient.id).then(setLastRequestedExams).catch(() => setLastRequestedExams(null));
+    db.getMarkerComparisons(patient.id).then(setMarkerComparisons).catch(() => setMarkerComparisons([]));
   }, [patient.id, refetchTrigger, isPediatria]);
 
   // Drafts: awaiting doctor confirmation
@@ -3239,10 +3198,13 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
     : null;
   const activeProblems = lastConsultAdultData?.active_problems?.filter(p => p.status === 'ativo') ?? [];
   const currentMedications = lastConsultAdultData?.current_medications ?? [];
+  const currentAllergies = lastConsultAdultData?.allergies ?? [];
 
   const lastConsult = pastConsultations[0];
 
   useEffect(() => { setProblems(activeProblems); }, [activeProblems.map(p => `${p.name}:${p.status}`).join(',')]);
+  useEffect(() => { setMedications(currentMedications); }, [currentMedications.map(m => `${m.name}:${m.status}`).join(',')]);
+  useEffect(() => { setAllergies(currentAllergies); }, [currentAllergies.map(a => a.allergen).join(',')]);
 
   function addProblem() {
     if (!newProblemName.trim()) return;
@@ -3259,6 +3221,36 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
     next[idx] = { ...next[idx], status: next[idx].status === 'ativo' ? 'controlado' : next[idx].status === 'controlado' ? 'resolvido' : 'ativo', updated_at: new Date().toISOString() };
     setProblems(next);
     if (lastConsult?.id) db.updatePatientProblems(lastConsult.id, next);
+  }
+
+  function addMedication(name: string, dosage: string, frequency: string) {
+    if (!name.trim() || !lastConsult?.id) return;
+    const updated: Medication[] = [...medications, { name: name.trim(), dosage: dosage.trim() || undefined, frequency: frequency.trim() || undefined, status: 'active' }];
+    setMedications(updated);
+    db.updatePatientMedications(lastConsult.id, updated);
+    toast.success('Medicação adicionada.');
+  }
+
+  function setMedicationStatus(idx: number, status: Medication['status']) {
+    if (!lastConsult?.id) return;
+    const next = medications.map((m, i) => i === idx ? { ...m, status } : m);
+    setMedications(next);
+    db.updatePatientMedications(lastConsult.id, next);
+  }
+
+  function addAllergy(allergen: string, reaction: string) {
+    if (!allergen.trim() || !lastConsult?.id) return;
+    const updated: Allergy[] = [...allergies, { allergen: allergen.trim(), reaction: reaction.trim() || undefined }];
+    setAllergies(updated);
+    db.updatePatientAllergies(lastConsult.id, updated);
+    toast.success('Alergia adicionada.');
+  }
+
+  function removeAllergy(idx: number) {
+    if (!lastConsult?.id) return;
+    const next = allergies.filter((_, i) => i !== idx);
+    setAllergies(next);
+    db.updatePatientAllergies(lastConsult.id, next);
   }
 
   return (
@@ -3297,12 +3289,12 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
             <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
               <Btn variant="secondary" onClick={() => window.print()}><DownloadSimple size={15} /> Imprimir</Btn>
               <Btn variant="secondary"><User size={15} /> Compartilhar</Btn>
-              <Btn onClick={() => onStartConsult(consultations.some(c => c.status === 'completed') ? 'retorno' : 'primeira vez')}><Stethoscope size={15} /> Iniciar consulta</Btn>
+              <Btn onClick={() => onStartConsult(db.deriveConsultType(consultations))}><Stethoscope size={15} /> Iniciar consulta</Btn>
             </div>
           )}
         </div>
         {isMobile && (
-          <Btn onClick={() => onStartConsult(consultations.some(c => c.status === 'completed') ? 'retorno' : 'primeira vez')} style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
+          <Btn onClick={() => onStartConsult(db.deriveConsultType(consultations))} style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
             <Stethoscope size={15} /> Iniciar consulta
           </Btn>
         )}
@@ -3416,6 +3408,41 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                                 background: prob.status === 'ativo' ? WARNL : prob.status === 'controlado' ? SUCL : SEC,
                                 color: prob.status === 'ativo' ? WARN : prob.status === 'controlado' ? SUC : MU }}>
                                 {prob.status.charAt(0).toUpperCase() + prob.status.slice(1)}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
+                  {/* Alergias — completa e editável (aba Saúde foi extinta) */}
+                  <Card>
+                    <SH title="Alergias" right={
+                      <Btn variant="secondary" onClick={() => setShowAddAllergy(true)} style={{ fontSize: 12, padding: '4px 10px' }}>
+                        <Plus size={13} /> Adicionar
+                      </Btn>
+                    } />
+                    {showAddAllergy && (
+                      <div style={{ padding: '12px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', gap: 8 }}>
+                        <input autoFocus value={newAllergyName} onChange={e => setNewAllergyName(e.target.value)}
+                          placeholder="Substância (ex: Dipirona)" style={{ ...inputStyle2, flex: 1 }} />
+                        <input value={newAllergyReaction} onChange={e => setNewAllergyReaction(e.target.value)}
+                          placeholder="Reação (opcional)" style={{ ...inputStyle2, flex: 1 }} />
+                        <Btn onClick={() => { addAllergy(newAllergyName, newAllergyReaction); setNewAllergyName(''); setNewAllergyReaction(''); setShowAddAllergy(false); }} style={{ flexShrink: 0 }}><Check size={14} /></Btn>
+                        <Btn variant="secondary" onClick={() => setShowAddAllergy(false)} style={{ flexShrink: 0 }}><X size={14} /></Btn>
+                      </div>
+                    )}
+                    <div style={{ padding: '14px 20px' }}>
+                      {allergies.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: 13, color: MU }}>Nenhuma alergia registrada.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {allergies.map((a, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: DESL, borderRadius: 8, border: `1px solid ${DES}40` }}>
+                              <div style={{ flex: 1, fontSize: 14, color: INK }}>{a.allergen}{a.reaction ? ` — ${a.reaction}` : ''}</div>
+                              <button onClick={() => removeAllergy(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU, display: 'flex' }}>
+                                <X size={14} />
                               </button>
                             </div>
                           ))}
@@ -4092,6 +4119,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                         </div>
                       </Card>
                     )}
+                    <MarkerComparisonsCard comparisons={markerComparisons} />
                     <MarcadoresTrendCard latestMarkers={latestMarkers} />
                   </div>
                 )}
@@ -4169,7 +4197,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
 
         {/* ── Clínica Geral tabs ─────────────────────────────────────────────── */}
         {tab === 'Medicações' && !isPediatria && (
-          <MedicacoesAdultaTab medications={currentMedications} />
+          <MedicacoesAdultaTab medications={medications} canEdit={!!lastConsult?.id} onAdd={addMedication} onSetStatus={setMedicationStatus} />
         )}
 
         {/* Avaliação Capilar (Tricologia) — oculto na fase de validação de Pediatria */}
@@ -5928,6 +5956,7 @@ export default function App() {
   const [realSummary, setRealSummary] = useState<StructuredSummary | null>(null);
   const [realTranscript, setRealTranscript] = useState('');
   const [realAnamnese, setRealAnamnese] = useState<AnamnesePrimeiraConsultaData | null>(null);
+  const [realAnamneseAdulta, setRealAnamneseAdulta] = useState<AnamneseAdultaData | null>(null);
   const [realAnamneseError, setRealAnamneseError] = useState<string | null>(null);
   const [draftConsultationId, setDraftConsultationId] = useState<string | null>(null);
   const [activeAppointmentId, setActiveAppointmentId] = useState<string | null>(null);
@@ -6075,15 +6104,15 @@ export default function App() {
 
   if (flow === 'consent')    return <ConsentScreen consultType={consultType} onOk={() => setFlow('recording')} onCancel={() => { if (screen === 'dashboard') { go('patient-detail'); } else { setFlow(null); } }} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} onCancel={() => { setFlow(null); setRecTime(0); setMicReady(false); }} onMicReady={() => setMicReady(true)} />;
-  if (flow === 'processing') return <ProcessingScreen consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese, anamneseError) => {
-    setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setRealAnamneseError(anamneseError ?? null); setFlow('done');
+  if (flow === 'processing') return <ProcessingScreen consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} patientId={activePatient?.id} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese, anamneseError, anamneseAdulta) => {
+    setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setRealAnamneseAdulta(anamneseAdulta ?? null); setRealAnamneseError(anamneseError ?? null); setFlow('done');
     if (activePatient) {
       db.saveDraftConsultation(activePatient.id, summary, recTime, consultType)
         .then(id => setDraftConsultationId(id))
         .catch(err => console.error('Auto-save draft failed:', err));
     }
   }} />;
-  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} anamnese={realAnamnese} anamneseError={realAnamneseError} onSave={() => { if (activeAppointmentId) db.updateAppointment(activeAppointmentId, { status: 'completed' }).catch(() => {}); setActiveAppointmentId(null); setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRealAnamnese(null); setRealAnamneseError(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
+  if (flow === 'done' && realSummary) return <SummaryDoneScreen patient={activePatient} recTime={recTime} summary={realSummary} transcript={realTranscript} draftId={draftConsultationId} consultType={consultType} anamnese={realAnamnese} anamneseAdulta={realAnamneseAdulta} anamneseError={realAnamneseError} specialty={doctorSpecialty} onSave={() => { if (activeAppointmentId) db.updateAppointment(activeAppointmentId, { status: 'completed' }).catch(() => {}); setActiveAppointmentId(null); setFlow(null); setAudioBlob(null); setDraftConsultationId(null); setRealAnamnese(null); setRealAnamneseAdulta(null); setRealAnamneseError(null); setRefetchTrigger(t => t + 1); go('patient-detail'); }} />;
 
   const breadcrumbs: Record<string, string[]> = {
     dashboard:        ['Início', 'Dashboard'],
@@ -6114,10 +6143,17 @@ export default function App() {
                 setDraftConsultationId(draft.id);
                 setConsultType(draft.type as 'retorno' | 'primeira vez');
                 setRecTime(draft.duration_minutes * 60);
-                const anamnese = draft.type === 'primeira vez'
-                  ? await db.fetchAnamnesePrimeiraConsultaByPatient(activePatient.id).catch(() => null)
-                  : null;
-                setRealAnamnese(anamnese);
+                if (draft.type === 'primeira vez' && doctorSpecialty !== 'Pediatria') {
+                  const anamneseAdulta = await db.fetchAnamneseAdulta(activePatient.id).catch(() => null);
+                  setRealAnamnese(null);
+                  setRealAnamneseAdulta(anamneseAdulta);
+                } else {
+                  const anamnese = draft.type === 'primeira vez'
+                    ? await db.fetchAnamnesePrimeiraConsultaByPatient(activePatient.id).catch(() => null)
+                    : null;
+                  setRealAnamnese(anamnese);
+                  setRealAnamneseAdulta(null);
+                }
                 setRealAnamneseError(null);
                 setFlow('done');
               }} refetchTrigger={refetchTrigger} />}

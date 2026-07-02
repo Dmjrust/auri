@@ -101,13 +101,15 @@ export interface Insight { type: 'alert' | 'pattern' | 'info'; title: string; bo
 // ─── CLÍNICA GERAL — TIPOS ADULTO ─────────────────────────────────────────────
 
 export interface VitaisAdulto {
-  pressao_arterial?: string;    // "130/85 mmHg"
-  frequencia_cardiaca?: string; // "78 bpm"
-  saturacao?: string;           // "97%"
-  temperatura?: string;         // "36.8°C"
-  peso?: string;                // "82 kg"
-  altura?: string;              // "172 cm"
-  imc?: string;                 // "27.7"
+  pressao_arterial?: string;      // "130/85 mmHg"
+  frequencia_cardiaca?: string;   // "78 bpm"
+  frequencia_respiratoria?: string; // "18 irpm"
+  saturacao?: string;             // "97%"
+  temperatura?: string;           // "36.8°C"
+  peso?: string;                  // "82 kg"
+  altura?: string;                // "172 cm"
+  imc?: string;                   // "27.7" — calculado no cliente a partir de peso/altura
+  circunferencia_abdominal?: string; // "98 cm"
 }
 
 export interface ProblemaAtivo {
@@ -132,6 +134,15 @@ export interface Allergy {
   severity?: 'leve' | 'moderada' | 'grave';
 }
 
+export interface MedicationChange {
+  name: string;
+  action: 'iniciada' | 'aumentada' | 'reduzida' | 'suspensa' | 'mantida';
+  reason?: string;
+}
+
+export type RespostaTratamento =
+  | 'boa' | 'parcial' | 'sem_resposta' | 'piora' | 'baixa_adesao' | 'efeitos_adversos';
+
 export interface ConsultaAdultoData {
   vitals?: VitaisAdulto;
   active_problems?: ProblemaAtivo[];
@@ -142,6 +153,14 @@ export interface ConsultaAdultoData {
   exams_requested?: string;
   follow_up?: string;
   clinical_insights?: string[];
+  // ── Campos específicos de consulta de retorno ────────────────────────────
+  motivo_retorno?: string;
+  evolucao_clinica?: string;
+  resposta_tratamento?: RespostaTratamento | null;
+  medication_changes?: MedicationChange[];
+  novos_problemas?: ProblemaAtivo[];
+  // Resumo clínico inteligente — usado tanto na primeira consulta quanto no retorno
+  resumo_clinico?: string;
 }
 
 export interface AnamneseAdultaData {
@@ -153,6 +172,12 @@ export interface AnamneseAdultaData {
   diabetes: boolean | null;
   dislipidemia: boolean | null;
   cardiopatia: boolean | null;
+  asma_dpoc: boolean | null;
+  doenca_renal: boolean | null;
+  doenca_cardiovascular: boolean | null;
+  avc: boolean | null;
+  cancer: boolean | null;
+  doencas_psiquiatricas: boolean | null;
   outras_comorbidades: string;
   // Cirurgias e internações
   cirurgias_previas: boolean | null;
@@ -165,9 +190,14 @@ export interface AnamneseAdultaData {
   etilismo: 'nunca' | 'ocasional' | 'regular' | null;
   atividade_fisica: boolean | null;
   atividade_fisica_desc: string;
+  sono: string;
+  uso_drogas: string;
+  ocupacao: string;
+  nivel_estresse: string;
   // Medicamentos e alergias
   medicamentos_em_uso: string;
   alergias_medicamentos: string;
+  alergias_alimentares: string;
   alergias_outras: string;
   // Familiar
   historico_familiar: string;
@@ -175,19 +205,24 @@ export interface AnamneseAdultaData {
   ultima_mamografia: string;
   ultimo_papanicolau: string;
   ultima_colonoscopia: string;
+  psa: string;
+  // Menções vacinais feitas na consulta (texto livre — registro formal fica na aba Vacinas)
   vacinacao_adulto: string;
 }
 
 export function defaultAnamneseAdulta(): AnamneseAdultaData {
   return {
     motivo_consulta: '', queixa_duracao: '',
-    hipertensao: null, diabetes: null, dislipidemia: null, cardiopatia: null, outras_comorbidades: '',
+    hipertensao: null, diabetes: null, dislipidemia: null, cardiopatia: null,
+    asma_dpoc: null, doenca_renal: null, doenca_cardiovascular: null, avc: null, cancer: null, doencas_psiquiatricas: null,
+    outras_comorbidades: '',
     cirurgias_previas: null, cirurgias_desc: '', internacoes_previas: null, internacoes_desc: '',
     tabagismo: null, tabagismo_pack_years: '', etilismo: null,
     atividade_fisica: null, atividade_fisica_desc: '',
-    medicamentos_em_uso: '', alergias_medicamentos: '', alergias_outras: '',
+    sono: '', uso_drogas: '', ocupacao: '', nivel_estresse: '',
+    medicamentos_em_uso: '', alergias_medicamentos: '', alergias_alimentares: '', alergias_outras: '',
     historico_familiar: '',
-    ultima_mamografia: '', ultimo_papanicolau: '', ultima_colonoscopia: '', vacinacao_adulto: '',
+    ultima_mamografia: '', ultimo_papanicolau: '', ultima_colonoscopia: '', psa: '', vacinacao_adulto: '',
   };
 }
 
