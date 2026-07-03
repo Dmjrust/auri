@@ -2602,6 +2602,93 @@ function PrimeiraConsultaCard({ patientId, refetchTrigger = 0 }: { patientId: st
 
 // ─── CLÍNICA GERAL — COMPONENTES ─────────────────────────────────────────────
 
+// Versão adulta do bloco "Primeira Consulta" da aba Evolução — sem qualquer
+// campo pediátrico (triagens neonatais, gestação/parto).
+function PrimeiraConsultaAdultoCard({ anamnese, onOpen }: {
+  anamnese: (AnamneseAdultaData & { consulta_id: string; created_at: string }) | null;
+  onOpen: () => void;
+}) {
+  if (!anamnese) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: BG, border: `1px solid ${BO}`, borderRadius: 10, marginBottom: 16, fontSize: 13, color: MU }}>
+        <Info size={15} color={MU} />
+        Nenhuma anamnese de primeira consulta registrada ainda.
+      </div>
+    );
+  }
+
+  const comorbidades = [
+    anamnese.hipertensao && 'Hipertensão', anamnese.diabetes && 'Diabetes', anamnese.dislipidemia && 'Dislipidemia',
+    anamnese.cardiopatia && 'Cardiopatia', anamnese.asma_dpoc && 'Asma/DPOC', anamnese.doenca_renal && 'Doença renal',
+    anamnese.doenca_cardiovascular && 'D. cardiovascular', anamnese.avc && 'AVC', anamnese.cancer && 'Câncer',
+    anamnese.doencas_psiquiatricas && 'D. psiquiátricas',
+  ].filter(Boolean) as string[];
+  const allergies = [anamnese.alergias_medicamentos, anamnese.alergias_alimentares, anamnese.alergias_outras].filter(Boolean);
+
+  return (
+    <div style={{ border: `1.5px solid #BFDBFE`, borderRadius: 12, background: '#F8FBFF', marginBottom: 20, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 18px', background: '#EFF6FF', borderBottom: `1px solid #BFDBFE`, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ width: 26, height: 26, borderRadius: 6, background: '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Star size={13} color="#1D4ED8" weight="fill" />
+        </span>
+        <span style={{ fontWeight: 700, fontSize: 13, color: '#1D4ED8' }}>Primeira Consulta</span>
+        <span style={{ fontSize: 12, color: MU, marginLeft: 4 }}>— {fmtDate(anamnese.created_at.slice(0, 10))}</span>
+        <button onClick={onOpen} style={{
+          marginLeft: 'auto', background: 'none', border: `1px solid #BFDBFE`, borderRadius: 6,
+          padding: '4px 12px', fontSize: 12, color: '#1D4ED8', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+        }}>Ver anamnese completa</button>
+      </div>
+
+      <div style={{ padding: '14px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 5 }}>Comorbidades</div>
+          {comorbidades.length === 0 && !anamnese.outras_comorbidades ? (
+            <div style={{ fontSize: 12, color: MU }}>Nenhuma registrada</div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 5 }}>
+              {comorbidades.map(c => (
+                <span key={c} style={{ fontSize: 11, fontWeight: 600, background: WARNL, color: WARN, padding: '2px 8px', borderRadius: 99, border: `1px solid ${WARN}30` }}>{c}</span>
+              ))}
+              {anamnese.outras_comorbidades && <span style={{ fontSize: 12, color: INK }}>{anamnese.outras_comorbidades.slice(0, 60)}</span>}
+            </div>
+          )}
+        </div>
+
+        {anamnese.medicamentos_em_uso && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 5 }}>Medicamentos em uso</div>
+            <div style={{ fontSize: 13, color: INK, lineHeight: 1.5 }}>
+              {anamnese.medicamentos_em_uso.slice(0, 80)}{anamnese.medicamentos_em_uso.length > 80 ? '…' : ''}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 5 }}>Alergias conhecidas</div>
+          {allergies.length === 0 ? (
+            <div style={{ fontSize: 12, color: MU }}>Nenhuma registrada</div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 5 }}>
+              {allergies.map(a => (
+                <span key={a} style={{ fontSize: 11, fontWeight: 600, background: DESL, color: DES, padding: '2px 8px', borderRadius: 99, border: `1px solid ${DES}30` }}>{a}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {anamnese.historico_familiar && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 5 }}>Histórico familiar</div>
+            <div style={{ fontSize: 13, color: INK, lineHeight: 1.5 }}>
+              {anamnese.historico_familiar.slice(0, 80)}{anamnese.historico_familiar.length > 80 ? '…' : ''}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const inputStyle2 = { width: '100%', padding: '9px 12px', border: `1px solid ${BO}`, borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, background: '#fff', color: INK };
 
 function AnamneseAdultaModal({ onClose, onSaved, existingData, consultaId }: {
@@ -3257,6 +3344,15 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
 
   return (
     <div>
+      {/* Modal de anamnese adulta — na raiz para abrir de qualquer aba (Resumo, Evolução) */}
+      {showAnamneseModal && (
+        <AnamneseAdultaModal
+          onClose={() => setShowAnamneseModal(false)}
+          onSaved={() => { setShowAnamneseModal(false); db.fetchAnamneseAdulta(patient.id).then(setAnamneseAdulta); }}
+          existingData={anamneseAdulta}
+          consultaId={anamneseAdulta?.consulta_id ?? (lastConsult?.id ?? null)}
+        />
+      )}
       <Card style={{ padding: isMobile ? '14px 16px' : '20px 24px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: isMobile ? 12 : 20 }}>
           <div style={{ width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: '50%', background: patient.gender === 'M' ? PL : FEMALEL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -3521,14 +3617,6 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                     </div>
                   </Card>
 
-                  {showAnamneseModal && (
-                    <AnamneseAdultaModal
-                      onClose={() => setShowAnamneseModal(false)}
-                      onSaved={(data) => { setShowAnamneseModal(false); db.fetchAnamneseAdulta(patient.id).then(setAnamneseAdulta); }}
-                      existingData={anamneseAdulta}
-                      consultaId={anamneseAdulta?.consulta_id ?? (lastConsult?.id ?? null)}
-                    />
-                  )}
                 </div>
 
                 {/* Coluna direita */}
@@ -4074,8 +4162,10 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                   <Btn size="sm" onClick={() => onStartConsult('retorno')}><Plus size={14} /> Nova consulta</Btn>
                 </div>
 
-                {/* Primeira Consulta — bloco fixo no topo */}
-                <PrimeiraConsultaCard patientId={patient.id} refetchTrigger={refetchTrigger} />
+                {/* Primeira Consulta — bloco fixo no topo (versão por especialidade) */}
+                {isPediatria
+                  ? <PrimeiraConsultaCard patientId={patient.id} refetchTrigger={refetchTrigger} />
+                  : <PrimeiraConsultaAdultoCard anamnese={anamneseAdulta} onOpen={() => setShowAnamneseModal(true)} />}
 
                 {/* Clínica Geral: upload de exames sempre acessível + pendências da última consulta */}
                 {!isPediatria && (
