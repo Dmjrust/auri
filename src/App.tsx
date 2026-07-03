@@ -1666,6 +1666,205 @@ const NewPatientModal = React.memo(function NewPatientModal({ onClose, onCreated
   );
 });
 
+// ─── EDIT PATIENT MODAL ───────────────────────────────────────────────────────
+// Edição de cadastro + responsável primário, com zona de perigo:
+// Arquivar (soft delete, preserva prontuário — CFM/LGPD) e Excluir definitivo
+// (confirmação forte digitando o nome do paciente).
+const EditPatientModal = React.memo(function EditPatientModal({ patient, onClose, onSaved, onRemoved, specialty = 'Pediatria' }: {
+  patient: Patient;
+  onClose: () => void;
+  onSaved: () => void;
+  onRemoved: () => void;
+  specialty?: string;
+}) {
+  const g = primaryGuardian(patient);
+  const [form, setForm] = useState({
+    full_name: patient.full_name, birth_date: patient.birth_date, gender: patient.gender,
+    blood_type: patient.blood_type || '',
+    insurance_plan: patient.insurance_plan || '', insurance_card_number: patient.insurance_card_number || '',
+    guardian_name: g?.name || '', guardian_relationship: g?.relationship || 'Mãe',
+    guardian_phone: g?.phone || '', guardian_email: g?.email || '',
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [dangerMode, setDangerMode] = useState(false);
+  const [confirmName, setConfirmName] = useState('');
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const isPed = specialty === 'Pediatria';
+
+  async function handleSave() {
+    if (!form.full_name.trim()) { setError('Nome completo é obrigatório.'); return; }
+    if (!form.birth_date) { setError('Data de nascimento é obrigatória.'); return; }
+    setLoading(true); setError('');
+    try {
+      await db.updatePatient(patient.id, { ...form, gender: form.gender as 'M' | 'F' });
+      toast.success('Dados do paciente atualizados.');
+      onSaved();
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao salvar. Verifique a conexão e tente novamente.');
+    } finally { setLoading(false); }
+  }
+
+  async function handleArchive() {
+    if (!window.confirm(`Arquivar ${patient.full_name}? O paciente sai das listas, mas o prontuário é preservado (retenção obrigatória CFM).`)) return;
+    setLoading(true); setError('');
+    try {
+      await db.archivePatient(patient.id);
+      toast.success('Paciente arquivado.');
+      onRemoved();
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao arquivar.'); setLoading(false);
+    }
+  }
+
+  async function handleDelete() {
+    setLoading(true); setError('');
+    try {
+      await db.deletePatientPermanently(patient.id);
+      toast.success('Paciente excluído definitivamente.');
+      onRemoved();
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao excluir.'); setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+      <Card style={{ width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto' }}>
+        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+          <span style={{ fontWeight: 700, fontSize: 16, color: INK }}>Editar paciente</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MU, padding: 4, borderRadius: 4 }}><X size={18} /></button>
+        </div>
+
+        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <section>
+            <p style={{ margin: '0 0 14px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>Dados do paciente</p>
+            <FRow label="Nome completo *">
+              <input value={form.full_name} onChange={e => set('full_name', e.target.value)} style={inputStyle} />
+            </FRow>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <FRow label="Data de nascimento *">
+                <input type="date" value={form.birth_date} onChange={e => set('birth_date', e.target.value)} style={inputStyle} />
+              </FRow>
+              <FRow label="Sexo *">
+                <select value={form.gender} onChange={e => set('gender', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+                  <option value="M">Masculino</option>
+                  <option value="F">Feminino</option>
+                </select>
+              </FRow>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <FRow label="Tipo sanguíneo">
+                <select value={form.blood_type} onChange={e => set('blood_type', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+                  <option value="">Não informado</option>
+                  {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </FRow>
+              <FRow label="Operadora">
+                <select value={form.insurance_plan} onChange={e => set('insurance_plan', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+                  <option value="">Particular / Sem plano</option>
+                  {['Unimed','Bradesco Saúde','Amil','SulAmérica','Hapvida','NotreDame Intermédica','Porto Seguro Saúde','Prevent Senior','Golden Cross','Sompo Saúde','Mediservice','Omint','Cassi','Geap','Postal Saúde','Outro'].map(o => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+              </FRow>
+            </div>
+            {form.insurance_plan && (
+              <FRow label="Nº da carteirinha">
+                <input value={form.insurance_card_number} onChange={e => set('insurance_card_number', e.target.value)} style={inputStyle} />
+              </FRow>
+            )}
+          </section>
+
+          <section>
+            <p style={{ margin: '0 0 14px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>
+              {isPed ? 'Responsável principal' : 'Contato do paciente'}
+            </p>
+            <FRow label={isPed ? 'Nome' : 'Nome do contato'}>
+              <input value={form.guardian_name} onChange={e => set('guardian_name', e.target.value)} style={inputStyle} />
+            </FRow>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              {isPed && (
+                <FRow label="Parentesco">
+                  <select value={form.guardian_relationship} onChange={e => set('guardian_relationship', e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+                    {['Mãe','Pai','Avó','Avô','Tio(a)','Responsável legal'].map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </FRow>
+              )}
+              <FRow label="Telefone">
+                <input value={form.guardian_phone} onChange={e => set('guardian_phone', e.target.value)} placeholder="(11) 99999-9999" style={inputStyle} />
+              </FRow>
+              {!isPed && (
+                <FRow label="E-mail">
+                  <input type="email" value={form.guardian_email} onChange={e => set('guardian_email', e.target.value)} style={inputStyle} />
+                </FRow>
+              )}
+            </div>
+            {isPed && (
+              <FRow label="E-mail">
+                <input type="email" value={form.guardian_email} onChange={e => set('guardian_email', e.target.value)} style={inputStyle} />
+              </FRow>
+            )}
+          </section>
+
+          {error && (
+            <div style={{ background: DESL, color: DES, borderRadius: 8, padding: '10px 14px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <WarningCircle size={16} weight="fill" />{error}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Btn variant="secondary" onClick={onClose} style={{ flex: 1, justifyContent: 'center' }}>Cancelar</Btn>
+            <Btn onClick={handleSave} disabled={loading} style={{ flex: 1, justifyContent: 'center' }}>
+              {loading ? 'Salvando…' : 'Salvar alterações'}
+            </Btn>
+          </div>
+
+          {/* Zona de perigo */}
+          <section style={{ border: `1px solid ${DES}40`, borderRadius: 10, padding: 16 }}>
+            <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: DES, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>Zona de perigo</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1, fontSize: 13, color: MU }}>
+                  <strong style={{ color: INK }}>Arquivar paciente</strong> — sai das listas; prontuário preservado.
+                </div>
+                <Btn variant="secondary" size="sm" onClick={handleArchive} disabled={loading}>Arquivar</Btn>
+              </div>
+              <div style={{ borderTop: `1px solid ${BO}`, paddingTop: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ flex: 1, fontSize: 13, color: MU }}>
+                    <strong style={{ color: DES }}>Excluir definitivamente</strong> — apaga prontuário, consultas, exames e vacinas. Irreversível.
+                  </div>
+                  {!dangerMode && (
+                    <Btn variant="secondary" size="sm" onClick={() => setDangerMode(true)} disabled={loading} style={{ color: DES, borderColor: `${DES}60` }}>Excluir…</Btn>
+                  )}
+                </div>
+                {dangerMode && (
+                  <div style={{ marginTop: 10, background: DESL, borderRadius: 8, padding: 12 }}>
+                    <p style={{ margin: '0 0 8px', fontSize: 12, color: DES }}>
+                      Para confirmar, digite o nome completo do paciente: <strong>{patient.full_name}</strong>
+                    </p>
+                    <input value={confirmName} onChange={e => setConfirmName(e.target.value)} placeholder={patient.full_name}
+                      style={{ ...inputStyle, marginBottom: 10, borderColor: `${DES}60` }} />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Btn variant="secondary" size="sm" onClick={() => { setDangerMode(false); setConfirmName(''); }} style={{ flex: 1, justifyContent: 'center' }}>Cancelar</Btn>
+                      <Btn size="sm" onClick={handleDelete} disabled={loading || confirmName.trim() !== patient.full_name}
+                        style={{ flex: 1, justifyContent: 'center', background: DES, borderColor: DES }}>
+                        {loading ? 'Excluindo…' : 'Excluir definitivamente'}
+                      </Btn>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
+      </Card>
+    </div>
+  );
+});
+
 // ─── PATIENTS ─────────────────────────────────────────────────────────────────
 function PatientsPage({ go, setActivePatient, specialty = 'Pediatria', presetSearch, onConsumePresetSearch }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; specialty?: string; presetSearch?: string; onConsumePresetSearch?: () => void }) {
   const [search, setSearch] = useState(presetSearch || '');
@@ -3174,7 +3373,7 @@ function ExamUploadForm({ patientId, consultations, documents, defaultConsultId,
 }
 
 // ─── PATIENT DETAIL ───────────────────────────────────────────────────────────
-function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTrigger = 0, specialty = 'Pediatria', pendingTab, onConsumePendingTab }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; onOpenDraft: (draft: Consultation) => void; refetchTrigger?: number; specialty?: string; pendingTab?: string | null; onConsumePendingTab?: () => void }) {
+function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTrigger = 0, specialty = 'Pediatria', pendingTab, onConsumePendingTab, onPatientUpdated, onPatientRemoved }: { patient: Patient; go: (s: string) => void; onStartConsult: (type: 'retorno' | 'primeira vez') => void; onOpenDraft: (draft: Consultation) => void; refetchTrigger?: number; specialty?: string; pendingTab?: string | null; onConsumePendingTab?: () => void; onPatientUpdated?: () => void; onPatientRemoved?: () => void }) {
   const [tab, setTab] = useState(pendingTab || 'Resumo');
 
   // Consome a aba pré-definida vinda do Dashboard (ex.: "Importar exames")
@@ -3196,6 +3395,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
   const [lastRequestedExams, setLastRequestedExams] = useState<db.LastRequestedExamsInfo | null>(null);
   // Condições Ativas + Anamnese — geridas direto no Resumo (aba Saúde foi extinta)
   const [showAnamneseModal, setShowAnamneseModal] = useState(false);
+  const [showEditPatient, setShowEditPatient] = useState(false);
   const [problems, setProblems] = useState<ProblemaAtivo[]>([]);
   const [showAddProblem, setShowAddProblem] = useState(false);
   const [medications, setMedications] = useState<Medication[]>([]);
@@ -3344,6 +3544,16 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
 
   return (
     <div>
+      {/* Modal de edição de cadastro do paciente */}
+      {showEditPatient && (
+        <EditPatientModal
+          patient={patient}
+          specialty={specialty}
+          onClose={() => setShowEditPatient(false)}
+          onSaved={() => { setShowEditPatient(false); onPatientUpdated?.(); }}
+          onRemoved={() => { setShowEditPatient(false); onPatientRemoved?.(); }}
+        />
+      )}
       {/* Modal de anamnese adulta — na raiz para abrir de qualquer aba (Resumo, Evolução) */}
       {showAnamneseModal && (
         <AnamneseAdultaModal
@@ -3385,6 +3595,7 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
           </div>
           {!isMobile && (
             <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+              <Btn variant="secondary" onClick={() => setShowEditPatient(true)}><PencilSimple size={15} /> Editar</Btn>
               <Btn variant="secondary" onClick={() => window.print()}><DownloadSimple size={15} /> Imprimir</Btn>
               <Btn variant="secondary"><User size={15} /> Compartilhar</Btn>
               <Btn onClick={() => onStartConsult(db.deriveConsultType(consultations))}><Stethoscope size={15} /> Iniciar consulta</Btn>
@@ -6239,7 +6450,13 @@ export default function App() {
               </RequireRole>
             )}
             {screen === 'patients'  && <PatientsPage go={go} setActivePatient={setActivePatient} specialty={doctorSpecialty} presetSearch={presetPatientSearch} onConsumePresetSearch={() => setPresetPatientSearch('')} />}
-            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} specialty={doctorSpecialty} pendingTab={pendingDetailTab} onConsumePendingTab={() => setPendingDetailTab(null)} onOpenDraft={async (draft) => {
+            {screen === 'patient-detail' && activePatient && <PatientDetailPage patient={activePatient} go={go} onStartConsult={(type) => { setConsultType(type); setFlow('consent'); }} specialty={doctorSpecialty} pendingTab={pendingDetailTab} onConsumePendingTab={() => setPendingDetailTab(null)} onPatientUpdated={async () => {
+                // Recarrega o paciente editado para o header refletir os dados novos
+                const ps = await db.fetchPatients().catch(() => null);
+                const updated = ps?.find(p => p.id === activePatient.id);
+                if (updated) setActivePatient(updated);
+                setRefetchTrigger(t => t + 1);
+              }} onPatientRemoved={() => { setRefetchTrigger(t => t + 1); go('patients'); }} onOpenDraft={async (draft) => {
                 setRealSummary(draft.summary);
                 setRealTranscript('');
                 setDraftConsultationId(draft.id);

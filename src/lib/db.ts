@@ -248,6 +248,70 @@ export async function fetchPatients(): Promise<Patient[]> {
   return (data || []).map(p => mapPatient(p));
 }
 
+// Atualiza dados cadastrais do paciente + responsável primário (upsert).
+export async function updatePatient(patientId: string, input: {
+  full_name: string; birth_date: string; gender: 'M' | 'F';
+  blood_type?: string;
+  insurance_plan?: string; insurance_card_number?: string;
+  guardian_name?: string; guardian_relationship?: string;
+  guardian_phone?: string; guardian_email?: string;
+}): Promise<void> {
+  const { error } = await supabase
+    .from('patients')
+    .update({
+      full_name: input.full_name,
+      birth_date: input.birth_date,
+      gender: input.gender,
+      blood_type: input.blood_type || null,
+      insurance_plan: input.insurance_plan || null,
+      insurance_card_number: input.insurance_card_number || null,
+    })
+    .eq('id', patientId);
+  if (error) throw error;
+
+  // Responsável/contato primário: atualiza se existe, cria se não.
+  if (input.guardian_name || input.guardian_phone || input.guardian_email) {
+    const { data: existing } = await supabase
+      .from('patient_guardians')
+      .select('id')
+      .eq('patient_id', patientId)
+      .eq('is_primary', true)
+      .maybeSingle();
+
+    const guardianRow = {
+      name: input.guardian_name || '',
+      relationship: input.guardian_relationship || null,
+      phone: input.guardian_phone || null,
+      email: input.guardian_email || null,
+    };
+    const { error: gErr } = existing
+      ? await supabase.from('patient_guardians').update(guardianRow).eq('id', existing.id)
+      : await supabase.from('patient_guardians').insert({ ...guardianRow, patient_id: patientId, is_primary: true });
+    if (gErr) throw gErr;
+  }
+}
+
+// Arquiva o paciente (soft delete): some das listas (fetchPatients filtra
+// is_active), mas prontuário é preservado — retenção CFM/LGPD.
+export async function archivePatient(patientId: string): Promise<void> {
+  const { error } = await supabase
+    .from('patients')
+    .update({ is_active: false })
+    .eq('id', patientId);
+  if (error) throw error;
+}
+
+// Exclusão DEFINITIVA: remove o paciente e, via ON DELETE CASCADE, todo o
+// histórico (consultas, exames, vacinas, responsáveis...). Irreversível —
+// a UI exige confirmação forte (digitar o nome) antes de chamar.
+export async function deletePatientPermanently(patientId: string): Promise<void> {
+  const { error } = await supabase
+    .from('patients')
+    .delete()
+    .eq('id', patientId);
+  if (error) throw error;
+}
+
 export async function createPatient(input: {
   full_name: string; birth_date: string; gender: 'M' | 'F';
   blood_type?: string; delivery_type?: string;

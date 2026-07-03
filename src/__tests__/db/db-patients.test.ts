@@ -178,6 +178,139 @@ describe('createPatient — cadastro pediátrico', () => {
   });
 });
 
+describe('updatePatient', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('atualiza dados cadastrais e o responsável primário existente', async () => {
+    const capturedPatientUpdate: Record<string, unknown>[] = [];
+    const capturedGuardianUpdate: Record<string, unknown>[] = [];
+
+    vi.mocked(supabase.from).mockImplementation((table: string) => {
+      if (table === 'patients') {
+        return {
+          update: vi.fn().mockImplementation((data: Record<string, unknown>) => {
+            capturedPatientUpdate.push(data);
+            return { eq: vi.fn().mockResolvedValue({ error: null }) };
+          }),
+        } as unknown as ReturnType<typeof supabase.from>;
+      }
+      if (table === 'patient_guardians') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'g1' }, error: null }),
+              }),
+            }),
+          }),
+          update: vi.fn().mockImplementation((data: Record<string, unknown>) => {
+            capturedGuardianUpdate.push(data);
+            return { eq: vi.fn().mockResolvedValue({ error: null }) };
+          }),
+        } as unknown as ReturnType<typeof supabase.from>;
+      }
+      return {} as unknown as ReturnType<typeof supabase.from>;
+    });
+
+    await db.updatePatient('patient-001', {
+      full_name: 'João da Silva Filho',
+      birth_date: '2023-06-01',
+      gender: 'M',
+      blood_type: 'O+',
+      guardian_name: 'Maria Silva',
+      guardian_phone: '11977770000',
+    });
+
+    expect(capturedPatientUpdate[0].full_name).toBe('João da Silva Filho');
+    expect(capturedPatientUpdate[0].blood_type).toBe('O+');
+    expect(capturedGuardianUpdate[0].phone).toBe('11977770000');
+  });
+
+  it('cria responsável primário quando não existe', async () => {
+    const capturedGuardianInsert: Record<string, unknown>[] = [];
+
+    vi.mocked(supabase.from).mockImplementation((table: string) => {
+      if (table === 'patients') {
+        return {
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        } as unknown as ReturnType<typeof supabase.from>;
+      }
+      return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            }),
+          }),
+        }),
+        insert: vi.fn().mockImplementation((data: Record<string, unknown>) => {
+          capturedGuardianInsert.push(data);
+          return Promise.resolve({ error: null });
+        }),
+      } as unknown as ReturnType<typeof supabase.from>;
+    });
+
+    await db.updatePatient('patient-002', {
+      full_name: 'Ana', birth_date: '1990-01-01', gender: 'F',
+      guardian_name: 'Contato', guardian_phone: '11900000000',
+    });
+
+    expect(capturedGuardianInsert[0].patient_id).toBe('patient-002');
+    expect(capturedGuardianInsert[0].is_primary).toBe(true);
+  });
+
+  it('propaga erro do banco (ex.: RLS bloqueou)', async () => {
+    vi.mocked(supabase.from).mockReturnValue({
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: { message: 'permission denied' } }),
+      }),
+    } as unknown as ReturnType<typeof supabase.from>);
+
+    await expect(db.updatePatient('p1', { full_name: 'X', birth_date: '2020-01-01', gender: 'M' }))
+      .rejects.toMatchObject({ message: 'permission denied' });
+  });
+});
+
+describe('archivePatient / deletePatientPermanently', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('archivePatient seta is_active=false no paciente certo', async () => {
+    const captured: { data?: Record<string, unknown>; id?: string } = {};
+    vi.mocked(supabase.from).mockReturnValue({
+      update: vi.fn().mockImplementation((data: Record<string, unknown>) => {
+        captured.data = data;
+        return { eq: vi.fn().mockImplementation((_c: string, id: string) => { captured.id = id; return Promise.resolve({ error: null }); }) };
+      }),
+    } as unknown as ReturnType<typeof supabase.from>);
+
+    await db.archivePatient('patient-009');
+    expect(captured.data).toEqual({ is_active: false });
+    expect(captured.id).toBe('patient-009');
+  });
+
+  it('deletePatientPermanently deleta pelo id', async () => {
+    let deletedId = '';
+    vi.mocked(supabase.from).mockReturnValue({
+      delete: vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation((_c: string, id: string) => { deletedId = id; return Promise.resolve({ error: null }); }),
+      }),
+    } as unknown as ReturnType<typeof supabase.from>);
+
+    await db.deletePatientPermanently('patient-777');
+    expect(deletedId).toBe('patient-777');
+  });
+
+  it('deletePatientPermanently propaga erro de RLS', async () => {
+    vi.mocked(supabase.from).mockReturnValue({
+      delete: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: { message: 'permission denied' } }),
+      }),
+    } as unknown as ReturnType<typeof supabase.from>);
+
+    await expect(db.deletePatientPermanently('p1')).rejects.toMatchObject({ message: 'permission denied' });
+  });
+});
+
 describe('fetchPatients', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
