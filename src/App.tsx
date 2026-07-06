@@ -276,9 +276,9 @@ const inputStyle: React.CSSProperties = {
   fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
 };
 
-function LoginScreen({ onBack }: { onBack?: () => void }) {
+function LoginScreen({ onBack, initialMode }: { onBack?: () => void; initialMode?: 'login' | 'signup' }) {
   const [mobile, setMobile] = useState(window.innerWidth < 960);
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode ?? 'login');
   const [name, setName]   = useState('');
   const [email, setEmail] = useState('');
   const [pass, setPass]   = useState('');
@@ -360,20 +360,13 @@ function LoginScreen({ onBack }: { onBack?: () => void }) {
             </p>
           </div>
 
-          {/* Quote card */}
+          {/* Value card */}
           <div style={{ marginTop: 56, maxWidth: 460, background: '#fff', border: `1px solid ${BO}`, borderRadius: 12, padding: '22px 24px', boxShadow: '0 1px 2px rgba(28,42,46,0.05)' }}>
-            <div style={{ fontFamily: '"Fraunces", Georgia, serif', fontSize: 36, lineHeight: 0.7, color: ACCENT, marginBottom: 6, height: 14 }}>"</div>
             <p style={{ fontFamily: '"Fraunces", Georgia, serif', fontSize: 18, fontWeight: 400, lineHeight: 1.4, letterSpacing: '-0.01em', color: INK, margin: '0 0 14px', fontVariationSettings: '"opsz" 36' }}>
-              Voltei a olhar nos olhos das mães. Saí dos plantões sem 40 prontuários para digitar à noite.
+              Grave a consulta. Revise o prontuário pronto em minutos. Saia do consultório sem nada para digitar à noite.
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: INK2 }}>
-              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #E6D5B8 0%, #FDEEE8 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"Fraunces", Georgia, serif', fontSize: 13, fontWeight: 500, color: P, flexShrink: 0 }}>
-                RM
-              </div>
-              <div>
-                <div style={{ color: INK, fontWeight: 500 }}>Dra. Renata Moraes</div>
-                <div>Pediatra · Clínica Vivace, SP</div>
-              </div>
+            <div style={{ fontSize: 13, color: INK2 }}>
+              Em validação clínica com pediatras — 14 dias grátis, sem cartão.
             </div>
           </div>
         </div>
@@ -6531,6 +6524,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [showLogin, setShowLogin] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [doctorName, setDoctorName] = useState('');
   const [doctorSpecialty, setDoctorSpecialty] = useState<string>('Pediatria');
   const [presetPatientSearch, setPresetPatientSearch] = useState('');
@@ -6676,8 +6670,8 @@ export default function App() {
   );
 
   if (!user) return showLogin
-    ? <LoginScreen onBack={() => setShowLogin(false)} />
-    : <LandingPage onEnter={() => setShowLogin(true)} />;
+    ? <LoginScreen onBack={() => setShowLogin(false)} initialMode={authMode} />
+    : <LandingPage onEnter={(mode = 'login') => { setAuthMode(mode); setShowLogin(true); }} />;
 
   // Aguarda fetchProfile() resolver — evita flash de dashboard antes do onboarding
   if (!profileLoaded) return (

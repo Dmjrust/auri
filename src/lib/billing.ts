@@ -138,6 +138,6 @@ export const PLAN_FEATURES: Record<Plan, string[]> = {
 };
 
 export const PLAN_PRICE: Record<Plan, string> = {
-  essencial: 'R$ 89/mês',
-  pro:       'R$ 149/mês',
+  essencial: 'R$ 149/mês',
+  pro:       'R$ 249/mês',
 };

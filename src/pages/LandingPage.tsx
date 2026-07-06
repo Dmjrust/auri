@@ -5,7 +5,7 @@ import {
   Microphone, FileText, ShieldCheck, TrendUp, CalendarBlank, Baby,
   CheckCircle, Check, PlayCircle, List, X, ArrowRight,
 } from '@phosphor-icons/react';
-import { P, ACCENT, INK, MU, BO, BG, SUC, SUCL } from '../lib/design';
+import { INK, BO, BG } from '../lib/design';
 
 // ── Tokens exclusivos da Landing Page ─────────────────────────────────────
 const HERO_BG    = '#0B1A1C';
@@ -13,21 +13,13 @@ const HERO_TEXT  = '#F7F3EC';
 const HERO_MUTED = 'rgba(247,243,236,0.60)';
 const DS_INK2    = '#4A5862';
 const DS_INK3    = '#6F7C84';
-const DS_SAND    = '#E6D5B8';
 
 // ── Dados ──────────────────────────────────────────────────────────────────
-const STATS = [
-  { v: '1h',   l: 'Economizadas por dia, por pediatra ativo' },
-  { v: '97%',  l: 'Precisão em transcrição clínica em PT-BR' },
-  { v: '+12k', l: 'Consultas registradas com Auri este mês' },
-  { v: '5min', l: 'Para configurar e iniciar a primeira consulta' },
-];
-
 const FEATURES = [
   {
     icon: <Microphone size={22} weight="duotone" color="#E8825B" />,
     title: 'Escuta inteligente',
-    desc: 'Distingue médico, paciente e acompanhante. Reconhece termos clínicos em PT-BR com 97% de precisão.',
+    desc: 'Distingue médico, paciente e acompanhante. Reconhece vocabulário clínico pediátrico em PT-BR.',
   },
   {
     icon: <FileText size={22} weight="duotone" color="#E8825B" />,
@@ -64,23 +56,23 @@ const PRIVACY_ITEMS = [
 ];
 
 const ESSENTIAL_FEATURES = [
-  'Até 50 consultas por mês',
-  'Prontuário SOAP automático',
-  'Curvas OMS + Calendário PNI',
-  'Exportação em PDF e CSV',
-  'Suporte por email',
+  'Prontuário SOAP completo',
+  'Agenda + agendamentos',
+  'Curvas de crescimento OMS',
+  'Calendário vacinal PNI',
+  'Até 50 pacientes ativos',
 ];
 const PRO_FEATURES = [
-  { text: 'Consultas ilimitadas', bold: true },
+  { text: 'AI Ambient Scribe (gravação + transcrição)', bold: true },
   { text: 'Tudo do plano Essencial', bold: false },
-  { text: 'Modelos de prontuário customizados', bold: false },
-  { text: 'Agenda integrada com Google Calendar', bold: false },
-  { text: 'Secretaria com acesso dedicado', bold: false },
-  { text: 'Suporte prioritário em até 4h', bold: false },
+  { text: 'Pacientes ilimitados', bold: false },
+  { text: 'Secretaria (usuário extra)', bold: false },
+  { text: 'Exportação PDF', bold: false },
+  { text: 'Suporte prioritário', bold: false },
 ];
 
 // ── Componente principal ───────────────────────────────────────────────────
-export function LandingPage({ onEnter }: { onEnter: () => void }) {
+export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') => void }) {
   const [mobile, setMobile]     = useState(window.innerWidth < 900);
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -150,7 +142,7 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             {!mobile && (
               <button
-                onClick={onEnter}
+                onClick={() => onEnter('login')}
                 style={{
                   background: 'transparent',
                   border: `1px solid ${scrolled ? BO : 'rgba(247,243,236,0.25)'}`,
@@ -166,7 +158,7 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
               </button>
             )}
             {!mobile && (
-              <button className="lp-btn-coral" onClick={onEnter} style={{ fontSize: 13, padding: '7px 16px', boxShadow: 'none' }}>
+              <button className="lp-btn-coral" onClick={() => onEnter('signup')} style={{ fontSize: 13, padding: '7px 16px', boxShadow: 'none' }}>
                 Testar 14 dias grátis
               </button>
             )}
@@ -196,10 +188,10 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
           ))}
         </div>
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <button className="lp-btn-coral" onClick={() => { setMenuOpen(false); onEnter(); }} style={{ width: '100%', justifyContent: 'center', padding: '14px 0' }}>
+          <button className="lp-btn-coral" onClick={() => { setMenuOpen(false); onEnter('signup'); }} style={{ width: '100%', justifyContent: 'center', padding: '14px 0' }}>
             Testar 14 dias grátis
           </button>
-          <button className="lp-btn-ghost-dark" onClick={() => { setMenuOpen(false); onEnter(); }} style={{ width: '100%', justifyContent: 'center', padding: '14px 0' }}>
+          <button className="lp-btn-ghost-dark" onClick={() => { setMenuOpen(false); onEnter('login'); }} style={{ width: '100%', justifyContent: 'center', padding: '14px 0' }}>
             Entrar
           </button>
         </div>
@@ -276,13 +268,13 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
 
             {/* CTAs */}
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button className="lp-btn-coral" onClick={onEnter}>
+              <button className="lp-btn-coral" onClick={() => onEnter('signup')}>
                 Testar grátis por 14 dias <ArrowRight size={16} />
               </button>
               <a href="#produto" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: HERO_MUTED, fontSize: 14, textDecoration: 'none', transition: 'color 0.18s' }}
                 onMouseEnter={e => (e.currentTarget.style.color = HERO_TEXT)}
                 onMouseLeave={e => (e.currentTarget.style.color = HERO_MUTED)}>
-                <PlayCircle size={20} /> Ver demo de 90s
+                <PlayCircle size={20} /> Ver como funciona
               </a>
             </div>
 
@@ -372,45 +364,8 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
       {/* ══ DIAGONAL BREAK ══════════════════════════════════════════════ */}
       <div className="lp-diagonal" />
 
-      {/* ══ STATS STRIP ════════════════════════════════════════════════ */}
-      <section style={{ background: BG, paddingBottom: 80 }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 32px' }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-            borderTop: `1px solid ${BO}`,
-            borderBottom: `1px solid ${BO}`,
-          }}>
-            {STATS.map((s, i) => (
-              <div
-                key={i}
-                className={`lp-reveal d${i + 1}`}
-                style={{
-                  padding: '28px 24px',
-                  borderRight: (!mobile && i < 3) || (mobile && i % 2 === 0) ? `1px solid ${BO}` : 'none',
-                  borderBottom: mobile && i < 2 ? `1px solid ${BO}` : 'none',
-                }}
-              >
-                <div className="lp-stat-num" style={{
-                  fontFamily: '"Fraunces", Georgia, serif',
-                  fontSize: 38,
-                  fontWeight: 500,
-                  color: '#E8825B',
-                  letterSpacing: '-0.03em',
-                  lineHeight: 1,
-                  marginBottom: 6,
-                }}>
-                  {s.v}
-                </div>
-                <div style={{ fontSize: 13, color: DS_INK2, lineHeight: 1.35 }}>{s.l}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ══ FEATURES ════════════════════════════════════════════════════ */}
-      <section id="produto" style={{ background: BG, paddingBottom: 96 }}>
+      <section id="produto" style={{ background: BG, paddingTop: mobile ? 24 : 40, paddingBottom: 96 }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 32px' }}>
           <div className="lp-reveal" style={{ marginBottom: 56 }}>
             <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#E8825B', marginBottom: 16 }}>
@@ -458,33 +413,6 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
                 <p style={{ fontSize: 14, lineHeight: 1.6, color: DS_INK2, margin: 0 }}>{f.desc}</p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ══ DEPOIMENTO (TEAL ESCURO) ════════════════════════════════════ */}
-      <section style={{ background: P, padding: mobile ? '64px 24px' : '80px 32px', overflow: 'hidden', position: 'relative' }}>
-        <div className="hero-grain" style={{ opacity: 0.02 }} />
-        <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center' }}>
-          <div style={{ fontSize: 72, color: '#E8825B', lineHeight: 0.5, marginBottom: 32, fontFamily: '"Fraunces", Georgia, serif', opacity: 0.6 }}>"</div>
-          <blockquote className="lp-reveal" style={{
-            fontFamily: '"Fraunces", Georgia, serif',
-            fontSize: mobile ? 24 : 32,
-            fontWeight: 400,
-            fontStyle: 'italic',
-            lineHeight: 1.35,
-            color: '#F7F3EC',
-            margin: '0 0 36px',
-            letterSpacing: '-0.01em',
-          }}>
-            Voltei a olhar nos olhos das mães. O prontuário se escreve sozinho.
-          </blockquote>
-          <div className="lp-reveal d2" style={{ display: 'inline-flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 42, height: 42, borderRadius: '50%', background: DS_SAND, color: INK, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>RM</div>
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#F7F3EC' }}>Dra. Renata Moraes</div>
-              <div style={{ fontSize: 12, color: 'rgba(247,243,236,0.55)' }}>Pediatra · Clínica Vivace, São Paulo</div>
-            </div>
           </div>
         </div>
       </section>
@@ -608,7 +536,7 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
                   </li>
                 ))}
               </ul>
-              <button className="lp-btn-ghost-light" onClick={onEnter} style={{ width: '100%', padding: '12px 0', textAlign: 'center', justifyContent: 'center' }}>
+              <button className="lp-btn-ghost-light" onClick={() => onEnter('signup')} style={{ width: '100%', padding: '12px 0', textAlign: 'center', justifyContent: 'center' }}>
                 Testar grátis por 14 dias
               </button>
               <div style={{ fontSize: 11, color: DS_INK3, textAlign: 'center', marginTop: 10 }}>Sem cartão · sem compromisso</div>
@@ -649,7 +577,7 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
                   </li>
                 ))}
               </ul>
-              <button className="lp-btn-coral" onClick={onEnter} style={{ width: '100%', padding: '12px 0', justifyContent: 'center' }}>
+              <button className="lp-btn-coral" onClick={() => onEnter('signup')} style={{ width: '100%', padding: '12px 0', justifyContent: 'center' }}>
                 Testar grátis por 14 dias
               </button>
               <div style={{ fontSize: 11, color: 'rgba(247,243,236,0.35)', textAlign: 'center', marginTop: 10 }}>
@@ -715,7 +643,7 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
           </div>
 
           <div className="lp-reveal d2" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 260 }}>
-            <button onClick={onEnter} style={{
+            <button onClick={() => onEnter('signup')} style={{
               width: '100%',
               background: '#fff',
               color: '#d96a40',
@@ -734,7 +662,7 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
             >
               Testar grátis por 14 dias <ArrowRight size={16} />
             </button>
-            <button style={{
+            <button onClick={() => { window.location.href = 'mailto:suporte@auri.com.br?subject=Quero conhecer o Auri'; }} style={{
               width: '100%',
               background: 'transparent',
               color: 'rgba(255,255,255,0.85)',

@@ -229,10 +229,3 @@
   position: relative;
   overflow: hidden;
 }
-
-/* ── Stat number counter animation ──────────────────────────────────────── */
-@keyframes lp-counter {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: none; }
-}
-.lp-stat-num { animation: lp-counter 0.5s ease forwards; }
