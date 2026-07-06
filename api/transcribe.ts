@@ -18,7 +18,7 @@ export const config = {
 
 // Auth inline (sem import relativo: com "type":"module" o runtime ESM do
 // Vercel falha ao resolver './_auth' sem extensão e derruba a função no load).
-async function requireSupabaseUser(req: any): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+async function requireSupabaseUser(req: any): Promise<{ ok: true; userId: string } | { ok: false; status: number; error: string }> {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !anonKey) {
@@ -31,7 +31,23 @@ async function requireSupabaseUser(req: any): Promise<{ ok: true } | { ok: false
     headers: { Authorization: `Bearer ${token}`, apikey: anonKey },
   });
   if (!authRes.ok) return { ok: false, status: 401, error: 'Sessão inválida ou expirada.' };
-  return { ok: true };
+  const user = await authRes.json().catch(() => null);
+  if (!user?.id) return { ok: false, status: 401, error: 'Sessão inválida ou expirada.' };
+  return { ok: true, userId: user.id as string };
+}
+
+// Rate limit in-memory por usuário (janela deslizante de 1 min). Em serverless
+// o estado vive por instância — suficiente para conter abuso de custo no piloto.
+// 3/min: uma transcrição cobre a consulta inteira; retries legítimos cabem.
+const RATE_LIMIT_PER_MIN = 3;
+const rateWindow = new Map<string, number[]>();
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const hits = (rateWindow.get(userId) || []).filter(t => now - t < 60_000);
+  if (hits.length >= RATE_LIMIT_PER_MIN) { rateWindow.set(userId, hits); return true; }
+  hits.push(now);
+  rateWindow.set(userId, hits);
+  return false;
 }
 
 export default async function handler(req: any, res: any) {
@@ -48,17 +64,36 @@ export default async function handler(req: any, res: any) {
 
   const auth = await requireSupabaseUser(req);
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  if (isRateLimited(auth.userId)) {
+    return res.status(429).json({ error: 'Muitas transcrições em sequência. Aguarde um minuto e tente novamente.' });
+  }
 
   try {
     const { audioUrl, mimeType } = req.body as { audioUrl: string; mimeType: string };
     if (!audioUrl) return res.status(400).json({ error: 'Campo "audioUrl" ausente.' });
+
+    // Anti-SSRF: só aceita signed URLs do bucket consult-audio deste projeto —
+    // sem isso, qualquer URL do body seria baixada e repassada ao Whisper.
+    const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+    const allowedPrefix = `${supabaseUrl}/storage/v1/object/sign/consult-audio/`;
+    if (!supabaseUrl || !audioUrl.startsWith(allowedPrefix)) {
+      return res.status(400).json({ error: 'audioUrl inválida: apenas áudios do bucket consult-audio são aceitos.' });
+    }
 
     // Baixa o áudio da URL assinada do Supabase Storage
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) {
       return res.status(502).json({ error: `Falha ao baixar áudio do armazenamento (${audioRes.status}).` });
     }
+    const MAX_AUDIO_BYTES = 30 * 1024 * 1024; // Whisper aceita 25MB; margem para headers/container
+    const declaredSize = Number(audioRes.headers.get('content-length') || 0);
+    if (declaredSize > MAX_AUDIO_BYTES) {
+      return res.status(413).json({ error: 'Áudio excede o limite de 30 MB.' });
+    }
     const audioBuffer = await audioRes.arrayBuffer();
+    if (audioBuffer.byteLength > MAX_AUDIO_BYTES) {
+      return res.status(413).json({ error: 'Áudio excede o limite de 30 MB.' });
+    }
 
     // Constrói FormData para o Whisper
     const ext = mimeType?.includes('mp4') ? 'mp4' : mimeType?.includes('mp3') ? 'mp3' : 'webm';

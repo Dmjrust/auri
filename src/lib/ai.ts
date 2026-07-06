@@ -4,6 +4,7 @@ import type {
 } from '../data/mock';
 import { calcImc } from './auri-utils';
 import { supabase } from './supabase';
+import * as Sentry from '@sentry/react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Em produção, TODAS as chamadas à OpenAI passam pelo proxy autenticado em
@@ -103,36 +104,51 @@ async function transcribeDirect(blob: Blob): Promise<string> {
 }
 
 // Produção: sobe o áudio ao bucket privado consult-audio, gera signed URL curta
-// e envia ao proxy /api/transcribe. O arquivo é deletado ao final (LGPD) —
-// sucesso ou falha.
+// e envia ao proxy /api/transcribe. O arquivo só é deletado após transcrição
+// bem-sucedida (LGPD) — em falha ele permanece no bucket para que "Tentar
+// novamente" reprocesse sem regravar a consulta.
+//
+// Cache do último upload que falhou: se o mesmo Blob for reprocessado, reutiliza
+// o arquivo já enviado em vez de subir de novo.
+let pendingUpload: { blob: Blob; path: string } | null = null;
+
 async function transcribeViaProxy(blob: Blob): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Sessão expirada. Faça login novamente para usar a transcrição por IA.');
 
-  const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
-  const path = `${user.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
   const bucket = supabase.storage.from('consult-audio');
-
-  const { error: uploadError } = await bucket.upload(path, blob, { contentType: blob.type || 'audio/webm' });
-  if (uploadError) throw new Error(`Falha ao enviar o áudio para transcrição: ${uploadError.message}`);
-
-  try {
-    const { data: signed, error: signError } = await bucket.createSignedUrl(path, 60 * 60 * 2);
-    if (signError || !signed) throw new Error('Falha ao preparar o áudio para transcrição.');
-
-    const res = await fetchAI('/api/transcribe', {
-      method: 'POST',
-      headers: { Authorization: await sessionBearer(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audioUrl: signed.signedUrl, mimeType: blob.type || 'audio/webm' }),
-    }, 'Transcrição');
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || `Transcrição falhou (${res.status})`);
-    }
-    return (await res.json()).text as string;
-  } finally {
-    bucket.remove([path]).catch(() => { /* melhor esforço — bucket é privado por médico */ });
+  let path: string;
+  if (pendingUpload && pendingUpload.blob === blob) {
+    path = pendingUpload.path;
+  } else {
+    const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('mp3') ? 'mp3' : 'webm';
+    path = `${user.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+    const { error: uploadError } = await bucket.upload(path, blob, { contentType: blob.type || 'audio/webm' });
+    if (uploadError) throw new Error(`Falha ao enviar o áudio para transcrição: ${uploadError.message}`);
+    pendingUpload = { blob, path };
   }
+
+  const { data: signed, error: signError } = await bucket.createSignedUrl(path, 60 * 60 * 2);
+  if (signError || !signed) throw new Error('Falha ao preparar o áudio para transcrição.');
+
+  const res = await fetchAI('/api/transcribe', {
+    method: 'POST',
+    headers: { Authorization: await sessionBearer(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audioUrl: signed.signedUrl, mimeType: blob.type || 'audio/webm' }),
+  }, 'Transcrição');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error || `Transcrição falhou (${res.status})`);
+  }
+  const text = (await res.json()).text as string;
+
+  pendingUpload = null;
+  const { error: removeError } = await bucket.remove([path]).then(r => r, e => ({ error: e }));
+  if (removeError) {
+    // LGPD exige deleção verificada — falha silenciosa deixaria voz retida no bucket.
+    Sentry.captureException(new Error(`Falha ao deletar áudio pós-transcrição (${path}): ${removeError.message || removeError}`));
+  }
+  return text;
 }
 
 // ── GPT-4o: transcrição → prontuário estruturado ─────────────────────────────

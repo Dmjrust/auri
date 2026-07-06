@@ -681,7 +681,7 @@ export async function fetchTodayAppointments(): Promise<TodayAppointment[]> {
     .lte('scheduled_at', today + 'T23:59:59')
     .neq('status', 'cancelled')
     .order('scheduled_at', { ascending: true });
-  if (error) return [];
+  if (error) throw error;
   return (data || []).map((c: RawAppointmentRow) => {
     const patient = c.patients;
     const guardians = patient?.patient_guardians || [];
@@ -881,7 +881,7 @@ export async function fetchConsultationSummaries(): Promise<Record<string, { cou
     .eq('doctor_id', user.id)
     .eq('status', 'completed')
     .order('scheduled_at', { ascending: false });
-  if (error) return {};
+  if (error) throw error;
   const map: Record<string, { count: number; lastDate: string | null }> = {};
   (data || []).forEach((c: RawConsultationSummaryRow) => {
     if (!map[c.patient_id]) map[c.patient_id] = { count: 0, lastDate: null };

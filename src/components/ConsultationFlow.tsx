@@ -1117,10 +1117,9 @@ export function ProcessingScreen({ audioBlob, onDone, onRetry, consultType, spec
     return () => { cancelled = true; };
   }, [specialty]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Escape hatch: quando a IA falha (ex.: áudio acima de 25MB) e o paciente já
-  // foi embora, "Tentar novamente" volta para a gravação — sem utilidade. Esta
-  // opção segue para a revisão do prontuário em branco, para o médico preencher
-  // manualmente com base na consulta.
+  // Escape hatch: quando a IA falha de forma persistente (ex.: áudio acima de
+  // 25MB, que "Tentar novamente" não resolve), esta opção segue para a revisão
+  // do prontuário em branco, para o médico preencher manualmente.
   function handleContinueWithoutAI() {
     const emptySummary: StructuredSummary = {
       queixa_principal: '', hda: '', exame_fisico: '',

@@ -342,7 +342,7 @@ function LoginScreen({ onBack, initialMode }: { onBack?: () => void; initialMode
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 44 }} />
             <div style={{ width: 1, height: 18, background: BORDER_STRONG }} />
-            <div style={{ fontSize: 12, color: INK3, letterSpacing: '0.02em' }}>para pediatras</div>
+            <div style={{ fontSize: 12, color: INK3, letterSpacing: '0.02em' }}>para pediatras e clínica geral</div>
           </div>
 
           {/* Editorial */}
@@ -356,7 +356,7 @@ function LoginScreen({ onBack, initialMode }: { onBack?: () => void; initialMode
               <em style={{ fontStyle: 'italic', fontWeight: 500, color: P }}>prontuário</em>.
             </h1>
             <p style={{ fontSize: 16, lineHeight: 1.55, color: INK2, maxWidth: 420, margin: 0 }}>
-              Auri ouve a consulta e organiza o prontuário automaticamente — para você voltar a olhar nos olhos das crianças, não na tela.
+              Auri ouve a consulta e organiza o prontuário automaticamente — para você voltar a olhar nos olhos dos pacientes, não na tela.
             </p>
           </div>
 
@@ -5073,7 +5073,10 @@ function AgendaPage({ go, setActivePatient, onStartConsult }: { go: (s: string) 
         list.forEach(a => { (byDate[a.date] = byDate[a.date] || []).push(a); });
         setApptsByDate(byDate);
       })
-      .catch(console.error)
+      .catch(err => {
+        console.error(err);
+        if (!loadWeekCancelRef.current) toast.error('Erro ao carregar a agenda da semana. Verifique a conexão e recarregue.');
+      })
       .finally(() => { if (!loadWeekCancelRef.current) setLoading(false); });
   }
 
@@ -6538,6 +6541,9 @@ export default function App() {
   const [consultType, setConsultType] = useState<'retorno' | 'primeira vez'>('retorno');
   const [recTime, setRecTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  // Incrementa a cada "Tentar novamente" para remontar o ProcessingScreen e
+  // reprocessar o MESMO áudio (o upload é reutilizado — nada de regravar).
+  const [processingAttempt, setProcessingAttempt] = useState(0);
   const [realSummary, setRealSummary] = useState<StructuredSummary | null>(null);
   const [realTranscript, setRealTranscript] = useState('');
   const [realAnamnese, setRealAnamnese] = useState<AnamnesePrimeiraConsultaData | null>(null);
@@ -6710,7 +6716,7 @@ export default function App() {
     setFlow('recording');
   }} onCancel={() => { if (screen === 'dashboard') { go('patient-detail'); } else { setFlow(null); } }} />;
   if (flow === 'recording')  return <RecordingScreen time={recTime} patient={activePatient} consultType={consultType} onFinish={blob => { setAudioBlob(blob); setFlow('processing'); }} onCancel={() => { setFlow(null); setRecTime(0); setMicReady(false); }} onMicReady={() => setMicReady(true)} />;
-  if (flow === 'processing') return <ProcessingScreen consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} patientId={activePatient?.id} onRetry={() => setFlow('recording')} onDone={(summary, transcript, anamnese, anamneseError, anamneseAdulta) => {
+  if (flow === 'processing') return <ProcessingScreen key={processingAttempt} consultType={consultType} specialty={doctorSpecialty} audioBlob={audioBlob} patientId={activePatient?.id} onRetry={() => { if (audioBlob) { setProcessingAttempt(a => a + 1); } else { setFlow('recording'); } }} onDone={(summary, transcript, anamnese, anamneseError, anamneseAdulta) => {
     setRealSummary(summary); setRealTranscript(transcript); setRealAnamnese(anamnese ?? null); setRealAnamneseAdulta(anamneseAdulta ?? null); setRealAnamneseError(anamneseError ?? null); setFlow('done');
     if (activePatient) {
       db.saveDraftConsultation(activePatient.id, summary, recTime, consultType)
