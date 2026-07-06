@@ -51,6 +51,7 @@ import {
   AnamBoolSeg, AnamSelect, ConsultTypeBadge,
   AnamnesePrimeiraConsulta, AnamneseAdultaFields,
   ConsentScreen, RecordingScreen, ProcessingScreen, SummaryDoneScreen,
+  comorbidadesIdentificadas, habitosBullets, rastreamentosBullets, splitClinicalList,
 } from './components/ConsultationFlow';
 import { SecretaryDashboard } from './components/SecretaryDashboard';
 import { TeamSection } from './components/TeamSection';
@@ -2108,6 +2109,8 @@ function ConsultationDetail({ consult, onBack, linkedDocuments = [], allConsulta
   const s = consult.summary;
   const adultData = (s?.specialty_data as ConsultaAdultoData | null) ?? null;
   const isAdultConsult = !!(adultData && (adultData.vitals || adultData.active_problems || adultData.adult_intake));
+  // Primeira consulta adulta tem template próprio de 12 blocos (raciocínio clínico)
+  const isAdultPrimeira = isAdultConsult && consult.type !== 'retorno' && !!adultData?.adult_intake;
   const dt = new Date(consult.scheduled_at);
   const dateStr = dt.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -2154,6 +2157,271 @@ function ConsultationDetail({ consult, onBack, linkedDocuments = [], allConsulta
         </div>
 
         <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+          {isAdultPrimeira && adultData ? (() => {
+            // ── Template Clínica Geral / primeira consulta — 12 blocos ──────
+            const intake = adultData.adult_intake!;
+            const vit = adultData.vitals ?? {};
+            const bullets = (items: React.ReactNode[], empty?: string) => items.length === 0
+              ? (empty ? <p style={{ fontSize: 13, color: MU, margin: 0, paddingLeft: 4 }}>{empty}</p> : null)
+              : (
+                <ul style={{ margin: 0, paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {items.map((it, i) => <li key={i} style={{ fontSize: 14, lineHeight: 1.6, color: INK }}>{it}</li>)}
+                </ul>
+              );
+            const subT = (t: string) => (
+              <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 700, color: MU, textTransform: 'uppercase' as const, letterSpacing: 0.6, paddingLeft: 4 }}>{t}</p>
+            );
+            const chips = (defs: { l: string; v?: string }[]) => {
+              const filled = defs.filter(x => x.v);
+              return filled.length === 0 ? <p style={{ fontSize: 13, color: MU, margin: 0, paddingLeft: 4 }}>Não aferidos nesta consulta.</p> : (
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const }}>
+                  {filled.map(({ l, v }) => (
+                    <div key={l} style={{ background: '#fff', border: `1px solid ${BO}`, borderRadius: 8, padding: '6px 14px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: MU, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>{l}</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: INK, fontFamily: 'monospace', marginTop: 1 }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            };
+
+            const diagPrevios = [...comorbidadesIdentificadas(intake), ...splitClinicalList(intake.outras_comorbidades)];
+            const cirurgias = intake.cirurgias_previas ? splitClinicalList(intake.cirurgias_desc) : [];
+            const internacoes = intake.internacoes_previas ? splitClinicalList(intake.internacoes_desc) : [];
+            const habitos = habitosBullets(intake);
+            const meds = (adultData.current_medications ?? []).map(m => `${m.name}${m.dosage ? ` ${m.dosage}` : ''}${m.frequency ? ` — ${m.frequency}` : ''}`);
+            const medsFinal = meds.length > 0 ? meds : splitClinicalList(intake.medicamentos_em_uso);
+            const allergs: React.ReactNode[] = (adultData.allergies ?? []).length > 0
+              ? (adultData.allergies ?? []).map(a => <span key={a.allergen}>{a.allergen}{a.reaction && <span style={{ color: MU }}> → {a.reaction}</span>}</span>)
+              : [intake.alergias_medicamentos, intake.alergias_alimentares, intake.alergias_outras].flatMap(splitClinicalList);
+            const familiar = splitClinicalList(intake.historico_familiar);
+            const vacinal = [...splitClinicalList(intake.vacinacao_adulto), ...s.vacinas_mencionadas];
+            const vacPendente = (x: string) => /atrasad|pendente|não tomou|nunca|vencid/i.test(x);
+            const rastreios = rastreamentosBullets(intake);
+            const problemas = adultData.active_problems ?? [];
+            const probColors: Record<string, { bg: string; c: string }> = {
+              ativo: { bg: WARNL, c: WARN }, controlado: { bg: SUCL, c: SUC }, resolvido: { bg: SEC, c: MU },
+            };
+            const resumoRows = [
+              { l: 'Motivo', v: s.queixa_principal },
+              { l: 'Diagnósticos', v: s.hipoteses.join('; ') },
+              { l: 'Achados', v: [
+                  vit.pressao_arterial && `PA ${vit.pressao_arterial}`, vit.frequencia_cardiaca && `FC ${vit.frequencia_cardiaca}`,
+                  vit.saturacao && `SpO₂ ${vit.saturacao}`, vit.temperatura && `Temp ${vit.temperatura}`, vit.imc && `IMC ${vit.imc}`,
+                ].filter(Boolean).join(' · ') },
+              { l: 'Conduta', v: (consult.plan || '').split('\n').filter(Boolean)[0] ?? '' },
+              { l: 'Exames', v: (consult.requested_exams ?? []).join(', ') },
+              { l: 'Retorno', v: s.retorno },
+            ].filter(r => r.v);
+
+            return (
+              <>
+                {/* 1. Resumo Clínico Inteligente */}
+                <div>
+                  <SectionLabel abbrev="RES" full="Resumo da Consulta" />
+                  {adultData.resumo_clinico && (
+                    <p style={{ margin: '0 0 10px', fontSize: 14, lineHeight: 1.6, color: INK, paddingLeft: 4 }}>{adultData.resumo_clinico}</p>
+                  )}
+                  <ul style={{ margin: 0, paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {resumoRows.map(({ l, v }) => (
+                      <li key={l} style={{ fontSize: 14, lineHeight: 1.6, color: INK }}><strong style={{ color: P }}>{l}:</strong> {v}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Alertas clínicos da IA — junto do resumo */}
+                {(adultData.clinical_insights ?? []).length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+                    {adultData.clinical_insights!.map((insight, i) => {
+                      const isPositive = insight.startsWith('✓') || insight.toLowerCase().includes('melhora') || insight.toLowerCase().includes('controla');
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', borderRadius: 8, background: isPositive ? '#f0faf4' : '#fff8f0', border: `1px solid ${isPositive ? '#c3e6cb' : '#ffd6a5'}` }}>
+                          <span style={{ fontSize: 16, flexShrink: 0, marginTop: -1 }}>{isPositive ? '✓' : '⚠'}</span>
+                          <span style={{ fontSize: 13, lineHeight: 1.5, color: isPositive ? '#2d6a4f' : '#7d4e00' }}>{insight.replace(/^[✓⚠]\s*/, '')}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 2. Anamnese (HDA) — queixa principal integrada */}
+                <div>
+                  <SectionLabel abbrev="ANM" full="Anamnese (HDA)" />
+                  {s.queixa_principal && (
+                    <p style={{ margin: '0 0 8px', fontSize: 14, lineHeight: 1.6, color: INK, paddingLeft: 4 }}>
+                      <strong>Queixa principal:</strong> {s.queixa_principal}
+                    </p>
+                  )}
+                  <div style={{ fontSize: 14, lineHeight: 1.8, color: INK, paddingLeft: 4 }}>{consult.anamnesis || s.hda}</div>
+                </div>
+
+                {/* 3. História Pregressa */}
+                <div>
+                  <SectionLabel abbrev="HP" full="História Pregressa" />
+                  {diagPrevios.length + cirurgias.length + internacoes.length === 0 ? (
+                    <p style={{ fontSize: 13, color: MU, margin: 0, paddingLeft: 4 }}>Nenhum antecedente relevante identificado.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+                      {diagPrevios.length > 0 && <div>{subT('Diagnósticos prévios')}{bullets(diagPrevios)}</div>}
+                      {cirurgias.length > 0 && <div>{subT('Cirurgias')}{bullets(cirurgias)}</div>}
+                      {internacoes.length > 0 && <div>{subT('Internações')}{bullets(internacoes)}</div>}
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Hábitos de Vida */}
+                <div>
+                  <SectionLabel abbrev="HV" full="Hábitos de Vida" />
+                  {bullets(habitos, 'Nenhum hábito de vida identificado na consulta.')}
+                </div>
+
+                {/* 5. Medicações em Uso e Alergias */}
+                <div>
+                  <SectionLabel abbrev="MED" full="Medicações em Uso e Alergias" />
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+                    <div>{subT('Medicações em uso')}{bullets(medsFinal, 'Sem medicações contínuas relatadas.')}</div>
+                    <div>{subT('Alergias')}{bullets(allergs, 'Sem alergias conhecidas.')}</div>
+                  </div>
+                </div>
+
+                {/* 6. Histórico Familiar */}
+                <div>
+                  <SectionLabel abbrev="HF" full="Histórico Familiar" />
+                  {bullets(familiar, 'Nenhuma doença familiar identificada.')}
+                </div>
+
+                {/* 7. Vacinação — só se houver menção */}
+                {vacinal.length > 0 && (
+                  <div>
+                    <SectionLabel abbrev="VAC" full="Vacinação" />
+                    {bullets(vacinal.map(v => vacPendente(v)
+                      ? <span style={{ color: WARN, fontWeight: 600 }}>⚠ {v}</span>
+                      : v))}
+                  </div>
+                )}
+
+                {/* 8. Rastreamentos — só se houver */}
+                {rastreios.length > 0 && (
+                  <div>
+                    <SectionLabel abbrev="RAS" full="Rastreamentos" />
+                    {bullets(rastreios)}
+                  </div>
+                )}
+
+                {/* 9. Exame Objetivo */}
+                <div>
+                  <SectionLabel abbrev="SV" full="Sinais Vitais" />
+                  {chips([
+                    { l: 'PA', v: vit.pressao_arterial }, { l: 'FC', v: vit.frequencia_cardiaca },
+                    { l: 'FR', v: vit.frequencia_respiratoria }, { l: 'SpO₂', v: vit.saturacao }, { l: 'Temp', v: vit.temperatura },
+                  ])}
+                </div>
+                <div>
+                  <SectionLabel abbrev="ANT" full="Dados Antropométricos" />
+                  {chips([
+                    { l: 'Peso', v: vit.peso }, { l: 'Altura', v: vit.altura },
+                    { l: 'IMC', v: vit.imc }, { l: 'Circ. abd.', v: vit.circunferencia_abdominal },
+                  ])}
+                </div>
+
+                {/* 10. Diagnósticos Ativos */}
+                <div>
+                  <SectionLabel abbrev="DX" full="Diagnósticos Ativos" />
+                  {problemas.length === 0 ? (
+                    <p style={{ fontSize: 13, color: MU, margin: 0, paddingLeft: 4 }}>Nenhum diagnóstico em acompanhamento.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6, paddingLeft: 4 }}>
+                      {problemas.map((p, i) => (
+                        <div key={`${p.name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 14 }}>{p.name}</span>
+                          <Badge color={probColors[p.status]?.c ?? MU} bg={probColors[p.status]?.bg ?? SEC}>{p.status}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 11. Exame Físico — texto, sem sinais vitais */}
+                {consult.physical_exam && (
+                  <div>
+                    <SectionLabel abbrev="EF" full="Exame Físico" />
+                    <div style={{ fontSize: 14, lineHeight: 1.8, color: INK, paddingLeft: 4 }}>{consult.physical_exam}</div>
+                  </div>
+                )}
+
+                {/* 12. Plano Terapêutico — hipóteses + conduta + exames + retorno */}
+                <div>
+                  <SectionLabel abbrev="PT" full="Plano Terapêutico" />
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 14 }}>
+                    {s.hipoteses.length > 0 && (
+                      <div>{subT('Hipóteses')}
+                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6, paddingLeft: 4 }}>
+                          {s.hipoteses.map((h, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <span style={{ width: 22, height: 22, borderRadius: '50%', background: PL, color: P, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</span>
+                              <span style={{ fontSize: 14, fontWeight: i === 0 ? 600 : 400 }}>{h}</span>
+                              {i === 0 && <Badge color={P} bg={PL}>Principal</Badge>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {consult.plan && (
+                      <div>{subT('Conduta')}
+                        <div style={{ fontSize: 14, lineHeight: 1.8, color: INK, paddingLeft: 4 }}>{consult.plan}</div>
+                      </div>
+                    )}
+                    {((consult.requested_exams?.length ?? 0) > 0 || linkedDocuments.length > 0 || onExamSaved) && (
+                      <div>{subT('Exames')}
+                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10, paddingLeft: 4 }}>
+                          {onExamSaved && (
+                            <button onClick={() => setShowExamForm(v => !v)} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: P, fontFamily: 'inherit', padding: 0, alignSelf: 'flex-start' }}>
+                              <Plus size={13} /> Adicionar resultado
+                            </button>
+                          )}
+                          {showExamForm && onExamSaved && (
+                            <ExamUploadForm
+                              patientId={consult.patient_id}
+                              consultations={allConsultations}
+                              documents={linkedDocuments}
+                              defaultConsultId={consult.id}
+                              lockConsult
+                              onSaved={() => { setShowExamForm(false); onExamSaved(); }}
+                            />
+                          )}
+                          {(consult.requested_exams ?? []).map((examName, i) => {
+                            const fulfilled = linkedDocuments.length > 0;
+                            return (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: 14 }}>{examName}</span>
+                                <Badge color={fulfilled ? SUC : WARN} bg={fulfilled ? SUCL : WARNL}>{fulfilled ? 'Resultado disponível' : 'Pendente'}</Badge>
+                              </div>
+                            );
+                          })}
+                          {linkedDocuments.map(doc => (
+                            <ExamResultCard key={doc.id} document={doc} markers={markersByDoc[doc.id] ?? []} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {s.retorno && (
+                      <div style={{ background: PL, borderRadius: 8, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: P, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <CalendarBlank size={18} color="#fff" />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: P, textTransform: 'uppercase' as const, letterSpacing: 1 }}>Retorno</div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginTop: 2 }}>{s.retorno}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            );
+          })() : (
+          <>
 
           {/* ── QP ── */}
           <div>
@@ -2328,6 +2596,9 @@ function ConsultationDetail({ consult, onBack, linkedDocuments = [], allConsulta
               <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginTop: 2 }}>{s.retorno}</div>
             </div>
           </div>
+
+          </>
+          )}
 
         </div>
 
