@@ -123,8 +123,8 @@ export const PLAN_FEATURES: Record<Plan, string[]> = {
   essencial: [
     'Prontuário SOAP completo',
     'Agenda + agendamentos',
-    'Curvas de crescimento OMS',
-    'Calendário vacinal PNI',
+    'Pediatria: curvas OMS + calendário PNI',
+    'Clínica geral: crônicos, exames e alertas',
     'Até 50 pacientes ativos',
   ],
   pro: [

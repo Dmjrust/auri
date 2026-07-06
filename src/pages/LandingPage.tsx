@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import './LandingPage.css';
 import {
-  Microphone, FileText, ShieldCheck, TrendUp, CalendarBlank, Baby,
+  Microphone, FileText, ShieldCheck, CalendarBlank, Baby, Stethoscope,
   CheckCircle, Check, PlayCircle, List, X, ArrowRight,
 } from '@phosphor-icons/react';
 import { INK, BO, BG } from '../lib/design';
@@ -19,7 +19,7 @@ const FEATURES = [
   {
     icon: <Microphone size={22} weight="duotone" color="#E8825B" />,
     title: 'Escuta inteligente',
-    desc: 'Distingue médico, paciente e acompanhante. Reconhece vocabulário clínico pediátrico em PT-BR.',
+    desc: 'Distingue médico, paciente e acompanhante. Reconhece o vocabulário clínico da sua especialidade em PT-BR.',
   },
   {
     icon: <FileText size={22} weight="duotone" color="#E8825B" />,
@@ -32,9 +32,9 @@ const FEATURES = [
     desc: 'LGPD + CFM 2.454/2026. Áudio descartado após a transcrição, consentimento registrado a cada consulta. Você é o dono dos dados.',
   },
   {
-    icon: <TrendUp size={22} weight="duotone" color="#E8825B" />,
-    title: 'Curvas e vacinas OMS/PNI',
-    desc: 'Z-score, percentis e calendário vacinal calculados automaticamente. Alertas para doses e retornos.',
+    icon: <Baby size={22} weight="duotone" color="#E8825B" />,
+    title: 'Pediatria por completo',
+    desc: 'Curvas OMS com z-score e percentis, calendário vacinal PNI e alertas de doses e retornos — calculados automaticamente.',
   },
   {
     icon: <CalendarBlank size={22} weight="duotone" color="#E8825B" />,
@@ -42,9 +42,9 @@ const FEATURES = [
     desc: 'Agendamentos, confirmações e início de consulta com um clique. Do calendário ao prontuário sem atrito.',
   },
   {
-    icon: <Baby size={22} weight="duotone" color="#E8825B" />,
-    title: 'Feito para pediatria',
-    desc: 'Vocabulário, protocolos e fluxos específicos. Não é uma ferramenta genérica adaptada — é um copiloto pediátrico.',
+    icon: <Stethoscope size={22} weight="duotone" color="#E8825B" />,
+    title: 'Clínica geral adulta',
+    desc: 'Anamnese adulta estruturada, acompanhamento de condições crônicas, alertas clínicos e controle de exames e retornos.',
   },
 ];
 
@@ -58,8 +58,8 @@ const PRIVACY_ITEMS = [
 const ESSENTIAL_FEATURES = [
   'Prontuário SOAP completo',
   'Agenda + agendamentos',
-  'Curvas de crescimento OMS',
-  'Calendário vacinal PNI',
+  'Pediatria: curvas OMS + calendário PNI',
+  'Clínica geral: crônicos, exames e alertas',
   'Até 50 pacientes ativos',
 ];
 const PRO_FEATURES = [
@@ -238,7 +238,7 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
             }}>
               <span className="lp-live-dot" />
               <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#E8825B' }}>
-                Para pediatras
+                Para pediatras e clínica geral
               </span>
             </div>
 
