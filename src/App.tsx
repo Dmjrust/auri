@@ -10,6 +10,7 @@ import { SmokeyBackground, LoginForm } from './components/ui/login-form';
 import { TodayPatientCard } from './components/TodayPatientCard';
 import { DevelopmentTab } from './components/DevelopmentTab';
 import { OnboardingSetup } from './components/OnboardingSetup';
+import { GuidedTour } from './components/GuidedTour';
 import type { DayBriefingItem, ChronicDashboardData } from './lib/db';
 import {
   SquaresFour, Users, CalendarBlank, GearSix, SignOut, Bell, MagnifyingGlass, CaretRight,
@@ -80,7 +81,7 @@ function BottomNav({ screen, go }: { screen: string; go: (s: string) => void }) 
     ? [{ id: 'admin', label: 'Admin', icon: ShieldCheck, doctorOnly: false }]
     : allNavItems.filter(i => !i.doctorOnly || isDoctor);
   return (
-    <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, background: '#fff', borderTop: `1px solid ${BO}`, display: 'flex', zIndex: 100 }}>
+    <div data-tour="nav" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, background: '#fff', borderTop: `1px solid ${BO}`, display: 'flex', zIndex: 100 }}>
       {navItems.map(({ id, label, icon: Icon }) => {
         const active = screen === id || (screen === 'patient-detail' && id === 'patients');
         return (
@@ -124,7 +125,7 @@ function Sidebar({ screen, go, doctorName, specialty = 'Pediatria' }: { screen: 
         <img src="/brand/auri-logo-full.svg" alt="Auri" style={{ height: 44 }} />
       </div>
       {/* Nav */}
-      <nav style={{ flex: 1, padding: '4px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <nav data-tour="nav" style={{ flex: 1, padding: '4px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {navItems.map(({ id, label, icon: Icon }) => {
           const active = screen === id || (screen === 'patient-detail' && id === 'patients');
           return (
@@ -187,7 +188,7 @@ function Header({ breadcrumb, onBack, notifications = [], onNotificationClick, o
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <MagnifyingGlass size={18} color={MU} style={{ cursor: 'pointer' }} onClick={() => setScreen('patients')} />
         <div ref={ref} style={{ position: 'relative' }}>
-          <button onClick={() => setOpen(o => !o)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', borderRadius: 8, color: MU }}>
+          <button data-tour="notificacoes" onClick={() => setOpen(o => !o)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', borderRadius: 8, color: MU }}>
             <Bell size={18} color={open ? P : MU} />
             {notifications.length > 0 && (
               <span style={{ position: 'absolute', top: 0, right: 0, background: DES, color: '#fff', borderRadius: '50%', width: 16, height: 16, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
@@ -1087,14 +1088,14 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
 
       {/* ── KPI strip ── */}
       {!isClinicaGeral ? (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
+        <div data-tour="kpis" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
           <KpiCard label="Hoje" value={todayAppts.length} sub={`consulta${todayAppts.length !== 1 ? 's' : ''} agendada${todayAppts.length !== 1 ? 's' : ''}`} isMobile={isMobile} bg={PL} border={`${P}20`} />
           <KpiCard label="Realizadas" value={completedToday} sub={`de ${todayAppts.length} hoje${waitingToday > 0 ? ` · ${waitingToday} na sala de espera` : ''}`} isMobile={isMobile} bg={completedToday > 0 ? SUCL : '#fff'} border={completedToday > 0 ? `${SUC}30` : BO} valueColor={completedToday > 0 ? SUC : MU} />
           <KpiCard label="Prioridades" value={totalPrioridades} sub={totalPrioridades === 0 ? 'tudo em dia ✓' : `pendência${totalPrioridades !== 1 ? 's' : ''}`} isMobile={isMobile} bg={totalPrioridades > 0 ? DESL : SUCL} border={totalPrioridades > 0 ? `${DES}30` : `${SUC}30`} valueColor={totalPrioridades > 0 ? DES : SUC} />
           <KpiCard label="Próxima" value={nextPending?.time || '—'} sub={nextPending ? nextPending.patient_name.split(' ')[0] : 'sem pendentes'} isMobile={isMobile} valueColor={nextPending ? P : MU} />
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(5,1fr)', gap: 12, marginBottom: 24 }}>
+        <div data-tour="kpis" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(5,1fr)', gap: 12, marginBottom: 24 }}>
           <KpiCard label="Pacientes ativos" value={patients.length} sub={thisMonthPatients > 0 ? `+${thisMonthPatients} este mês` : 'sem novos este mês'} isMobile={isMobile} bg={PL} border={`${P}20`} />
           <KpiCard label="Crônicos acompanhados" value={chronicData?.patientsWithConditions ?? 0} sub={patients.length > 0 ? `${Math.round(((chronicData?.patientsWithConditions ?? 0) / patients.length) * 100)}% dos ativos` : '—'} isMobile={isMobile} />
           <KpiCard label="Exames pendentes" value={recentExams.length} sub="aguardando revisão" isMobile={isMobile} valueColor={recentExams.length > 0 ? WARN : MU} bg={recentExams.length > 0 ? WARNL : '#fff'} border={recentExams.length > 0 ? `${WARN}30` : BO} />
@@ -1110,6 +1111,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
           {/* 1. Consultas de hoje */}
+          <div data-tour="consultas-hoje">
           <Card>
             <SectionHeader
               icon={CalendarBlank}
@@ -1150,8 +1152,10 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
               ));
             })()}
           </Card>
+          </div>
 
           {/* 2. Prioridades */}
+          <div data-tour="prioridades">
           <Card style={{ border: totalPrioridades > 0 ? `1.5px solid ${DES}40` : `1px solid ${BO}` }}>
             <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BO}`, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Warning size={16} color={totalPrioridades > 0 ? DES : SUC} />
@@ -1249,6 +1253,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
               </div>
             )}
           </Card>
+          </div>
 
           {/* 2b. Exames / Retornos próximos / Inatividade — Clínica Geral */}
           {isClinicaGeral && (
@@ -1424,6 +1429,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
           {/* Iniciar consulta rápida */}
+          <div data-tour="iniciar-consulta">
           <Card style={{ border: `1.5px solid ${P}40`, background: PL }}>
             <div style={{ padding: '14px 20px', borderBottom: `1px solid ${P}25`, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Stethoscope size={15} color={P} />
@@ -1454,6 +1460,7 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
               )}
             </div>
           </Card>
+          </div>
 
           {/* Pontos de atenção (IA leve) — Pediatria */}
           {!isClinicaGeral && attentionPoints.length > 0 && showAttentionPoints && (
@@ -5304,7 +5311,7 @@ const Toggle = ({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   </button>
 );
 
-function SettingsPage({ user }: { user: SupabaseUser | null }) {
+function SettingsPage({ user, onReplayTour }: { user: SupabaseUser | null; onReplayTour?: () => void }) {
   const [section, setSection] = useState('perfil');
   const isMobile = useIsMobile();
   const [notifVaccines, setNotifVaccines] = useState(true);
@@ -5500,6 +5507,15 @@ function SettingsPage({ user }: { user: SupabaseUser | null }) {
               </div>
               {saveMsg && (
                 <div style={{ marginBottom: 8, fontSize: 13, color: saveMsg.includes('sucesso') ? P : DES, textAlign: 'right' as const }}>{saveMsg}</div>
+              )}
+              {onReplayTour && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0', borderTop: `1px solid ${BO}`, marginTop: 4 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>Tour do sistema</div>
+                    <div style={{ fontSize: 12, color: MU, marginTop: 2 }}>Reveja o tour guiado das principais áreas do Auri</div>
+                  </div>
+                  <Btn variant="secondary" size="sm" onClick={onReplayTour}><PlayCircle size={14} /> Rever tour</Btn>
+                </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                 <Btn onClick={handleSaveProfile} disabled={saving}><FloppyDisk size={14} /> {saving ? 'Salvando…' : 'Salvar alterações'}</Btn>
@@ -6511,7 +6527,7 @@ function AdminPage({ go: _go }: { go: (s: string) => void }) {
 export type AppNotification = { type: 'vaccine' | 'appointment'; title: string; subtitle: string; patientId?: string; };
 
 export default function App() {
-  const { isAdmin, isLoading: authProfileLoading } = useAuthProfile();
+  const { isAdmin, isDoctor, isLoading: authProfileLoading } = useAuthProfile();
   const [authLoading, setAuthLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [showLogin, setShowLogin] = useState(false);
@@ -6521,6 +6537,7 @@ export default function App() {
   const [pendingDetailTab, setPendingDetailTab] = useState<string | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [showTour, setShowTour] = useState(false);
   const [screen, setScreen] = useState('dashboard');
   const [activePatient, setActivePatient] = useState<Patient | null>(null);
   const [flow, setFlow] = useState<'consent'|'recording'|'processing'|'done'|null>(null);
@@ -6584,6 +6601,10 @@ export default function App() {
         if (profile.prontuario_format) {
           setProntuarioFormatState(profile.prontuario_format as ProntuarioFormat);
         }
+        // Tour guiado do primeiro acesso — contas que ainda não viram o tour
+        if (!profile.tour_completed && !localStorage.getItem('auri_tour_done')) {
+          setShowTour(true);
+        }
       }
     }).catch(() => { setProfileLoaded(true); setNeedsOnboarding(true); });
   }, [user]);
@@ -6639,6 +6660,12 @@ export default function App() {
 
   const go = (s: string) => { setScreen(s); setFlow(null); };
 
+  const finishTour = () => {
+    setShowTour(false);
+    localStorage.setItem('auri_tour_done', '1');
+    db.updateProfile({ tour_completed: true }).catch(err => console.error('Failed to save tour state:', err));
+  };
+
   if (authLoading) return (
     <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' as const }}>
@@ -6672,6 +6699,7 @@ export default function App() {
       onComplete={(specialty) => {
         setDoctorSpecialty(specialty);
         setNeedsOnboarding(false);
+        setShowTour(true);
       }}
     />
   );
@@ -6749,9 +6777,12 @@ export default function App() {
               }} refetchTrigger={refetchTrigger} />}
             {screen === 'agenda'   && <AgendaPage go={go} setActivePatient={setActivePatient} onStartConsult={(type, apptId?) => { setConsultType(type); if (apptId) setActiveAppointmentId(apptId); setFlow('consent'); }} />}
             {screen === 'painel'   && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><PainelPage go={go} setActivePatient={setActivePatient} /></RequireRole>}
-            {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} /></RequireRole>}
+            {screen === 'settings' && <RequireRole roles={['medico']} onBack={() => go('dashboard')}><SettingsPage user={user} onReplayTour={() => { go('dashboard'); setShowTour(true); }} /></RequireRole>}
             {screen === 'admin'    && <RequireRole roles={['admin']}  onBack={() => go('admin')}><AdminPage go={go} /></RequireRole>}
           </Layout>
+          {showTour && screen === 'dashboard' && isDoctor && !isAdmin && (
+            <GuidedTour onClose={finishTour} onGoToPatients={() => go('patients')} />
+          )}
         </ProntuarioFormatCtx.Provider>
       </PatientProvider>
     </MobileCtx.Provider>

@@ -1145,13 +1145,14 @@ export interface ProfileData {
   clinic_address: string; clinic_hours_start: string; clinic_hours_end: string;
   prontuario_format?: 'narrativo' | 'escaneavel';
   work_mode?: 'solo' | 'team';
+  tour_completed?: boolean;
 }
 
 export async function fetchProfile(): Promise<ProfileData | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   const { data } = await supabase.from('profiles')
-    .select('full_name, crm, specialty, phone, clinic_name, clinic_phone, clinic_email, clinic_address, clinic_hours_start, clinic_hours_end, prontuario_format, work_mode')
+    .select('full_name, crm, specialty, phone, clinic_name, clinic_phone, clinic_email, clinic_address, clinic_hours_start, clinic_hours_end, prontuario_format, work_mode, tour_completed')
     .eq('id', user.id).single();
   return data || null;
 }
