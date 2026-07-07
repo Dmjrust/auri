@@ -1,8 +1,8 @@
-# Auri — Prontuário Eletrônico Pediátrico com IA
+# Auri — Prontuário Eletrônico com IA (Pediatria + Clínica Geral)
 
 ## O que é este projeto
 
-**Auri** é um sistema de EMR (Electronic Medical Record) inteligente + CRM longitudinal para pediatras em consultório privado. Combina prontuário clínico estruturado com um **AI Ambient Scribe**: o médico grava a consulta, a IA transcreve, estrutura e preenche o prontuário automaticamente.
+**Auri** é um sistema de EMR (Electronic Medical Record) inteligente + CRM longitudinal para médicos em consultório privado, com suporte a duas especialidades — **Pediatria** e **Clínica Geral** (escolhida no onboarding, persistida em `profiles.specialty`). Combina prontuário clínico estruturado com um **AI Ambient Scribe**: o médico grava a consulta, a IA transcreve, estrutura e preenche o prontuário automaticamente.
 
 **Status atual:** MVP funcional com backend real (Supabase). Autenticação via email + password. Dados 100% persistidos. Pronto para validação clínica com médico.
 
