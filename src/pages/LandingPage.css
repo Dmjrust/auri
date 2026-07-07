@@ -75,7 +75,7 @@
 /* ── Diagonal break hero → cream ────────────────────────────────────────── */
 .lp-diagonal {
   height: 100px;
-  background: linear-gradient(to bottom right, #0B1A1C 49.5%, #F7F3EC 50%);
+  background: linear-gradient(to bottom right, #0D231A 49.5%, #F7F3EC 50%);
   margin-top: -2px;
 }
 
@@ -87,7 +87,7 @@
   transition: background 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease;
 }
 .lp-nav.on-hero {
-  background: rgba(11, 26, 28, 0.88);
+  background: rgba(13, 35, 26, 0.88);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
@@ -102,7 +102,7 @@
 .lp-mobile-menu {
   position: fixed;
   inset: 0;
-  background: #0B1A1C;
+  background: #0D231A;
   z-index: 99;
   display: flex;
   flex-direction: column;
@@ -140,7 +140,7 @@
   background: #E8825B;
   color: #fff;
   border: none;
-  border-radius: 8px;
+  border-radius: 999px;
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 15px;
   font-weight: 600;
@@ -162,7 +162,7 @@
   background: transparent;
   color: rgba(247, 243, 236, 0.80);
   border: 1px solid rgba(247, 243, 236, 0.20);
-  border-radius: 8px;
+  border-radius: 999px;
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 15px;
   font-weight: 500;
@@ -183,7 +183,7 @@
   background: #0F4C5C;
   color: #fff;
   border: none;
-  border-radius: 8px;
+  border-radius: 999px;
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 14px;
   font-weight: 600;
@@ -197,7 +197,7 @@
   background: transparent;
   color: #4A5862;
   border: 1px solid #E2EBEC;
-  border-radius: 8px;
+  border-radius: 999px;
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 14px;
   font-weight: 500;
@@ -224,7 +224,7 @@
 
 /* ── Pricing card dark ───────────────────────────────────────────────────── */
 .lp-pricing-dark {
-  background: #0B1A1C;
+  background: #0D231A;
   border-radius: 16px;
   position: relative;
   overflow: hidden;

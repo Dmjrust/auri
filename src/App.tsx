@@ -347,7 +347,7 @@ function LoginScreen({ onBack, initialMode }: { onBack?: () => void; initialMode
 
           {/* Editorial */}
           <div style={{ maxWidth: 480, marginTop: 48 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: ACCENT, marginBottom: 18 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: '#0F6A4E', marginBottom: 18 }}>
               Copiloto de consulta
             </div>
             <h1 style={{ fontFamily: '"Fraunces", Georgia, serif', fontSize: mobile ? 36 : 52, fontWeight: 400, lineHeight: 1.02, letterSpacing: '-0.025em', margin: '0 0 20px', color: INK, fontVariationSettings: '"opsz" 144' }}>
@@ -366,14 +366,14 @@ function LoginScreen({ onBack, initialMode }: { onBack?: () => void; initialMode
               Grave a consulta. Revise o prontuário pronto em minutos. Saia do consultório sem nada para digitar à noite.
             </p>
             <div style={{ fontSize: 13, color: INK2 }}>
-              Em validação clínica com pediatras — 14 dias grátis, sem cartão.
+              Em validação clínica com médicos de consultório — 14 dias grátis, sem cartão.
             </div>
           </div>
         </div>
 
         {/* Left footer */}
         <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 20, fontSize: 12, color: INK3, flexWrap: 'wrap' as const, marginTop: 40 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px 4px 8px', background: '#EBF5EE', color: '#5B8A6F', borderRadius: 999, fontSize: 11, fontWeight: 500 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px 4px 8px', background: '#E9EDE0', color: '#0F6A4E', borderRadius: 999, fontSize: 11, fontWeight: 500 }}>
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M8 1.5l5.5 2v4c0 3.5-2.5 6.5-5.5 7.5-3-1-5.5-4-5.5-7.5v-4l5.5-2z"/>
               <path d="M5.5 8L7 9.5L10.5 6"/>
