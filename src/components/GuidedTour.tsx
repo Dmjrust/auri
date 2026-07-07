@@ -40,6 +40,10 @@ const STEPS: TourStep[] = [
     text: 'A ação principal do Auri: selecione o paciente, grave a consulta e a IA transcreve e estrutura o prontuário SOAP para você revisar em 2-3 minutos.',
   },
   {
+    title: 'Como funciona a gravação',
+    text: 'O fluxo tem 4 passos: 1) você registra o consentimento do paciente (LGPD); 2) grava a consulta normalmente enquanto atende; 3) a IA transcreve e preenche o prontuário; 4) você revisa, ajusta o que quiser e salva. Se a transcrição falhar, dá para tentar de novo sem regravar — e o áudio é descartado após o uso.',
+  },
+  {
     target: 'notificacoes',
     title: 'Notificações',
     text: 'O sino avisa sobre vacinas em atraso e consultas não realizadas. Clique em uma notificação para abrir o paciente.',

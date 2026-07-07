@@ -19,6 +19,17 @@ async function requireSupabaseUser(req: any): Promise<{ ok: true; userId: string
   if (!res.ok) return { ok: false, status: 401, error: 'Sessão inválida ou expirada.' };
   const user = await res.json().catch(() => null);
   if (!user?.id) return { ok: false, status: 401, error: 'Sessão inválida ou expirada.' };
+
+  // Conta desativada por admin não pode consumir a API paga até o token expirar.
+  // RLS "leitura própria" permite ler o próprio active com o token do usuário.
+  const profileRes = await fetch(
+    `${supabaseUrl}/rest/v1/user_profiles?user_id=eq.${user.id}&select=active`,
+    { headers: { Authorization: `Bearer ${token}`, apikey: anonKey } },
+  );
+  const profiles = profileRes.ok ? await profileRes.json().catch(() => null) : null;
+  if (Array.isArray(profiles) && profiles[0]?.active === false) {
+    return { ok: false, status: 403, error: 'Conta desativada. Contate o administrador do consultório.' };
+  }
   return { ok: true, userId: user.id as string };
 }
 

@@ -521,7 +521,7 @@ const KpiCard = ({ label, value, sub, isMobile, bg, border, valueColor }: { labe
 
 function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName: doctorNameProp, specialty = 'Pediatria', setPresetPatientSearch, setPendingDetailTab }: { go: (s: string) => void; setActivePatient: (p: Patient) => void; onStartConsult: (type: 'retorno' | 'primeira vez', apptId?: string) => void; user: SupabaseUser | null; doctorName: string; specialty?: string; setPresetPatientSearch?: (s: string) => void; setPendingDetailTab?: (t: string | null) => void }) {
   // patients come from shared PatientContext (no individual fetch needed here)
-  const { patients } = usePatients();
+  const { patients, loading: patientsLoading } = usePatients();
   const isClinicaGeral = specialty !== 'Pediatria';
   const [todayAppts, setTodayAppts] = useState<any[]>([]);
   const [overdueAppts, setOverdueAppts] = useState<{ patient_id: string; patient_name: string; scheduled_at: string }[]>([]);
@@ -729,6 +729,26 @@ function DashboardPage({ go, setActivePatient, onStartConsult, user, doctorName:
           Ver agenda da semana <CaretRight size={13} />
         </a>
       </div>
+
+      {/* ── Primeiro acesso: sem pacientes ainda ── */}
+      {!patientsLoading && patients.length === 0 && (
+        <Card style={{ marginBottom: 24, border: `1.5px solid ${P}40`, background: PL }}>
+          <div style={{ padding: isMobile ? '20px 16px' : '24px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' as const }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 24 }}>👋</div>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div style={{ fontFamily: '"Fraunces", Georgia, serif', fontSize: 18, fontWeight: 600, color: INK, marginBottom: 4 }}>
+                Bem-vindo(a) ao Auri! Comece cadastrando seu primeiro paciente.
+              </div>
+              <div style={{ fontSize: 13, color: MU, lineHeight: 1.5 }}>
+                Com o paciente cadastrado, você já pode iniciar uma consulta gravada: a IA transcreve e preenche o prontuário para você revisar.
+              </div>
+            </div>
+            <Btn onClick={() => go('patients')} style={{ flexShrink: 0 }}>
+              <Plus size={14} /> Cadastrar paciente
+            </Btn>
+          </div>
+        </Card>
+      )}
 
       {/* ── KPI strip ── */}
       {!isClinicaGeral ? (
@@ -4373,8 +4393,11 @@ function PatientDetailPage({ patient, go, onStartConsult, onOpenDraft, refetchTr
                   </div>
                 )}
 
-                {/* Completed consultations */}
-                {pastConsultations.length === 0 && draftConsultations.length === 0 && (
+                {/* Completed consultations — empty state só após o load, para não piscar "nenhuma" */}
+                {loadingC && pastConsultations.length === 0 && (
+                  <Card style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Carregando consultas…</Card>
+                )}
+                {!loadingC && pastConsultations.length === 0 && draftConsultations.length === 0 && (
                   <Card style={{ padding: 40, textAlign: 'center' as const, color: MU }}>Nenhuma consulta registrada.</Card>
                 )}
                 {pastConsultations.map((c, i) => {
