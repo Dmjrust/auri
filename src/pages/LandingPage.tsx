@@ -10,9 +10,11 @@ import { INK, BO, BG } from '../lib/design';
 // ── Tokens exclusivos da Landing Page ─────────────────────────────────────
 // Identidade "clínica editorial verde": verde = confiança/estrutura,
 // coral = ação/IA. Mockups internos mantêm o teal do produto real.
-const HERO_BG       = '#0D231A';
+const HERO_BG       = '#0C3526';
+const HERO_GRAD     = 'linear-gradient(155deg, #14543C 0%, #0C3526 55%, #0A2C20 100%)';
 const HERO_TEXT     = '#F7F3EC';
 const HERO_MUTED    = 'rgba(247,243,236,0.60)';
+const HERO_MINT     = '#8FD4B4';
 const LP_GREEN      = '#0F6A4E';
 const LP_GREEN_SOFT = 'rgba(15,106,78,0.10)';
 const LP_SAGE_BG    = '#E9EDE0';
@@ -20,34 +22,41 @@ const DS_INK2    = '#4A5862';
 const DS_INK3    = '#6F7C84';
 
 // ── Dados ──────────────────────────────────────────────────────────────────
+// tone: 'coral' = momentos de IA · 'green' = estrutura/confiança
 const FEATURES = [
   {
     icon: <Microphone size={22} weight="duotone" color="#E8825B" />,
+    tone: 'coral' as const,
     title: 'Escuta inteligente',
     desc: 'Distingue médico, paciente e acompanhante. Reconhece o vocabulário clínico da sua especialidade em PT-BR.',
   },
   {
     icon: <FileText size={22} weight="duotone" color="#E8825B" />,
+    tone: 'coral' as const,
     title: 'Prontuário automático',
     desc: 'Auri estrutura a consulta em QP, HDA, Exame Físico, Hipóteses e Conduta. Você revisa e salva em 2 minutos.',
   },
   {
-    icon: <ShieldCheck size={22} weight="duotone" color="#E8825B" />,
+    icon: <ShieldCheck size={22} weight="duotone" color={LP_GREEN} />,
+    tone: 'green' as const,
     title: 'Privacidade em primeiro lugar',
     desc: 'LGPD + CFM 2.454/2026. Áudio descartado após a transcrição, consentimento registrado a cada consulta. Você é o dono dos dados.',
   },
   {
-    icon: <Baby size={22} weight="duotone" color="#E8825B" />,
+    icon: <Baby size={22} weight="duotone" color={LP_GREEN} />,
+    tone: 'green' as const,
     title: 'Pediatria por completo',
     desc: 'Curvas OMS com z-score e percentis, calendário vacinal PNI e alertas de doses e retornos — calculados automaticamente.',
   },
   {
-    icon: <CalendarBlank size={22} weight="duotone" color="#E8825B" />,
+    icon: <CalendarBlank size={22} weight="duotone" color={LP_GREEN} />,
+    tone: 'green' as const,
     title: 'Agenda integrada',
     desc: 'Agendamentos, confirmações e início de consulta com um clique. Do calendário ao prontuário sem atrito.',
   },
   {
-    icon: <Stethoscope size={22} weight="duotone" color="#E8825B" />,
+    icon: <Stethoscope size={22} weight="duotone" color={LP_GREEN} />,
+    tone: 'green' as const,
     title: 'Clínica geral adulta',
     desc: 'Anamnese adulta estruturada, acompanhamento de condições crônicas, alertas clínicos e controle de exames e retornos.',
   },
@@ -79,7 +88,7 @@ const PRO_FEATURES = [
 // ── Deep-dive: gestão + acompanhamento + IA ────────────────────────────────
 const mockLabel: React.CSSProperties = {
   fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-  color: '#E8825B', marginBottom: 12,
+  color: LP_GREEN, marginBottom: 12,
 };
 const mockRow: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 10,
@@ -180,7 +189,7 @@ const SHOWCASE: { kicker: string; title: string; desc: string; bullets: string[]
     footnote: 'Apoio à decisão clínica, nunca diagnóstico (CFM 2.454/2026). A conduta é sempre sua.',
     visual: (
       <div>
-        <div style={mockLabel}>✦ Pontos de atenção — IA</div>
+        <div style={{ ...mockLabel, color: '#E8825B' }}>✦ Pontos de atenção — IA</div>
         <div style={{ display: 'grid', gap: 8 }}>
           <div style={{ ...mockRow, alignItems: 'start', background: '#FDF6EC' }}>
             <span style={{ ...mockDot('#C68B3E'), marginTop: 5 }} />
@@ -357,8 +366,8 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
         </div>
       </div>
 
-      {/* ══ HERO (ESCURO) ════════════════════════════════════════════════ */}
-      <section style={{ background: HERO_BG, position: 'relative', overflow: 'hidden', paddingTop: 0 }}>
+      {/* ══ HERO (VERDE ESMERALDA) ═══════════════════════════════════════ */}
+      <section style={{ background: HERO_GRAD, position: 'relative', overflow: 'hidden', paddingTop: 0 }}>
         <div className="hero-grain" />
 
         {/* Glow decorativo */}
@@ -370,12 +379,25 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
           pointerEvents: 'none',
         }} />
         <div style={{
-          position: 'absolute', bottom: '10%', left: '-5%',
-          width: 400, height: 400,
+          position: 'absolute', bottom: '5%', left: '-8%',
+          width: 560, height: 560,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(15,106,78,0.28) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(46,160,116,0.35) 0%, transparent 70%)',
           pointerEvents: 'none',
         }} />
+
+        {/* Ondas de escuta — círculos concêntricos atrás do mockup */}
+        {[340, 480, 620].map((size, i) => (
+          <div key={size} style={{
+            position: 'absolute',
+            top: '50%', right: mobile ? '-30%' : '8%',
+            width: size, height: size,
+            marginTop: -size / 2, marginRight: -size / 2,
+            borderRadius: '50%',
+            border: `1px solid rgba(127,200,169,${[0.12, 0.08, 0.05][i]})`,
+            pointerEvents: 'none',
+          }} />
+        ))}
 
         <div style={{
           maxWidth: 1120, margin: '0 auto', padding: mobile ? '72px 24px 80px' : '96px 32px 100px',
@@ -396,8 +418,8 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
               background: 'rgba(72,187,146,0.10)',
               marginBottom: 28,
             }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#7FC8A9', display: 'inline-block' }} />
-              <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#7FC8A9' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: HERO_MINT, display: 'inline-block' }} />
+              <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: HERO_MINT }}>
                 Para pediatras e clínica geral
               </span>
             </div>
@@ -454,19 +476,19 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
           <div className="lp-device-float" style={{ position: 'relative' }}>
             {/* Browser frame */}
             <div style={{
-              background: '#1A3328',
+              background: '#1D5540',
               borderRadius: 16,
               overflow: 'hidden',
               boxShadow: '0 32px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(247,243,236,0.07)',
             }}>
               {/* Browser chrome */}
-              <div style={{ padding: '10px 14px', background: '#12271D', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ padding: '10px 14px', background: '#164534', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 5 }}>
                   <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57' }} />
                   <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#febc2e' }} />
                   <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840' }} />
                 </div>
-                <div style={{ flex: 1, background: '#1F3B2D', borderRadius: 6, padding: '4px 10px', marginLeft: 8 }}>
+                <div style={{ flex: 1, background: '#236049', borderRadius: 6, padding: '4px 10px', marginLeft: 8 }}>
                   <span style={{ fontSize: 11, color: 'rgba(247,243,236,0.35)', fontFamily: '"JetBrains Mono", monospace' }}>
                     app.auri.com.br
                   </span>
@@ -528,7 +550,8 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
       <section id="produto" style={{ background: BG, paddingTop: mobile ? 24 : 40, paddingBottom: 96 }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 32px' }}>
           <div className="lp-reveal" style={{ marginBottom: 56 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: LP_GREEN, marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: LP_GREEN, marginBottom: 16 }}>
+              <span style={{ width: 24, height: 2, background: LP_GREEN, display: 'inline-block' }} />
               Funcionalidades
             </div>
             <h2 style={{
@@ -554,7 +577,7 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
               <div key={i} className={`lp-feature-card lp-reveal d${(i % 3) + 1}`}>
                 <div style={{
                   width: 44, height: 44, borderRadius: 10,
-                  background: 'rgba(232,130,91,0.10)',
+                  background: f.tone === 'coral' ? 'rgba(232,130,91,0.10)' : LP_GREEN_SOFT,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: 18,
                 }}>
@@ -578,12 +601,13 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
       </section>
 
       {/* ══ GESTÃO — DEEP DIVE ══════════════════════════════════════════ */}
-      <section id="gestao" style={{ background: '#FFFDF9', borderTop: `1px solid ${BO}`, padding: mobile ? '64px 24px 72px' : '88px 32px 96px' }}>
+      <section id="gestao" style={{ background: '#F2F4EA', padding: mobile ? '64px 24px 72px' : '88px 32px 96px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
           {/* Cabeçalho da seção */}
           <div className="lp-reveal" style={{ marginBottom: mobile ? 48 : 72, maxWidth: 560 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: LP_GREEN, marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: LP_GREEN, marginBottom: 16 }}>
+              <span style={{ width: 24, height: 2, background: LP_GREEN, display: 'inline-block' }} />
               Muito além do prontuário
             </div>
             <h2 style={{
@@ -645,7 +669,7 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
                 <div style={{ order: mobile ? 2 : (i % 2 === 1 ? 0 : 2) }}>
                   <div style={{
                     background: '#fff',
-                    border: `1px solid ${BO}`,
+                    border: '1px solid #DCE3D2',
                     borderRadius: 16,
                     padding: mobile ? 18 : 24,
                     boxShadow: '0 16px 40px rgba(28,42,46,0.09), 0 2px 6px rgba(28,42,46,0.05)',
@@ -724,8 +748,10 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
 
           {/* Header */}
           <div className="lp-reveal" style={{ textAlign: 'center', marginBottom: 52 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: LP_GREEN, marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: LP_GREEN, marginBottom: 16 }}>
+              <span style={{ width: 24, height: 2, background: LP_GREEN, display: 'inline-block' }} />
               Preços
+              <span style={{ width: 24, height: 2, background: LP_GREEN, display: 'inline-block' }} />
             </div>
             <h2 style={{
               fontFamily: '"Fraunces", Georgia, serif',
@@ -834,20 +860,21 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
         </div>
       </section>
 
-      {/* ══ CTA FINAL (CORAL) ═══════════════════════════════════════════ */}
-      <section style={{ background: '#E8825B', padding: mobile ? '56px 24px' : '72px 32px', position: 'relative', overflow: 'hidden' }}>
+      {/* ══ CTA FINAL (VERDE BOOKEND) ═══════════════════════════════════ */}
+      <section style={{ background: HERO_GRAD, padding: mobile ? '56px 24px' : '72px 32px', position: 'relative', overflow: 'hidden' }}>
+        <div className="hero-grain" />
         <div style={{
           position: 'absolute', top: -40, right: -40,
           width: 320, height: 320,
           borderRadius: '50%',
-          background: 'rgba(255,255,255,0.07)',
+          background: 'rgba(143,212,180,0.08)',
           pointerEvents: 'none',
         }} />
         <div style={{
           position: 'absolute', bottom: -60, left: -20,
           width: 240, height: 240,
           borderRadius: '50%',
-          background: 'rgba(0,0,0,0.06)',
+          background: 'rgba(232,130,91,0.10)',
           pointerEvents: 'none',
         }} />
 
@@ -865,19 +892,19 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
               fontWeight: 400,
               letterSpacing: '-0.025em',
               lineHeight: 1.0,
-              color: '#fff',
+              color: HERO_TEXT,
               margin: '0 0 14px',
               maxWidth: '14ch',
             }}>
               Comece hoje.<br />Sem cartão.
             </h2>
-            <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.75)', margin: '0 0 20px', maxWidth: '40ch', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 16, color: HERO_MUTED, margin: '0 0 20px', maxWidth: '40ch', lineHeight: 1.5 }}>
               14 dias grátis com sua agenda real. Configure em menos de 5 minutos.
             </p>
-            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 13, color: 'rgba(255,255,255,0.70)' }}>
+            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 13, color: HERO_MUTED }}>
               {['Sem cartão de crédito', 'Cancele quando quiser', 'Exporte todos os dados'].map(item => (
                 <span key={item} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <CheckCircle size={15} color="rgba(255,255,255,0.70)" weight="fill" />
+                  <CheckCircle size={15} color={HERO_MINT} weight="fill" />
                   {item}
                 </span>
               ))}
@@ -885,23 +912,12 @@ export function LandingPage({ onEnter }: { onEnter: (mode?: 'login' | 'signup') 
           </div>
 
           <div className="lp-reveal d2" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 260 }}>
-            <button onClick={() => onEnter('signup')} style={{
+            <button className="lp-btn-coral" onClick={() => onEnter('signup')} style={{
               width: '100%',
-              background: '#fff',
-              color: '#d96a40',
-              border: 'none',
-              borderRadius: 999,
-              fontSize: 15, fontWeight: 700,
               padding: '14px 20px',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6,
-              transition: 'transform 0.18s ease, box-shadow 0.18s ease',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-            }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 24px rgba(0,0,0,0.16)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.12)'; }}
-            >
+              justifyContent: 'center',
+              fontSize: 15, fontWeight: 700,
+            }}>
               Testar grátis por 14 dias <ArrowRight size={16} />
             </button>
             <button onClick={() => { window.location.href = 'mailto:suporte@auri.com.br?subject=Quero conhecer o Auri'; }} style={{

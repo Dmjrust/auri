@@ -75,7 +75,7 @@
 /* ── Diagonal break hero → cream ────────────────────────────────────────── */
 .lp-diagonal {
   height: 100px;
-  background: linear-gradient(to bottom right, #0D231A 49.5%, #F7F3EC 50%);
+  background: linear-gradient(to bottom right, #0A2C20 49.5%, #F7F3EC 50%);
   margin-top: -2px;
 }
 
@@ -87,7 +87,7 @@
   transition: background 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease;
 }
 .lp-nav.on-hero {
-  background: rgba(13, 35, 26, 0.88);
+  background: rgba(12, 53, 38, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
@@ -102,7 +102,7 @@
 .lp-mobile-menu {
   position: fixed;
   inset: 0;
-  background: #0D231A;
+  background: #0C3526;
   z-index: 99;
   display: flex;
   flex-direction: column;
@@ -224,8 +224,7 @@
 
 /* ── Pricing card dark ───────────────────────────────────────────────────── */
 .lp-pricing-dark {
-  background: #0D231A;
+  background: linear-gradient(170deg, #124532 0%, #0C3526 100%);
   border-radius: 16px;
   position: relative;
-  overflow: hidden;
 }
